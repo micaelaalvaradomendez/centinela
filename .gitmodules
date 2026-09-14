@@ -1,0 +1,8 @@
+[submodule "frontend"]
+	path = frontend
+	url = https://github.com/luzpacello/centinela-front.git
+	branch = main
+[submodule "backend"]
+	path = backend
+	url = https://github.com/tayraag/centinela-back.git
+	branch = main

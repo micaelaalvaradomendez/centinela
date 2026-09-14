@@ -1,0 +1,9 @@
+.git
+.github
+.env
+**/.git
+**/node_modules
+**/dist
+documentacion
+manejo-repo.md
+README.md
