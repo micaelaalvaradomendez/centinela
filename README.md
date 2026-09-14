@@ -86,11 +86,6 @@ El despliegue de código fuente, la subida de archivos de aplicaciones finales y
 - **Autenticación y roles:** acceso mediante usuario y contraseña, con roles diferenciados, por ejemplo, administrador del sistema y operador o usuario de instancia.
 - **Registro de actividad (audit log):** historial cronológico de quién realizó cada acción sobre la infraestructura, por ejemplo: «Usuario X reinició la VM 102 el día Y».
 
-## Funcionalidades excluidas
-
-### Consola remota web
-
-La consola remota web (terminal SSH/VNC, xterm.js o noVNC) se excluye intencionalmente de la plataforma para mitigar riesgos operativos y evitar la ejecución de comandos arbitrarios a nivel del sistema operativo. El acceso por consola directa queda reservado exclusivamente para administradores de infraestructura mediante las herramientas nativas de Proxmox VE.
 
 
 
