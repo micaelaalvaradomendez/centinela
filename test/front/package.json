@@ -1,0 +1,25 @@
+{
+  "name": "centinela-frontend-acceptance-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "link:../../frontend/centinela/node_modules/@types/react",
+    "@types/react-dom": "link:../../frontend/centinela/node_modules/@types/react-dom",
+    "@vitejs/plugin-react": "^6.0.4",
+    "jsdom": "^28.0.0",
+    "react": "link:../../frontend/centinela/node_modules/react",
+    "react-dom": "link:../../frontend/centinela/node_modules/react-dom",
+    "react-router": "link:../../frontend/centinela/node_modules/react-router",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0",
+    "vitest": "^4.0.18"
+  }
+}

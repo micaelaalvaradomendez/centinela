@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: centinela_test
+      POSTGRES_USER: centinela_test
+      POSTGRES_PASSWORD: centinela_test
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_DB_PORT:-15433}:5432"
+    volumes:
+      - backend_test_postgres:/var/lib/postgresql/data
+      - ../../backend/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U centinela_test -d centinela_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      DB_DSN: host=db user=centinela_test password=centinela_test dbname=centinela_test port=5432 sslmode=disable TimeZone=UTC
+      JWT_SECRET: test-only-jwt-secret-at-least-32-characters
+      JWT_ACCESS_TTL_HOURS: "1"
+      JWT_REFRESH_TTL_DAYS: "1"
+      TOTP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      APP_NAME: Centinela Test
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_API_PORT:-18080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  backend_test_postgres:

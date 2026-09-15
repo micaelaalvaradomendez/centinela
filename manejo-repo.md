@@ -172,6 +172,24 @@ pnpm --dir frontend/centinela build
 
 El frontend todavía no incluye Playwright ni otro runner E2E. Por eso, en esta etapa el workflow realiza un smoke test HTTP, no una prueba funcional completa del login y 2FA.
 
+### Pruebas del frontend
+
+```bash
+corepack pnpm --dir test/front install
+corepack pnpm --dir test/front test
+```
+
+La suite contrasta las tareas frontend de `documentacion/actual.md`. Sus resultados de referencia están en `test/front/RESULTADOS.md`.
+
+### Pruebas del backend
+
+```bash
+cd test/back
+go test -v -count=1 ./...
+```
+
+Esta suite valida la API del backend con Docker y PostgreSQL, y corresponde a la carpeta `test/back` del repositorio raíz.
+
 ## Workflows comprobados
 
 Al 14/09/2026:
