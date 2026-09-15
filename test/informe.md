@@ -7,8 +7,8 @@ Commits auditados (coinciden con `origin/main` de cada submódulo):
 
 | Componente | Commit |
 |---|---|
-| `frontend` | `17c5a8a` |
-| `backend` | `8d7bce5` |
+| `frontend` | `9001530` |
+| `backend` | `4919a88` |
 
 ## 1. Resumen ejecutivo
 
@@ -20,7 +20,7 @@ Commits auditados (coinciden con `origin/main` de cada submódulo):
 
 | ID | Estado | Evidencia |
 |---|---|---|
-| `BAC-01` | ✅ Completa (validado por `test/back`) | El compose aislado de `test/back` levanta PostgreSQL, GORM automigra el esquema y crea el admin seed con roles `ADMIN`/`OPERATOR`. |
+| `BAC-01` | ✅ Completa (validado por `test/back`) | El compose aislado de `test/back` levanta PostgreSQL, GORM automigra el esquema (tablas `organizaciones`, `usuarios`, `sesiones_activas`) y crea el admin seed con roles `ADMIN`/`OPERATOR`. |
 | `BAC-02` | ✅ Completa | Hash bcrypt verificado; login distingue credenciales válidas e inválidas en pruebas reales. |
 | `BAC-03` | ✅ Completa | `POST /api/auth/login` consulta PostgreSQL y emite JWT temporal HS256 con `id`, `role`, `org`. |
 | `BAC-04` | ✅ Completa | `400` para payload incompleto y `401` para credenciales inválidas, con JSON unificado. |

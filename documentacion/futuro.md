@@ -65,10 +65,14 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Entregable:** guard que valide `(user_id, instance_id)` en `user_instances` antes de consultar o enviar órdenes a Proxmox VE.
 - **Criterio de éxito:** un operador sin permiso recibe `403` y la API no realiza ninguna llamada a Proxmox VE.
 
-### BAC-09 — Endpoint de Roles del Sistema (GET /api/roles):
-- Asignado: Tayra | Estimación: 1h
-- Depende de: BAC-05Entregable: Endpoint público o protegido que retorne el listado de roles con su identificador y descripción básica.  
-- Criterio de éxito: Devuelve un JSON con los roles disponibles (ADMIN, OPERATOR) con código HTTP 200.
+### `BAC-09` - Endpoint de roles del sistema (GET /api/roles)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1 h
+- **Depende de:** `BAC-05`.
+- **Entregable:** endpoint público o protegido que retorne el listado de roles con su identificador y descripción básica.
+- **Criterio de éxito:** devuelve un JSON con los roles disponibles (`ADMIN`, `OPERATOR`) con código HTTP 200.
 
 ### `FRN-05` - Panel de gestión de usuarios
 

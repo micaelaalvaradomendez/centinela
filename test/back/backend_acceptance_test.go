@@ -21,7 +21,7 @@ SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
 ORDER BY table_name;`)
-		for _, expectedTable := range []string{"organizacions", "usuarios", "sesion_activas"} {
+		for _, expectedTable := range []string{"organizaciones", "usuarios", "sesiones_activas"} {
 			if !containsLine(tables, expectedTable) {
 				t.Errorf("falta la tabla %q; tablas encontradas:\n%s", expectedTable, tables)
 			}
