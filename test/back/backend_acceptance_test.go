@@ -54,7 +54,7 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 		}
 
 		status, _ := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
-			"email": "admin@elcentinela.com", "contrasena": "incorrecta",
+			"email": "admin@elcentinela.com", "password": "incorrecta",
 		})
 		if status != http.StatusUnauthorized {
 			t.Fatalf("contraseña inválida: esperado 401, recibido %d", status)
@@ -98,7 +98,7 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 			wantCode   string
 		}{
 			{name: "payload incompleto", payload: map[string]any{"email": "admin@elcentinela.com"}, wantStatus: http.StatusBadRequest, wantCode: "INVALID_REQUEST"},
-			{name: "credenciales inválidas", payload: map[string]any{"email": "admin@elcentinela.com", "contrasena": "incorrecta"}, wantStatus: http.StatusUnauthorized, wantCode: "AUTH_FAILED"},
+			{name: "credenciales inválidas", payload: map[string]any{"email": "admin@elcentinela.com", "password": "incorrecta"}, wantStatus: http.StatusUnauthorized, wantCode: "AUTH_FAILED"},
 		}
 		for _, testCase := range cases {
 			t.Run(testCase.name, func(t *testing.T) {
@@ -168,7 +168,7 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 		}
 	})
 
-	t.Run("BAC-01 expone los roles ADMIN y OPERATOR", func(t *testing.T) {
+	t.Run("BAC-09 expone los roles ADMIN y OPERATOR", func(t *testing.T) {
 		status, roles := requestJSONArray(t, http.MethodGet, "/roles", accessToken)
 		if status != http.StatusOK {
 			t.Fatalf("roles esperado 200, recibido %d: %#v", status, roles)
@@ -187,6 +187,106 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 			if !availableRoles[expectedRole] {
 				t.Errorf("falta el rol %s en %#v", expectedRole, roles)
 			}
+		}
+	})
+
+	t.Run("BAC-05 BAC-06 BAC-06B gestiona usuarios y restringe OPERATOR", func(t *testing.T) {
+		createdStatus, created := requestJSON(t, http.MethodPost, "/users", accessToken, map[string]any{
+			"nombreCompleto": "Operador de aceptación",
+			"nombreUsuario":  "operador_aceptacion",
+			"emailUsuario":   "operador.aceptacion@elcentinela.com",
+			"rol":            "OPERATOR",
+		})
+		if createdStatus != http.StatusCreated {
+			t.Fatalf("crear usuario esperado 201, recibido %d: %#v", createdStatus, created)
+		}
+		createdID := requiredString(t, created, "id")
+		if requiredString(t, created, "contrasenaTemp") == "" {
+			t.Fatal("la creación debe devolver una contraseña temporal")
+		}
+		if created["rol"] != "OPERATOR" || created["activo"] != true {
+			t.Fatalf("respuesta de creación inesperada: %#v", created)
+		}
+		if persisted := queryDatabase(t, `SELECT rol || '|' || activo::text || '|' || cambio_contrasena::text FROM usuarios WHERE nombre_usuario = 'operador_aceptacion';`); persisted != "OPERATOR|true|true" {
+			t.Fatalf("estado inicial persistido inesperado: %q", persisted)
+		}
+
+		listStatus, listed := requestJSON(t, http.MethodGet, "/users?rol=OPERATOR&buscar=aceptacion", accessToken, nil)
+		if listStatus != http.StatusOK {
+			t.Fatalf("listar usuarios esperado 200, recibido %d: %#v", listStatus, listed)
+		}
+		users, ok := listed["users"].([]any)
+		if !ok || len(users) != 1 {
+			t.Fatalf("listado filtrado inesperado: %#v", listed["users"])
+		}
+
+		permissionsStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+			"vmids": []int{101, 102},
+		})
+		if permissionsStatus != http.StatusNoContent {
+			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
+		}
+		detailStatus, detail := requestJSON(t, http.MethodGet, "/users/"+createdID, accessToken, nil)
+		if detailStatus != http.StatusOK {
+			t.Fatalf("obtener usuario esperado 200, recibido %d: %#v", detailStatus, detail)
+		}
+		if permissions, ok := detail["instanciasPermitidas"].([]any); !ok || len(permissions) != 2 {
+			t.Fatalf("permisos iniciales inesperados: %#v", detail["instanciasPermitidas"])
+		}
+
+		replaceStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+			"vmids": []int{102},
+		})
+		if replaceStatus != http.StatusNoContent {
+			t.Fatalf("reemplazar permisos esperado 204, recibido %d", replaceStatus)
+		}
+		detailStatus, detail = requestJSON(t, http.MethodGet, "/users/"+createdID, accessToken, nil)
+		if detailStatus != http.StatusOK {
+			t.Fatalf("obtener usuario después del reemplazo esperado 200, recibido %d: %#v", detailStatus, detail)
+		}
+		permissions, ok := detail["instanciasPermitidas"].([]any)
+		if !ok || len(permissions) != 1 || permissions[0] != float64(102) {
+			t.Fatalf("reemplazo de permisos inesperado: %#v", detail["instanciasPermitidas"])
+		}
+
+		operatorToken := signedAccessToken(t, createdID, "OPERATOR", decodeJWTClaims(t, accessToken)["org_id"].(string))
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			payload := any(nil)
+			if method == http.MethodPost {
+				payload = map[string]any{
+					"nombreCompleto": "No autorizado",
+					"nombreUsuario":  "no_autorizado",
+					"emailUsuario":   "no.autorizado@elcentinela.com",
+					"rol":            "OPERATOR",
+				}
+			}
+			status, _ := requestJSON(t, method, "/users", operatorToken, payload)
+			if status != http.StatusForbidden {
+				t.Fatalf("%s para OPERATOR: esperado 403, recibido %d", method, status)
+			}
+		}
+		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", operatorToken, map[string]any{
+			"vmids": []int{103},
+		})
+		if operatorPermissionStatus != http.StatusForbidden {
+			t.Fatalf("asignar permisos para OPERATOR: esperado 403, recibido %d", operatorPermissionStatus)
+		}
+
+		newRole := "ADMIN"
+		updateStatus, updated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{
+			"nombreCompleto": "Administrador de aceptación",
+			"rol":            newRole,
+		})
+		if updateStatus != http.StatusOK || updated["rol"] != newRole {
+			t.Fatalf("actualizar usuario inesperado: %d %#v", updateStatus, updated)
+		}
+
+		deleteStatus, _ := requestValue(t, http.MethodDelete, "/users/"+createdID, accessToken, nil)
+		if deleteStatus != http.StatusNoContent {
+			t.Fatalf("desactivar usuario esperado 204, recibido %d", deleteStatus)
+		}
+		if persisted := queryDatabase(t, `SELECT rol || '|' || activo::text FROM usuarios WHERE nombre_usuario = 'operador_aceptacion';`); persisted != "ADMIN|false" {
+			t.Fatalf("estado final persistido inesperado: %q", persisted)
 		}
 	})
 
@@ -218,4 +318,24 @@ func containsLine(output, expected string) bool {
 		}
 	}
 	return false
+}
+
+func signedAccessToken(t *testing.T, userID, role, orgID string) string {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"sub":            userID,
+		"rol":            role,
+		"tipo":           "access",
+		"2fa_verificado": true,
+		"org_id":         orgID,
+		"jti":            "acceptance-operator-session",
+		"iat":            time.Now().Unix(),
+		"exp":            time.Now().Add(time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(testJWTSecret))
+	if err != nil {
+		t.Fatalf("no se pudo firmar token de prueba: %v", err)
+	}
+	return signed
 }

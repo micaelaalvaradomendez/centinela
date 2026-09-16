@@ -145,8 +145,8 @@ func requestJSONArray(t *testing.T, method, path, token string) (int, []any) {
 func login(t *testing.T, password string) map[string]any {
 	t.Helper()
 	status, body := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
-		"email":      "admin@elcentinela.com",
-		"contrasena": password,
+		"email":    "admin@elcentinela.com",
+		"password": password,
 	})
 	if status != http.StatusOK {
 		t.Fatalf("login esperado 200, recibido %d: %#v", status, body)

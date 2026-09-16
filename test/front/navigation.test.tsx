@@ -37,10 +37,10 @@ describe('FRN-03 - navbar y rutas base', () => {
     const user = userEvent.setup();
     const router = renderApplication('/dashboard', true);
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: /Hola, Admin!/ })).toBeVisible();
     await user.click(screen.getByRole('link', { name: 'Instancias' }));
 
-    expect(await screen.findByRole('heading', { name: 'Instancias' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Inventario de instancias' })).toBeVisible();
     expect(router.state.location.pathname).toBe('/instances');
   });
 });

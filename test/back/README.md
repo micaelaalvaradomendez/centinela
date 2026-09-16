@@ -12,6 +12,13 @@ Esta suite contrasta las tareas backend y la parte backend de integración descr
 | `BAC-04` | Errores JSON `400` y `401` con código y mensaje |
 | `LOGIN-01` | QR, secreto cifrado, códigos inválidos/vencidos y vinculación con TOTP válido |
 | `LOGIN-03` | Emisión de tokens finales y protección de rutas en la parte backend |
+| `BAC-05` | Esquema de usuarios, campos de seguridad y estado inicial de cuentas nuevas |
+| `BAC-06` | Alta, listado filtrado, contraseña temporal y desactivación administrativa |
+| `BAC-06B` | Edición de nombre, rol y estado mediante `PUT /api/users/:id` |
+| `BAC-09` | Listado de roles `ADMIN` y `OPERATOR` mediante `GET /api/roles` |
+| `BAC-07` | Asignación y reemplazo de VMIDs mediante `PUT /api/users/:id/instances`, lectura en detalle y rechazo para `OPERATOR` |
+| `BAC-08` | Contrato reservado para guard de autorización por recurso y comprobación de que no se llama a Proxmox ante un `403` |
+| `BAC-14` | Contrato reservado para inventario normalizado y filtrado de instancias desde Proxmox |
 
 ## Requisitos
 
@@ -40,3 +47,7 @@ go test -short ./...
 ## Alcance
 
 El éxito de `LOGIN-03` confirma el recorrido del backend desde credenciales hasta un access token protegido por TOTP. El recorrido completo en navegador también requiere que pase la suite `test/front`, porque actualmente los contratos HTTP de ambos componentes no coinciden.
+
+La gestión administrativa se prueba contra las rutas implementadas actualmente: `GET/POST /api/users`, `PUT/DELETE /api/users/:id` y `GET /api/roles`. La documentación de tareas menciona `/api/admin/users`, pero ese prefijo no corresponde al router actual; si se cambia durante el desarrollo, habrá que actualizar las constantes de ruta de esta suite y del frontend.
+
+El hito **Control de Acceso Basado en Recursos** queda preparado en `resource_access_acceptance_test.go`: BAC-07 se ejecuta sobre la implementación actual y BAC-08/BAC-14 aparecen como pruebas omitidas hasta que existan el guard de recurso, `GET /api/instances` y un adaptador Proxmox observable por la suite.

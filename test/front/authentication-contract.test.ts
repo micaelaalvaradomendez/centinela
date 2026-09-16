@@ -22,7 +22,7 @@ function requestDetails(fetchMock: ReturnType<typeof vi.fn>) {
     url,
     method: init.method,
     headers: init.headers as Record<string, string>,
-    body: JSON.parse(String(init.body)),
+    body: init.body ? JSON.parse(String(init.body)) : undefined,
   };
 }
 
@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('FRN-04 - contrato de login con el backend', () => {
-  it('envía email y contrasena con los nombres aceptados por Go', async () => {
+  it('envía email y password con los nombres aceptados por Go', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(backendLoginResponse));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -46,7 +46,7 @@ describe('FRN-04 - contrato de login con el backend', () => {
       method: 'POST',
       body: {
         email: 'admin@centinela.local',
-        contrasena: 'Admin123!',
+        password: 'Admin123!',
       },
     });
   });
@@ -70,7 +70,7 @@ describe('LOGIN-02 - contrato de 2FA con el backend', () => {
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await twoFactorService.setup('jwt-temporal').catch(() => undefined);
+    await twoFactorService.qr('jwt-temporal').catch(() => undefined);
 
     expect(requestDetails(fetchMock)).toMatchObject({
       url: '/api/auth/2fa/qr',
