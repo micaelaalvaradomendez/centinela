@@ -134,6 +134,8 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 	})
 
 	var accessToken string
+	var linkedSecret string
+	var linkedCode string
 	t.Run("LOGIN-01 genera persiste y valida TOTP", func(t *testing.T) {
 		status, qrBody := requestJSON(t, http.MethodGet, "/auth/2fa/qr", temporaryJWT, nil)
 		if status != http.StatusOK {
@@ -180,8 +182,52 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		}
 		accessToken = requiredString(t, tokenBody, "accessToken")
 		_ = requiredString(t, tokenBody, "refreshToken")
+		linkedSecret = secret
+		linkedCode = code
 		if linked := queryDatabase(t, `SELECT totp_vinculado::text FROM usuarios WHERE email_usuario = 'admin@elcentinela.com';`); linked != "true" {
 			t.Fatalf("TOTP no quedó vinculado después de validarlo: %q", linked)
+		}
+	})
+
+	t.Run("BAC-10 BAC-11 impiden reemplazar TOTP y validan el secreto persistido", func(t *testing.T) {
+		status, relogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
+			"email": "admin@elcentinela.com", "password": "Admin123!",
+		})
+		if status != http.StatusOK {
+			t.Fatalf("login posterior esperado 200, recibido %d: %#v", status, relogin)
+		}
+		secondJWT := requiredString(t, relogin, "jwtTemporal")
+		if linked, ok := relogin["totpVinculado"].(bool); !ok || !linked {
+			t.Fatalf("login posterior no informa TOTP vinculado: %#v", relogin)
+		}
+
+		// BAC-10: una cuenta ya vinculada no debe obtener otro secreto por el flujo inicial.
+		qrStatus, _ := requestJSON(t, http.MethodGet, "/auth/2fa/qr", secondJWT, nil)
+		if qrStatus == http.StatusOK {
+			t.Fatal("una cuenta con TOTP vinculado pudo generar un QR nuevo sin pasar por reset/relink")
+		}
+
+		// BAC-11: el login posterior valida contra el secreto cifrado persistido.
+		validCode, err := totp.GenerateCode(linkedSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("no se pudo generar código TOTP posterior: %v", err)
+		}
+		verifyStatus, tokens := requestJSON(t, http.MethodPost, "/auth/2fa/verify", secondJWT, map[string]any{"codigo": validCode})
+		if verifyStatus != http.StatusOK {
+			t.Fatalf("código válido posterior esperado 200, recibido %d: %#v", verifyStatus, tokens)
+		}
+
+		// BAC-11: el código usado en la vinculación no debe aceptarse como replay en otra sesión.
+		replayLoginStatus, replayLogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
+			"email": "admin@elcentinela.com", "password": "Admin123!",
+		})
+		if replayLoginStatus != http.StatusOK {
+			t.Fatalf("login para probar replay esperado 200, recibido %d: %#v", replayLoginStatus, replayLogin)
+		}
+		replayJWT := requiredString(t, replayLogin, "jwtTemporal")
+		replayStatus, _ := requestJSON(t, http.MethodPost, "/auth/2fa/verify", replayJWT, map[string]any{"codigo": linkedCode})
+		if replayStatus == http.StatusOK {
+			t.Fatal("el código TOTP usado en la vinculación fue aceptado nuevamente")
 		}
 	})
 

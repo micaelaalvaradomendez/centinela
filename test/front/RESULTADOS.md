@@ -22,6 +22,7 @@ Fecha de ejecución: 18/09/2026 (commit `7775b62`).
 | `FRN-04` | Pruebas aprobadas | El payload usa `password` y la respuesta pre-2FA del backend es aceptada. |
 | `LOGIN-02` | Pruebas aprobadas | El contrato QR/verificación y la validación numérica del OTP pasan. |
 | `LOGIN-03` | Pruebas aprobadas | La redirección al enrolamiento 2FA tras un login válido funciona correctamente. |
+| `FRN-09` | Prueba enfocada aprobada | `LoginContinuation` muestra el QR, la clave manual formateada y el formulario de seis dígitos usando el JWT temporal. |
 | `FRN-05` | **3 fallidas** | Sin guard de rol para `OPERATOR`, sin llamada a `GET /api/users`, tabla con datos fijos. |
 | `FRN-06` | **3 fallidas** | Sin selector de rol, sin `onSubmit`/`POST /api/users`, sin mostrar la contraseña temporal. |
 | `FRN-06B` | **1 fallida** | No existe ninguna acción de edición por usuario. |

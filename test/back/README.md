@@ -11,6 +11,8 @@ Esta suite contrasta las tareas backend y la parte backend de integración descr
 | `BAC-03` | Login contra PostgreSQL, firma HS256 y claims del JWT temporal |
 | `BAC-04` | Errores JSON `400` y `401` con código y mensaje |
 | `LOGIN-01` | QR, secreto cifrado, códigos inválidos/vencidos y vinculación con TOTP válido |
+| `BAC-10` | Generación de QR/secreto para enrolamiento y rechazo de regeneración cuando el usuario ya tiene 2FA vinculado (este último caso falla actualmente) |
+| `BAC-11` | Persistencia cifrada, login posterior con el secreto persistido y protección contra replay del código TOTP |
 | `LOGIN-03` | Emisión de tokens finales y protección de rutas en la parte backend |
 | `BAC-05` | Esquema de usuarios y estado inicial de cuentas nuevas. Usar un `id` propio en `permisos_instancia` en vez de clave primaria compuesta es válido; el problema real es que no hay **ninguna restricción de unicidad** sobre `(usuario_id, vmid_proxmox)`. Se demuestra con un test funcional: enviar `{"vmids": [201, 201]}` persiste **2 filas duplicadas** en vez de 1. |
 | `BAC-06` | Alta, listado filtrado, contraseña temporal y desactivación administrativa, validados bajo `/api/users`. Un chequeo real contra `GET /api/admin/users` (el prefijo que exige `actual.md`) devuelve `404`: en [backend/cmd/api/main.go](../../backend/cmd/api/main.go) la variable se llama `admin` pero su `Group()` se monta en `"/"`, no en `"/admin"`. |

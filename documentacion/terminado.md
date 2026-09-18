@@ -120,3 +120,30 @@
 - **Depende de:** `BAC-05`.
 - **Entregable:** endpoint público o protegido que retorne el listado de roles con su identificador y descripción básica.
 - **Criterio de éxito:** devuelve un JSON con los roles disponibles (`ADMIN`, `OPERATOR`) con código HTTP 200.
+
+### `INF-03` - PostgreSQL persistente en el servidor
+
+- **Área:** Infraestructura
+- **Asignados:** Lucas y Nico
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 09:00-12:00
+- **Depende de:** `BAC-05`.
+- **Entregable:** PostgreSQL desplegado en el LXC o Docker de prueba, con volumen persistente y credenciales seguras.
+- **Criterio de éxito:** la base es accesible por la red interna o VPN y los datos sobreviven al reinicio del contenedor.
+
+
+### `INF-04` - Red interna y reverse proxy con Nginx
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 13:00-16:00
+- **Depende de:** `INF-03` y del backend desplegable.
+- **Entregable:** Nginx enruta `/api/*` al backend y `/` al frontend; la subred virtual `vmbr1` comunica backend, base de datos y API de Proxmox VE.
+- **Criterio de éxito:** el dominio o IP local resuelve, el frontend alcanza el backend y el backend alcanza PostgreSQL y Proxmox VE sin exponer la base públicamente.
+
+### BAC-06B — Edición de Usuario y Cambio de Rol (PUT /api/admin/users/{id}):
+- Asignado: Lisandro | Estimación: 2h
+- Depende de: BAC-06
+- Entregable: Endpoint PUT /api/admin/users/{id} para actualizar nombre, correo, estado (isActive) y rol (role: ADMIN u OPERATOR).  
+- Criterio de éxito: Un administrador puede cambiarle el rol a un usuario o desactivarlo; los cambios se reflejan de inmediato en la base de datos.  

@@ -20,35 +20,9 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 
 ## Fase 2. Cierre de autenticación y asignación de máquinas
 
-### `BAC-10` - Enrolamiento 2FA y generación de QR
 
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** 16/09/2026, 09:00-11:00
-- **Depende de:** `BAC-05` y `LOGIN-03`.
-- **Entregable:** `GET /api/auth/2fa/setup`, accesible mediante una sesión restringida, que genere un secreto TOTP único, una URI `otpauth://` y un código QR. También debe devolver el secreto para vinculación manual, sin persistirlo como habilitado antes de la confirmación.
-- **Criterio de éxito:** un usuario sin 2FA obtiene un QR y una clave manual compatibles con una aplicación autenticadora; un usuario ya vinculado no puede reemplazar su secreto sin pasar por el flujo de restablecimiento.
 
-### `BAC-11` - Validación y persistencia del secreto TOTP
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 3 h
-- **Ventana propuesta:** 16/09/2026, 11:00-14:00
-- **Depende de:** `BAC-10` y `BAC-05`.
-- **Entregable:** `POST /api/auth/2fa/enable` para validar el primer código de seis dígitos, cifrar el secreto con AES-256 usando una clave externa a la base de datos y establecer `is_2fa_enabled: true`. El flujo de login también debe validar los códigos posteriores contra el secreto persistido antes de emitir el JWT de acceso completo.
-- **Criterio de éxito:** el secreto nunca se almacena ni se expone en texto plano después del enrolamiento; un código válido habilita el 2FA y permite completar el login, mientras que códigos inválidos, vencidos o reutilizados son rechazados.
-
-### `FRN-09` - Vinculación 2FA mediante QR
-
-- **Área:** Frontend
-- **Asignadas:** Belinda y Luz
-- **Estimación:** 3 h
-- **Ventana propuesta:** 16/09/2026, 14:00-17:00
-- **Depende de:** `BAC-10`, `BAC-11` y `LOGIN-02`.
-- **Entregable:** vista o modal obligatorio para cuentas sin 2FA, con QR, clave de vinculación manual, ingreso del código de seis dígitos y estados de carga y error.
-- **Criterio de éxito:** la cuenta no puede acceder a las rutas protegidas hasta confirmar un código válido; al finalizar, continúa el login sin mostrar nuevamente el secreto.
+---
 
 ### `BAC-12` - Cambio obligatorio de contraseña
 
@@ -59,28 +33,6 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Depende de:** `BAC-02`, `BAC-05` y `BAC-06`.
 - **Entregable:** `POST /api/auth/change-password`, accesible con una sesión restringida, que compruebe la contraseña temporal, valide la nueva clave, actualice su hash e indique `must_change_password: false`. Mientras el indicador sea verdadero, el resto de endpoints protegidos debe permanecer bloqueado.
 - **Criterio de éxito:** la contraseña temporal deja de ser válida después del cambio, la nueva contraseña nunca se guarda en texto plano y el usuario no obtiene acceso completo antes de finalizar el proceso.
-
-### `FRN-10` - Cambio obligatorio de contraseña temporal
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2 h
-- **Ventana propuesta:** 16/09/2026, 11:00-13:00
-- **Depende de:** `BAC-12` y `FRN-04`.
-- **Entregable:** vista de nueva contraseña y confirmación que detecte `must_change_password`, bloquee la navegación general y llame a `POST /api/auth/change-password`.
-- **Criterio de éxito:** una cuenta con contraseña temporal solo puede cerrar sesión o cambiarla; después del cambio continúa al enrolamiento o validación 2FA que corresponda.
-
-### `BAC-13` - Restablecimiento administrativo de 2FA
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** 17/09/2026, 09:00-11:00
-- **Depende de:** `BAC-06`, `BAC-08` y `BAC-11`.
-- **Entregable:** `POST /api/admin/users/{id}/reset-2fa`, restringido a administradores, que invalide el secreto TOTP, establezca `is_2fa_enabled: false` y revoque las sesiones activas del usuario afectado.
-- **Criterio de éxito:** un operador recibe `403 Forbidden`; tras el restablecimiento, los códigos del secreto anterior dejan de funcionar y el usuario debe repetir `BAC-10`, `BAC-11` y `FRN-09` en su siguiente acceso.
-
-
 
 ### `BAC-15` - Restablecimiento administrativo de contraseña
 
@@ -101,6 +53,30 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Depende de:** `BAC-06`, `BAC-15` y de la configuración SMTP.
 - **Entregable:** integración SMTP o proveedor equivalente para enviar la contraseña temporal al crear o restablecer una cuenta, con secretos fuera del repositorio y sin registrar la contraseña en logs.
 - **Criterio de éxito:** el usuario recibe una única credencial temporal y el administrador obtiene un resultado controlado si el envío falla, sin exponer la clave en respuestas posteriores ni registros.
+
+
+### `FRN-10` - Cambio obligatorio de contraseña temporal
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2 h
+- **Ventana propuesta:** 16/09/2026, 11:00-13:00
+- **Depende de:** `BAC-12` y `FRN-04`.
+- **Entregable:** vista de nueva contraseña y confirmación que detecte `must_change_password`, bloquee la navegación general y llame a `POST /api/auth/change-password`.
+- **Criterio de éxito:** una cuenta con contraseña temporal solo puede cerrar sesión o cambiarla; después del cambio continúa al enrolamiento o validación 2FA que corresponda.
+
+---
+
+### `BAC-13` - Restablecimiento administrativo de 2FA
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** 17/09/2026, 09:00-11:00
+- **Depende de:** `BAC-06`, `BAC-08` y `BAC-11`.
+- **Entregable:** `POST /api/admin/users/{id}/reset-2fa`, restringido a administradores, que invalide el secreto TOTP, establezca `is_2fa_enabled: false` y revoque las sesiones activas del usuario afectado.
+- **Criterio de éxito:** un operador recibe `403 Forbidden`; tras el restablecimiento, los códigos del secreto anterior dejan de funcionar y el usuario debe repetir `BAC-10`, `BAC-11` y `FRN-09` en su siguiente acceso.
+
 
 ### `FRN-11` - Acciones administrativas de recuperación
 
@@ -124,35 +100,8 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 
 ## Fase 3. Despliegue de persistencia y red
 
-### `INF-03` - PostgreSQL persistente en el servidor
 
-- **Área:** Infraestructura
-- **Asignados:** Lucas y Nico
-- **Estimación:** 3 h
-- **Ventana propuesta:** 16/09/2026, 09:00-12:00
-- **Depende de:** `BAC-05`.
-- **Entregable:** PostgreSQL desplegado en el LXC o Docker de prueba, con volumen persistente y credenciales seguras.
-- **Criterio de éxito:** la base es accesible por la red interna o VPN y los datos sobreviven al reinicio del contenedor.
 
-INF-03 — Despliegue de Base de Datos en el Servidor de Prueba:
-
-    Asignados: Lucas y Nico | Estimación: 3h
-
-    Depende de: BAC-05
-
-    Entregable: Contenedor PostgreSQL corriendo en el entorno de laboratorio sobre la red compartida (vmbr1), con volumen persistente y las tablas cargadas.
-
-    Criterio de éxito: Tanto el backend desplegado como las pruebas remotas se conectan a la base de datos central sin perder datos al reiniciar.
-
-### `INF-04` - Red interna y reverse proxy con Nginx
-
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 3 h
-- **Ventana propuesta:** 16/09/2026, 13:00-16:00
-- **Depende de:** `INF-03` y del backend desplegable.
-- **Entregable:** Nginx enruta `/api/*` al backend y `/` al frontend; la subred virtual `vmbr1` comunica backend, base de datos y API de Proxmox VE.
-- **Criterio de éxito:** el dominio o IP local resuelve, el frontend alcanza el backend y el backend alcanza PostgreSQL y Proxmox VE sin exponer la base públicamente.
 
 ## Relación y orden de ejecución
 

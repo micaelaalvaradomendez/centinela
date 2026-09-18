@@ -20,6 +20,8 @@ Fecha de ejecución: 18/09/2026 (revisión en detalle de los tests contra `docum
 | `BAC-03` | Aprobada | El login consulta PostgreSQL y emite un JWT temporal HS256 válido. |
 | `BAC-04` | Aprobada | Los casos incompleto e inválido devuelven `400`/`401` con JSON unificado. |
 | `LOGIN-01` | Aprobada | El backend genera QR, cifra el secreto y valida códigos TOTP inválidos, vencidos y vigentes. |
+| `BAC-10` | **Fallida** | El QR y secreto se generan, pero una cuenta ya vinculada puede pedir otro QR por `GET /api/auth/2fa/qr` sin pasar por reset/relink. |
+| `BAC-11` | Parcial | La persistencia cifrada y el login posterior se ejercitan en la prueba nueva; la verificación queda bloqueada por el fallo previo de BAC-10. |
 | `LOGIN-03` | Aprobada | El flujo backend completo emite tokens finales y protege las rutas. |
 | `BAC-05` | **Fallida — bug funcional, no de nomenclatura** | El alta de usuarios y sus campos de seguridad funcionan. Usar un `id` propio como PK en `permisos_instancia` (en vez de una compuesta) es válido; el problema real es que **no hay ninguna restricción de unicidad** sobre `(usuario_id, vmid_proxmox)` (ni PK compuesta ni `UNIQUE`). Se demostró en vivo: al enviar `{"vmids": [201, 201]}` se persistieron **2 filas** para el mismo par usuario/instancia en lugar de 1. |
 | `BAC-06` | Parcial — **prueba de contrato fallida** | Alta, listado filtrado y desactivación funcionan correctamente bajo `/api/users`. `GET /api/admin/users` devuelve `404`: en `cmd/api/main.go` la variable del grupo se llama `admin` pero se monta con `Group("/")` en vez de `Group("/admin")`, a diferencia de `/api/auth/*` y `/api/roles`, que sí calzan con `actual.md`. |

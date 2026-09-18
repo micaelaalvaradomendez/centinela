@@ -12,6 +12,7 @@ Esta suite contrasta las tareas frontend de `documentacion/actual.md` con el có
 | `FRN-04` | `authentication-contract.test.ts` | Payload y respuesta del login según la API Go |
 | `LOGIN-02` | `two-factor-form.test.tsx`, `authentication-contract.test.ts` | Código de seis dígitos, errores y contrato 2FA |
 | `LOGIN-03` | `authentication-contract.test.ts` | Continuidad desde login válido hacia enrolamiento 2FA |
+| `FRN-09` | `two-factor-enrollment.test.tsx` | Render real del QR, clave manual y formulario OTP para una cuenta sin 2FA |
 | `FRN-05` | `admin-users.test.tsx` | Guard de rol, consumo de `GET /api/users` y datos reales en la tabla (actualmente en rojo) |
 | `FRN-06` | `admin-users.test.tsx` | Selector de rol, `POST /api/users` y contraseña temporal visible (actualmente en rojo) |
 | `FRN-06B` | `admin-users.test.tsx` | Acción de edición por usuario (actualmente en rojo) |

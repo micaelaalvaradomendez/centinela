@@ -23,6 +23,7 @@ Commits auditados (coinciden con `origin/main` de cada submódulo):
   3 pruebas reales nuevas en [test/back/backend_acceptance_test.go](test/back/backend_acceptance_test.go) confirman ambos hallazgos. Detalle en 3.2.
 - **Hito "Gestión Administrativa de Usuarios": no cumplido de punta a punta.** Ver 3.3.
 - **Hito "Control de Acceso Basado en Recursos": sin empezar (`BAC-08`, `BAC-14`, `FRN-07`, `FRN-08`).** `BAC-07` tiene una implementación parcial (`PUT /api/users/:id/instances`) que funciona pero con el mismo desvío de prefijo de ruta.
+- **Nuevas tareas 2FA (`BAC-10`, `BAC-11`, `FRN-09`):** hay implementación real, no solo preparación. El backend genera QR, cifra el secreto y permite login posterior; el frontend `LoginContinuation` muestra QR, clave manual y OTP. Las pruebas nuevas detectan un fallo de BAC-10: un usuario ya vinculado puede regenerar su secreto llamando nuevamente a `GET /api/auth/2fa/qr` sin pasar por reset/relink. FRN-09 tiene una prueba enfocada aprobada.
 - **Historial de correcciones de este informe:** el 18/09/2026 se detectó que los criterios `FRN-05`/`FRN-06`/`FRN-06B` estaban declarados como `it.todo` (Vitest nunca los ejecuta) y que los tests backend de `BAC-05`/`BAC-06`/`BAC-06B` no verificaban dos requisitos textuales de `actual.md`. Ambos huecos se corrigieron con pruebas reales que hoy fallan, y ese es el estado reflejado en este informe.
 - **Nota sobre la base de datos:** el repositorio no tiene ningún archivo `.sql` con `CREATE TABLE` (`backend/scripts/init.sql` solo define la función `uuid_generate_v7()`). El esquema real lo genera `gorm.AutoMigrate` en tiempo de ejecución a partir de las structs de [backend/internal/core/domain/models.go](backend/internal/core/domain/models.go), y se verifica consultando en vivo el PostgreSQL 16 que levanta `test/back` con Docker Compose (no es una base simulada).
 
@@ -41,6 +42,9 @@ Commits auditados (coinciden con `origin/main` de cada submódulo):
 | `LOGIN-01` | ✅ Backend implementado | El backend expone `GET /api/auth/2fa/qr` y `POST /api/auth/2fa/verify`, cifra el secreto con AES-256-GCM y valida códigos TOTP. |
 | `LOGIN-02` | ✅ Completa | El contrato de QR/verificación y la validación numérica del OTP pasan. |
 | `LOGIN-03` | ✅ En integración activa | El flujo de autenticación conecta login con redirección a 2FA ([test/front/authentication-contract.test.ts](test/front/authentication-contract.test.ts) validado). |
+| `BAC-10` | ❌ No completa | `GET /api/auth/2fa/qr` genera QR y secreto, pero no rechaza la solicitud cuando `totp_vinculado=true`; se demostró con una prueba de login posterior. |
+| `BAC-11` | ⚠️ Parcial | El secreto se cifra y el login posterior consulta el secreto persistido; la prueba también prepara replay, pero el escenario queda bloqueado por la regeneración indebida del QR. |
+| `FRN-09` | ✅ Parcialmente validada | La UI real muestra QR, clave manual formateada y formulario OTP en `LoginContinuation`; falta validar el recorrido completo contra BAC-10/BAC-11 verde. |
 | `BAC-05` | ❌ No completa — **bug funcional, no de nomenclatura** | El alta de usuarios y sus campos de seguridad funcionan. Usar un `id` propio como PK en `permisos_instancia` en vez de una compuesta es válido; lo que falta es cualquier restricción de unicidad sobre `(usuario_id, vmid_proxmox)`. Demostrado en vivo: `{"vmids": [201, 201]}` persiste **2 filas** en vez de 1. |
 | `BAC-06` | ⚠️ Parcial — **contrato de ruta incumplido** | El CRUD, la contraseña temporal y la restricción de `OPERATOR` funcionan bajo `/api/users`. `GET /api/admin/users` devuelve `404`: en `cmd/api/main.go` la variable se llama `admin` pero el `Group()` usa `"/"` en lugar de `"/admin"`. |
 | `BAC-06B` | ⚠️ Parcial — **mismo desvío** | `PUT /api/users/:id` actualiza nombre, correo, rol y estado (`activo`) correctamente, y un `OPERATOR` recibe `403` al consultar, editar o dar de baja; el mismo detalle de montaje de rutas afecta a `/api/admin/users/:id`. |
@@ -70,7 +74,7 @@ Los 7 fallos son pruebas reales nuevas (no `it.todo`) que documentan por qué `F
 
 Los 7 criterios restantes de `FRN-07`/`FRN-08` siguen en `it.todo`: a diferencia de los anteriores, no existe ningún componente, ruta ni servicio contra el cual afirmar o refutar el criterio (no hay selector de instancias ni interceptor de errores en el código actual).
 
-### 3.2 Suite Backend (3 fallas reales nuevas: BAC-05 x2 y BAC-06/06B)
+### 3.2 Suite Backend (4 fallas/escenarios relevantes nuevos: BAC-05 x2, BAC-06/06B y BAC-10/11)
 
 La suite se actualizó para enviar `{"email": "...", "password": "..."}`. Con ese contrato, login, QR, TOTP, roles y protección de rutas pasan. La revisión en detalle contra `documentacion/actual.md` encontró dos problemas de naturaleza distinta:
 
@@ -83,6 +87,12 @@ La suite se actualizó para enviar `{"email": "...", "password": "..."}`. Con es
 Los 3 hallazgos quedan como pruebas reales que fallan (no como notas en markdown). El resto del comportamiento de `BAC-06`/`BAC-06B` (contraseña temporal, `cambio_contrasena`, edición de nombre/correo/rol/estado, rechazo `403` a `OPERATOR` en las cinco operaciones CRUD) sí está implementado y pasa.
 
 En contraste, el frontend (`FRN-05`, `FRN-06`, `FRN-06B`) no tiene ninguna de estas funcionalidades implementadas: no es solo un desvío de contrato, es la ausencia total de la lógica (ver 3.1).
+
+### 3.4 Nuevas tareas 2FA
+
+1. **BAC-10:** la ruta implementada es `GET /api/auth/2fa/qr` (no `GET /api/auth/2fa/setup`), pero la lógica de generación inicial sí existe. El fallo funcional no es el nombre de la ruta: después de completar la vinculación, la misma sesión de login puede solicitar otro QR y reemplazar el secreto cifrado. Debe rechazarse salvo reset/relink autorizado.
+2. **BAC-11:** el secreto se cifra con AES-GCM usando `TOTP_ENCRYPTION_KEY`, se persiste cifrado y el login posterior lo usa para validar TOTP. La prueba nueva deja preparado el caso de código reutilizado en una sesión nueva; debe completarse una vez corregido BAC-10 para determinar si existe replay.
+3. **FRN-09:** `LoginContinuation` ya consume `GET /api/auth/2fa/qr`, renderiza `qrBase64`, muestra `secretoManual` con formato visual y habilita el formulario de seis dígitos. [test/front/two-factor-enrollment.test.tsx](test/front/two-factor-enrollment.test.tsx) pasa de forma enfocada.
 
 ### 3.3 Estado del hito "Gestión Administrativa de Usuarios"
 
@@ -103,7 +113,8 @@ Las 10 fallas totales (7 frontend + 3 backend) son intencionales: documentan con
 
 ## 5. Próximos pasos recomendados
 
-1. Implementar el guard de rol para `/users` y `/users/new` (solo `ADMIN`), conectar [Users.jsx](frontend/centinela/src/pages/Users.jsx) a `GET /api/users` y agregar el selector de rol y el `onSubmit` real en [CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) para que las 7 pruebas de FRN-05/FRN-06/FRN-06B pasen.
-2. Decidir si el contrato definitivo conserva `/api/users` o corrige `main.go` para montar el grupo `admin` bajo `/api/admin` (afecta a `BAC-06`, `BAC-06B` y `BAC-07`, que hoy comparten el mismo grupo de rutas); actualizar backend, frontend y tests en el mismo cambio para no dejar rutas duplicadas.
-3. Agregar una restricción de unicidad sobre `(usuario_id, vmid_proxmox)` en la struct `PermisoInstancia` de [backend/internal/core/domain/models.go](backend/internal/core/domain/models.go) — como PK compuesta o como `gorm:"uniqueIndex:..."` sobre ambas columnas; cualquiera de las dos formas resuelve el bug de duplicados demostrado en 3.2.
-4. Definir el contrato final del hito de recursos: rutas de permisos, forma del inventario normalizado, operación protegida sobre instancias y mecanismo de mock/spy para garantizar que un `403` no llegue a Proxmox.
+1. Corregir BAC-10: rechazar `GET /api/auth/2fa/qr` para usuarios con `totp_vinculado=true` y permitir regeneración solo mediante reset/relink autorizado; luego completar la verificación de replay de BAC-11.
+2. Implementar el guard de rol para `/users` y `/users/new` (solo `ADMIN`), conectar [Users.jsx](frontend/centinela/src/pages/Users.jsx) a `GET /api/users` y agregar el selector de rol y el `onSubmit` real en [CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) para que las 7 pruebas de FRN-05/FRN-06/FRN-06B pasen.
+3. Decidir si el contrato definitivo conserva `/api/users` o corrige `main.go` para montar el grupo `admin` bajo `/api/admin` (afecta a `BAC-06`, `BAC-06B` y `BAC-07`, que hoy comparten el mismo grupo de rutas); actualizar backend, frontend y tests en el mismo cambio para no dejar rutas duplicadas.
+4. Agregar una restricción de unicidad sobre `(usuario_id, vmid_proxmox)` en la struct `PermisoInstancia` de [backend/internal/core/domain/models.go](backend/internal/core/domain/models.go) — como PK compuesta o como `gorm:"uniqueIndex:..."` sobre ambas columnas; cualquiera de las dos formas resuelve el bug de duplicados demostrado en 3.2.
+5. Definir el contrato final del hito de recursos: rutas de permisos, forma del inventario normalizado, operación protegida sobre instancias y mecanismo de mock/spy para garantizar que un `403` no llegue a Proxmox.

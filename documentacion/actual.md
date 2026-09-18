@@ -31,11 +31,7 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Entregable:** `GET /api/admin/users`, `POST /api/admin/users` y `DELETE /api/admin/users/{id}`. La creación debe generar una contraseña temporal y establecer `must_change_password: true`.
 - **Criterio de éxito:** un administrador puede listar, crear y desactivar usuarios; un operador recibe `403 Forbidden`.
 
-### BAC-06B — Edición de Usuario y Cambio de Rol (PUT /api/admin/users/{id}):
-- Asignado: Lisandro | Estimación: 2h
-- Depende de: BAC-06
-- Entregable: Endpoint PUT /api/admin/users/{id} para actualizar nombre, correo, estado (isActive) y rol (role: ADMIN u OPERATOR).  
-- Criterio de éxito: Un administrador puede cambiarle el rol a un usuario o desactivarlo; los cambios se reflejan de inmediato en la base de datos.  
+
 
 ### `BAC-07` - Asignación de permisos por recurso
 
@@ -113,6 +109,35 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Entregable:** interceptor Axios o Fetch para enviar `Authorization: Bearer <JWT>` y mostrar un mensaje amigable ante un `403` sin cerrar la sesión.
 - **Criterio de éxito:** las peticiones incluyen el JWT y un operador sin permiso recibe una respuesta visual clara.
 
+### `BAC-10` - Enrolamiento 2FA y generación de QR
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** 16/09/2026, 09:00-11:00
+- **Depende de:** `BAC-05` y `LOGIN-03`.
+- **Entregable:** `GET /api/auth/2fa/setup`, accesible mediante una sesión restringida, que genere un secreto TOTP único, una URI `otpauth://` y un código QR. También debe devolver el secreto para vinculación manual, sin persistirlo como habilitado antes de la confirmación.
+- **Criterio de éxito:** un usuario sin 2FA obtiene un QR y una clave manual compatibles con una aplicación autenticadora; un usuario ya vinculado no puede reemplazar su secreto sin pasar por el flujo de restablecimiento.
+
+### `BAC-11` - Validación y persistencia del secreto TOTP
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 11:00-14:00
+- **Depende de:** `BAC-10` y `BAC-05`.
+- **Entregable:** `POST /api/auth/2fa/enable` para validar el primer código de seis dígitos, cifrar el secreto con AES-256 usando una clave externa a la base de datos y establecer `is_2fa_enabled: true`. El flujo de login también debe validar los códigos posteriores contra el secreto persistido antes de emitir el JWT de acceso completo.
+- **Criterio de éxito:** el secreto nunca se almacena ni se expone en texto plano después del enrolamiento; un código válido habilita el 2FA y permite completar el login, mientras que códigos inválidos, vencidos o reutilizados son rechazados.
+
+### `FRN-09` - Vinculación 2FA mediante QR
+
+- **Área:** Frontend
+- **Asignadas:** Belinda y Luz
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 14:00-17:00
+- **Depende de:** `BAC-10`, `BAC-11` y `LOGIN-02`.
+- **Entregable:** vista o modal obligatorio para cuentas sin 2FA, con QR, clave de vinculación manual, ingreso del código de seis dígitos y estados de carga y error.
+- **Criterio de éxito:** la cuenta no puede acceder a las rutas protegidas hasta confirmar un código válido; al finalizar, continúa el login sin mostrar nuevamente el secreto.
 
 ---
 
