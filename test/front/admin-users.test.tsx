@@ -1,26 +1,128 @@
-import { describe, it } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { createMemoryRouter } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { applicationRoutes } from '@/routes/applicationRoutes';
+import Users from '@/pages/Users.jsx';
+import CrearUsuarios from '@/pages/CrearUsuarios';
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// Igual que en navigation.test.tsx: siembra una sesión válida antes de navegar.
+function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
+  window.localStorage.setItem('centinela_access', 'access-token');
+  window.localStorage.setItem('centinela_user', JSON.stringify({
+    id: 'user-1',
+    organizacionId: 'org-1',
+    nombreCompleto: rol === 'ADMIN' ? 'Administradora de prueba' : 'Operador de prueba',
+    email: 'sesion@centinela.local',
+    rol,
+    instanciasPermitidas: [],
+    tiene2FA: true,
+  }));
+  const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// Estos tests corren contra el código real (no son it.todo): documentan qué falta
+// para dar por cumplidos los criterios de éxito de actual.md, no solo si compila.
 describe('FRN-05 - panel de gestión de usuarios', () => {
-  it.todo('expone la ruta /admin/users únicamente para una sesión ADMIN');
-  it.todo('rechaza la navegación de un usuario OPERATOR con estado 403 o vista denegada');
-  it.todo('consulta GET /api/users con Authorization Bearer y renderiza summary y users');
-  it.todo('permite filtrar usuarios por rol, activo y búsqueda');
+  it('un usuario con rol OPERATOR no debe poder ver el panel de administración', async () => {
+    renderAppAs('OPERATOR', '/users');
+    await screen.findByText(/./);
+    expect(screen.queryByRole('heading', { name: 'Gestión de usuarios' })).not.toBeInTheDocument();
+  });
+
+  it('consulta GET /api/users con Authorization Bearer al entrar a /users', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderAppAs('ADMIN', '/users');
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/users');
+    expect((init.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
+  });
+
+  it('renderiza los usuarios reales devueltos por el backend en vez de la tabla vacía fija', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      summary: { total: 1, admins: 1, operators: 0 },
+      users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderAppAs('ADMIN', '/users');
+
+    expect(await screen.findByText('Ada Lovelace')).toBeVisible();
+  });
 });
 
 describe('FRN-06 - alta y desactivación de usuarios', () => {
-  it.todo('abre el modal de alta con nombre, username, email y rol');
-  it.todo('envía POST /api/users y muestra una sola vez la contraseña temporal recibida');
-  it.todo('actualiza la tabla después de crear un usuario');
-  it.todo('confirma la desactivación y envía DELETE /api/users/:id');
-  it.todo('muestra errores 400, 403 y 409 de forma comprensible');
+  it('incluye un selector de rol ADMIN u OPERATOR en el alta', () => {
+    render(<CrearUsuarios />);
+    expect(screen.getByRole('combobox', { name: /rol/i })).toBeInTheDocument();
+  });
+
+  it('envía POST /api/users al confirmar el alta', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true, contrasenaTemp: 'Temp123!' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<CrearUsuarios />);
+
+    await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
+    await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
+    await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
+    await user.click(screen.getByRole('button', { name: /crear usuario/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/users');
+    expect(init.method).toBe('POST');
+  });
+
+  it('muestra la contraseña temporal que devuelve el backend tras crear el usuario', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true, contrasenaTemp: 'Temp123!' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<CrearUsuarios />);
+
+    await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
+    await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
+    await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
+    await user.click(screen.getByRole('button', { name: /crear usuario/i }));
+
+    expect(await screen.findByText('Temp123!')).toBeVisible();
+  });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {
-  it.todo('precarga los datos del usuario seleccionado en el modal de edición');
-  it.todo('envía PUT /api/users/:id con nombre, email, rol y activo');
-  it.todo('actualiza la fila y muestra una confirmación después de editar');
+  it('ofrece una acción de edición por usuario en la tabla', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      summary: { total: 1, admins: 1, operators: 0 },
+      users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<Users />);
+
+    expect(await screen.findByRole('button', { name: /editar/i })).toBeInTheDocument();
+  });
 });
 
+// FRN-07 y FRN-08 siguen en todo real: no existe ningún componente, ruta ni
+// servicio en el frontend contra el cual afirmar o refutar el criterio.
 describe('FRN-07 - selector de asignación de instancias', () => {
   it.todo('consulta GET /api/instances con Authorization Bearer');
   it.todo('muestra instancias disponibles y permisos actuales del usuario');

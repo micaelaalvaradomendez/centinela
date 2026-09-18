@@ -44,6 +44,23 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 		}
 	})
 
+	t.Run("BAC-05 protege permisos_instancia (user_instances) contra duplicados", func(t *testing.T) {
+		// actual.md pide clave primaria compuesta (user_id, instance_id); lo que esa clave
+		// garantiza es que no pueda existir dos veces el mismo par (usuario, instancia).
+		// Un id propio + una restricción de unicidad sobre ambas columnas cumple lo mismo,
+		// así que aceptamos cualquiera de las dos formas, no solo la PK compuesta literal.
+		uniqueColumns := queryDatabase(t, `
+SELECT string_agg(a.attname, ',' ORDER BY a.attname)
+FROM pg_index i
+JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+WHERE i.indrelid = 'permisos_instancia'::regclass AND i.indisunique
+GROUP BY i.indexrelid
+HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox';`)
+		if uniqueColumns != "usuario_id,vmid_proxmox" {
+			t.Errorf("no hay ninguna restricción de unicidad (PK compuesta o UNIQUE) sobre (usuario_id, vmid_proxmox); la base permite pares duplicados")
+		}
+	})
+
 	t.Run("BAC-02 persiste bcrypt y diferencia credenciales", func(t *testing.T) {
 		hash := queryDatabase(t, `SELECT contrasena_hash FROM usuarios WHERE email_usuario = 'admin@elcentinela.com';`)
 		if !strings.HasPrefix(hash, "$2") {
@@ -249,6 +266,19 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 			t.Fatalf("reemplazo de permisos inesperado: %#v", detail["instanciasPermitidas"])
 		}
 
+		// Prueba funcional (no solo de esquema): si el cliente manda un VMID repetido,
+		// ¿el sistema lo deduplica o persiste dos filas idénticas?
+		duplicateStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+			"vmids": []int{201, 201},
+		})
+		if duplicateStatus != http.StatusNoContent {
+			t.Fatalf("asignar vmids duplicados esperado 204, recibido %d", duplicateStatus)
+		}
+		storedRows := queryDatabase(t, `SELECT count(*) FROM permisos_instancia WHERE usuario_id = '`+createdID+`' AND vmid_proxmox = 201;`)
+		if storedRows != "1" {
+			t.Errorf("se enviaron 2 vmids repetidos y se persistieron %s filas para el mismo (usuario, instancia); se esperaba 1", storedRows)
+		}
+
 		operatorToken := signedAccessToken(t, createdID, "OPERATOR", decodeJWTClaims(t, accessToken)["org_id"].(string))
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			payload := any(nil)
@@ -272,13 +302,43 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 			t.Fatalf("asignar permisos para OPERATOR: esperado 403, recibido %d", operatorPermissionStatus)
 		}
 
+		// El hito "Gestión Administrativa de Usuarios" exige 403 en TODOS los endpoints de gestión,
+		// no solo en listar/crear: also cubre consultar detalle, editar y desactivar.
+		detailForbiddenStatus, _ := requestJSON(t, http.MethodGet, "/users/"+createdID, operatorToken, nil)
+		if detailForbiddenStatus != http.StatusForbidden {
+			t.Fatalf("consultar detalle con OPERATOR: esperado 403, recibido %d", detailForbiddenStatus)
+		}
+		updateForbiddenStatus, _ := requestJSON(t, http.MethodPut, "/users/"+createdID, operatorToken, map[string]any{"nombreCompleto": "Intento no autorizado"})
+		if updateForbiddenStatus != http.StatusForbidden {
+			t.Fatalf("editar usuario con OPERATOR: esperado 403, recibido %d", updateForbiddenStatus)
+		}
+		deleteForbiddenStatus, _ := requestValue(t, http.MethodDelete, "/users/"+createdID, operatorToken, nil)
+		if deleteForbiddenStatus != http.StatusForbidden {
+			t.Fatalf("desactivar usuario con OPERATOR: esperado 403, recibido %d", deleteForbiddenStatus)
+		}
+
 		newRole := "ADMIN"
+		newEmail := "administrador.aceptacion@elcentinela.com"
 		updateStatus, updated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{
 			"nombreCompleto": "Administrador de aceptación",
+			"emailUsuario":   newEmail,
 			"rol":            newRole,
 		})
 		if updateStatus != http.StatusOK || updated["rol"] != newRole {
 			t.Fatalf("actualizar usuario inesperado: %d %#v", updateStatus, updated)
+		}
+		if persistedEmail := queryDatabase(t, `SELECT email_usuario FROM usuarios WHERE id = '`+createdID+`';`); persistedEmail != newEmail {
+			t.Fatalf("correo no se actualizó vía PUT: %q", persistedEmail)
+		}
+
+		// BAC-06B exige poder cambiar el estado (isActive) vía PUT, no solo vía DELETE.
+		deactivateViaPutStatus, deactivated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{"activo": false})
+		if deactivateViaPutStatus != http.StatusOK || deactivated["activo"] != false {
+			t.Fatalf("desactivar vía PUT (activo=false) inesperado: %d %#v", deactivateViaPutStatus, deactivated)
+		}
+		reactivateStatus, reactivated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{"activo": true})
+		if reactivateStatus != http.StatusOK || reactivated["activo"] != true {
+			t.Fatalf("reactivar vía PUT (activo=true) inesperado: %d %#v", reactivateStatus, reactivated)
 		}
 
 		deleteStatus, _ := requestValue(t, http.MethodDelete, "/users/"+createdID, accessToken, nil)
@@ -287,6 +347,16 @@ WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'rol
 		}
 		if persisted := queryDatabase(t, `SELECT rol || '|' || activo::text FROM usuarios WHERE nombre_usuario = 'operador_aceptacion';`); persisted != "ADMIN|false" {
 			t.Fatalf("estado final persistido inesperado: %q", persisted)
+		}
+	})
+
+	t.Run("BAC-06 BAC-06B exigen el prefijo /api/admin/users documentado en actual.md", func(t *testing.T) {
+		// actual.md describe GET/POST/DELETE /api/admin/users y PUT /api/admin/users/{id}.
+		// En cmd/api/main.go el grupo se llama "admin" pero se monta con Group("/") en vez
+		// de Group("/admin"), por lo que el CRUD queda expuesto en /api/users, sin el prefijo.
+		status, _ := requestJSON(t, http.MethodGet, "/admin/users", accessToken, nil)
+		if status != http.StatusOK {
+			t.Errorf("GET /api/admin/users documentado por BAC-06: esperado 200, recibido %d (el grupo \"admin\" de cmd/api/main.go está montado en \"/\", no en \"/admin\")", status)
 		}
 	})
 

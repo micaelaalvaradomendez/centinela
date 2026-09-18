@@ -6,16 +6,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 
 
 
-### `LOGIN-02` - Pantalla y validación del código TOTP
-
-- **Área:** Frontend
-- **Asignados:** Belinda y Luz
-- **Estimación:** 2 h
-- **Ventana propuesta:** 11/09/2026, 15:30-17:30
-- **Depende de:** `LOGIN-01` y `FRN-01`.
-- **Entregable:** pantalla de ingreso del código TOTP de seis dígitos y mensajes de error.
-- **Criterio de éxito:** el frontend permite ingresar el código, muestra el estado de verificación y habilita la navegación solo cuando la validación es correcta.
-
 
 
 ---
@@ -47,15 +37,35 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - Entregable: Endpoint PUT /api/admin/users/{id} para actualizar nombre, correo, estado (isActive) y rol (role: ADMIN u OPERATOR).  
 - Criterio de éxito: Un administrador puede cambiarle el rol a un usuario o desactivarlo; los cambios se reflejan de inmediato en la base de datos.  
 
-### `BAC-09` - Endpoint de roles del sistema (GET /api/roles)
+### `BAC-07` - Asignación de permisos por recurso
 
 - **Área:** Backend
 - **Asignado:** Tayra
-- **Estimación:** 1 h
-- **Depende de:** `BAC-05`.
-- **Entregable:** endpoint público o protegido que retorne el listado de roles con su identificador y descripción básica.
-- **Criterio de éxito:** devuelve un JSON con los roles disponibles (`ADMIN`, `OPERATOR`) con código HTTP 200.
+- **Estimación:** 3 h
+- **Ventana propuesta:** 15/09/2026, 09:00-12:00
+- **Depende de:** `BAC-05` y `BAC-06`.
+- **Entregable:** `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions`, con actualización atómica de `user_instances`.
+- **Criterio de éxito:** la relación usuario-instancia se persiste, reemplaza el conjunto anterior de forma atómica y solo puede gestionarla un administrador autorizado.
 
+### `BAC-08` - Middleware de autorización por recurso
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 3 h
+- **Ventana propuesta:** 15/09/2026, 13:00-16:00
+- **Depende de:** `BAC-07`.
+- **Entregable:** guard que valide `(user_id, instance_id)` en `user_instances` antes de consultar o enviar órdenes a Proxmox VE.
+- **Criterio de éxito:** un operador sin permiso recibe `403` y la API no realiza ninguna llamada a Proxmox VE.
+
+### `BAC-14` - Lectura mínima del inventario de Proxmox
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 3 h
+- **Ventana propuesta:** 17/09/2026, 11:00-14:00
+- **Depende de:** `BAC-08` y de las credenciales de lectura de Proxmox VE.
+- **Entregable:** `GET /api/instances` consumiendo `/cluster/resources` o `/nodes/{node}/resources`, con una respuesta normalizada mínima que incluya ID, nombre, tipo, nodo y estado. Un administrador recibe todo el inventario y un operador solo las instancias asignadas.
+- **Criterio de éxito:** `FRN-07` puede cargar IDs reales de VMs y LXC; una cuenta no puede descubrir instancias fuera de su alcance y los errores de Proxmox se traducen a una respuesta HTTP controlada.
 
 ### `FRN-05` - Panel de gestión de usuarios
 
@@ -82,39 +92,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - Depende de: FRN-05, FRN-06 y BAC-06B
 - Entregable: Formulario precargado con los datos del usuario seleccionado para modificar su información básica y cambiar su rol mediante un desplegable.  
 - Criterio de éxito: Al confirmar la edición, se llama a PUT /api/admin/users/{id}, se actualiza la tabla y se muestra una alerta visual (toast) de éxito.  
-
-
-
-### `BAC-07` - Asignación de permisos por recurso
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 3 h
-- **Ventana propuesta:** 15/09/2026, 09:00-12:00
-- **Depende de:** `BAC-05` y `BAC-06`.
-- **Entregable:** `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions`, con actualización atómica de `user_instances`.
-- **Criterio de éxito:** la relación usuario-instancia se persiste, reemplaza el conjunto anterior de forma atómica y solo puede gestionarla un administrador autorizado.
-
-### `BAC-08` - Middleware de autorización por recurso
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 3 h
-- **Ventana propuesta:** 15/09/2026, 13:00-16:00
-- **Depende de:** `BAC-07`.
-- **Entregable:** guard que valide `(user_id, instance_id)` en `user_instances` antes de consultar o enviar órdenes a Proxmox VE.
-- **Criterio de éxito:** un operador sin permiso recibe `403` y la API no realiza ninguna llamada a Proxmox VE.
-
-
-### `BAC-14` - Lectura mínima del inventario de Proxmox
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 3 h
-- **Ventana propuesta:** 17/09/2026, 11:00-14:00
-- **Depende de:** `BAC-08` y de las credenciales de lectura de Proxmox VE.
-- **Entregable:** `GET /api/instances` consumiendo `/cluster/resources` o `/nodes/{node}/resources`, con una respuesta normalizada mínima que incluya ID, nombre, tipo, nodo y estado. Un administrador recibe todo el inventario y un operador solo las instancias asignadas.
-- **Criterio de éxito:** `FRN-07` puede cargar IDs reales de VMs y LXC; una cuenta no puede descubrir instancias fuera de su alcance y los errores de Proxmox se traducen a una respuesta HTTP controlada.
 
 ### `FRN-07` - Selector de asignación de instancias
 

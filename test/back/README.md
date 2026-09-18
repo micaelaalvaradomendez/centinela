@@ -12,11 +12,11 @@ Esta suite contrasta las tareas backend y la parte backend de integración descr
 | `BAC-04` | Errores JSON `400` y `401` con código y mensaje |
 | `LOGIN-01` | QR, secreto cifrado, códigos inválidos/vencidos y vinculación con TOTP válido |
 | `LOGIN-03` | Emisión de tokens finales y protección de rutas en la parte backend |
-| `BAC-05` | Esquema de usuarios, campos de seguridad y estado inicial de cuentas nuevas |
-| `BAC-06` | Alta, listado filtrado, contraseña temporal y desactivación administrativa |
-| `BAC-06B` | Edición de nombre, rol y estado mediante `PUT /api/users/:id` |
-| `BAC-09` | Listado de roles `ADMIN` y `OPERATOR` mediante `GET /api/roles` |
-| `BAC-07` | Asignación y reemplazo de VMIDs mediante `PUT /api/users/:id/instances`, lectura en detalle y rechazo para `OPERATOR` |
+| `BAC-05` | Esquema de usuarios y estado inicial de cuentas nuevas. Usar un `id` propio en `permisos_instancia` en vez de clave primaria compuesta es válido; el problema real es que no hay **ninguna restricción de unicidad** sobre `(usuario_id, vmid_proxmox)`. Se demuestra con un test funcional: enviar `{"vmids": [201, 201]}` persiste **2 filas duplicadas** en vez de 1. |
+| `BAC-06` | Alta, listado filtrado, contraseña temporal y desactivación administrativa, validados bajo `/api/users`. Un chequeo real contra `GET /api/admin/users` (el prefijo que exige `actual.md`) devuelve `404`: en [backend/cmd/api/main.go](../../backend/cmd/api/main.go) la variable se llama `admin` pero su `Group()` se monta en `"/"`, no en `"/admin"`. |
+| `BAC-06B` | Edición de nombre, correo, rol y estado (`activo`) mediante `PUT /api/users/:id`, más rechazo `403` para `OPERATOR` en detalle, edición y baja. |
+| `BAC-09` | Listado de roles `ADMIN` y `OPERATOR` mediante `GET /api/roles` (ruta idéntica a la documentada; esta zona de la API sí coincide con `actual.md`). |
+| `BAC-07` | Asignación y reemplazo de VMIDs mediante `PUT /api/users/:id/instances`, lectura en detalle y rechazo para `OPERATOR`. Comparte el bug de duplicados de `BAC-05` porque usa el mismo repositorio. |
 | `BAC-08` | Contrato reservado para guard de autorización por recurso y comprobación de que no se llama a Proxmox ante un `403` |
 | `BAC-14` | Contrato reservado para inventario normalizado y filtrado de instancias desde Proxmox |
 
@@ -47,6 +47,13 @@ go test -short ./...
 ## Alcance
 
 El éxito de `LOGIN-03` confirma el recorrido del backend desde credenciales hasta un access token protegido por TOTP. El recorrido completo en navegador también requiere que pase la suite `test/front`, porque actualmente los contratos HTTP de ambos componentes no coinciden.
+
+`BAC-05` y `BAC-06`/`BAC-06B` tienen pruebas que **fallan intencionalmente** por dos motivos distintos:
+
+- `BAC-05` no es un problema de nomenclatura: es un bug funcional reproducible (VMIDs duplicados generan filas duplicadas) porque no existe ninguna restricción de unicidad, ni PK compuesta ni `UNIQUE`, sobre `(usuario_id, vmid_proxmox)`. Usar un `id` propio en vez de esa PK compuesta es válido por sí solo; lo que falta es la restricción.
+- `BAC-06`/`BAC-06B` sí es una cuestión de ruta: falta montar el grupo `admin` bajo `/admin` en `cmd/api/main.go`.
+
+El resto del comportamiento (CRUD, contraseña temporal, RBAC) sí está implementado y validado bajo `/api/users`.
 
 La gestión administrativa se prueba contra las rutas implementadas actualmente: `GET/POST /api/users`, `PUT/DELETE /api/users/:id` y `GET /api/roles`. La documentación de tareas menciona `/api/admin/users`, pero ese prefijo no corresponde al router actual; si se cambia durante el desarrollo, habrá que actualizar las constantes de ruta de esta suite y del frontend.
 
