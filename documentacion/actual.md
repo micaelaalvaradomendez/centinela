@@ -42,7 +42,7 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Estimación:** 2 h
 - **Ventana propuesta:** 16/09/2026, 09:00-11:00
 - **Depende de:** `BAC-05` y `LOGIN-03`.
-- **Entregable:** `GET /api/auth/2fa/setup`, accesible mediante una sesión restringida, que genere un secreto TOTP único, una URI `otpauth://` y un código QR. También debe devolver el secreto para vinculación manual, sin persistirlo como habilitado antes de la confirmación.
+- **Entregable:** `GET /api/auth/2fa/qr`, accesible mediante una sesión restringida, que genere un secreto TOTP único, una URI `otpauth://` y un código QR. También debe devolver el secreto para vinculación manual, sin persistirlo como habilitado antes de la confirmación.
 - **Criterio de éxito:** un usuario sin 2FA obtiene un QR y una clave manual compatibles con una aplicación autenticadora; un usuario ya vinculado no puede reemplazar su secreto sin pasar por el flujo de restablecimiento.
 
 ### `BAC-11` - Validación y persistencia del secreto TOTP
@@ -147,17 +147,6 @@ Estas tareas nacen de `documentacion/ANALISIS-READINESS.md`, que corrió las sui
 - **Entregable:** renombrar el índice compuesto de `PermisoInstancia` a algo único (por ejemplo `idx_permisos_usuario_vmid`), quitar el `uniqueIndex` de `SesionActiva.UsuarioID` (una sesión no es única por usuario) y agregar el constraint real faltante sobre `permisos_instancia(usuario_id, vmid_proxmox)`.
 - **Criterio de éxito:** un mismo usuario puede loguearse más de una vez sin recibir `401`; `test/back` deja de reportar la colisión de `idx_usuario_vmid` en `backend_acceptance_test.go`; el chequeo de esquema de `BAC-05` confirma el unique real sobre `permisos_instancia`.
 
-### `FIX-02` - Contrato de permisos por recurso desalineado con la documentación (`BAC-07`)
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir (posterior a `FIX-01`, para poder verificar con login funcionando).
-- **Depende de:** `FIX-01`.
-- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6):** `BAC-07` documenta `PUT/GET /api/admin/users/{id}/permissions`, pero el server expone `/api/users/:id/instances`. `FRN-07` (que todavía no está implementado) va a apuntar a la ruta documentada si nadie corrige el desvío.
-- **Entregable:** alinear la ruta real con `/api/admin/users/{id}/permissions` (o, si el equipo decide mantener `/api/users/:id/instances`, actualizar la descripción de `BAC-07` en este documento para que documentación y server coincidan).
-- **Criterio de éxito:** la ruta que consume `FRN-07` es la misma que describe `BAC-07` en `actual.md`; no quedan dos nombres distintos para el mismo endpoint entre doc y código.
-
 ### `FIX-03` - El guard de re-enrolamiento 2FA no rechaza reemplazar un secreto ya vinculado (`BAC-10`)
 
 - **Área:** Backend
@@ -166,19 +155,9 @@ Estas tareas nacen de `documentacion/ANALISIS-READINESS.md`, que corrió las sui
 - **Ventana propuesta:** A definir (posterior a `FIX-01`).
 - **Depende de:** `FIX-01`.
 - **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6):** el criterio de éxito documentado de `BAC-10` exige que "un usuario ya vinculado no pueda reemplazar su secreto sin pasar por el flujo de restablecimiento", pero el server actual sí permite generar un secreto nuevo sobre una cuenta con `is_2fa_enabled: true`.
-- **Entregable:** `GET /api/auth/2fa/setup` (o el endpoint equivalente real) debe rechazar la generación de un nuevo secreto si la cuenta ya tiene 2FA habilitado, devolviendo un error que indique que debe usarse el flujo de restablecimiento administrativo (`BAC-13`).
+- **Entregable:** `GET /api/auth/2fa/qr` debe rechazar la generación de un nuevo secreto si la cuenta ya tiene 2FA habilitado, devolviendo un error que indique que debe usarse el flujo de restablecimiento administrativo (`BAC-13`).
 - **Criterio de éxito:** una cuenta con `is_2fa_enabled: true` recibe un error controlado al pedir un nuevo QR; solo puede repetir el enrolamiento después de un reset administrativo.
 
-### `FIX-04` - Contrato de endpoints 2FA desalineado entre documentación y servidor
-
-- **Área:** Backend
-- **Asignados:** Tayra y Lisandro
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** ninguna.
-- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6, nota "DOCS"):** `BAC-10`/`BAC-11` documentan `GET /api/auth/2fa/setup` y `POST /api/auth/2fa/enable`; el server real usa nombres distintos (`qr`/`verify`/`relink`). Nadie actualizó `actual.md` cuando cambió el contrato implementado.
-- **Entregable:** decidir cuál nomenclatura es la definitiva (documentación o server) y aplicar el cambio en el lado que quedó desactualizado, para que `actual.md` describa exactamente las rutas que expone el backend.
-- **Criterio de éxito:** las rutas descritas en `BAC-10`/`BAC-11` en este documento son las mismas que responde el server; `FRN-09` se integra sin adivinar nombres de endpoint.
 
 
 
@@ -204,16 +183,7 @@ Estas tareas nacen de `documentacion/ANALISIS-READINESS.md`, que corrió las sui
 - **Entregable:** completar el modal de alta con selector de rol y `POST` real mostrando la contraseña temporal, y agregar la acción de edición que llame a `PUT /api/admin/users/{id}` y actualice la tabla.
 - **Criterio de éxito:** un administrador puede crear un usuario y ver su contraseña temporal, editar su rol y ver el cambio reflejado sin recargar manualmente la tabla.
 
-### `FIX-07` - El frontend lee `body.code` en vez de `errorCode`
 
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** ninguna.
-- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6, hallazgo H1):** el backend responde los errores con el campo `errorCode` (por ejemplo `AUTH_FAILED`), pero `api.js` intenta leer `body.code`, que no existe en la respuesta real.
-- **Entregable:** corregir `api.js` (y cualquier consumidor) para leer `errorCode` del cuerpo de la respuesta.
-- **Criterio de éxito:** los mensajes de error específicos del backend (por ejemplo credenciales inválidas o TOTP vencido) se muestran correctamente en la interfaz en vez de un error genérico.
 
 ### `FIX-08` - Restaurar protección de rutas y guards de sesión (`FRN-03` / `FRN-05`)
 
@@ -269,3 +239,56 @@ Estas tareas nacen de `documentacion/ANALISIS-READINESS.md`, que corrió las sui
 - **Depende de:** `BAC-06`, `BAC-08` y `BAC-11`.
 - **Entregable:** `POST /api/admin/users/{id}/reset-2fa`, restringido a administradores, que invalide el secreto TOTP, establezca `is_2fa_enabled: false` y revoque las sesiones activas del usuario afectado.
 - **Criterio de éxito:** un operador recibe `403 Forbidden`; tras el restablecimiento, los códigos del secreto anterior dejan de funcionar y el usuario debe repetir `BAC-10`, `BAC-11` y `FRN-09` en su siguiente acceso.
+
+
+### `BAC-16` - Entrega segura de credenciales temporales
+
+- **Área:** Backend / Infraestructura
+- **Asignados:** Lisandro y Nico
+- **Estimación:** 3 h
+- **Ventana propuesta:** 18/09/2026, 09:00-12:00
+- **Depende de:** `BAC-06`, `BAC-15` y de la configuración SMTP.
+- **Entregable:** integración SMTP o proveedor equivalente para enviar la contraseña temporal al crear o restablecer una cuenta, con secretos fuera del repositorio y sin registrar la contraseña en logs.
+- **Criterio de éxito:** el usuario recibe una única credencial temporal y el administrador obtiene un resultado controlado si el envío falla, sin exponer la clave en respuestas posteriores ni registros.
+
+### `BAC-19` - Solicitud de recuperación de contraseña (RF-13)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (posterior a `BAC-16`).
+- **Depende de:** `BAC-05` y `BAC-16` (servicio SMTP configurado).
+- **Entregable:** `POST /api/auth/password-recovery/request`, que valide el formato del correo, genere un código temporal de seis dígitos con expiración, invalide códigos previos de la misma cuenta y lo envíe por correo.
+- **Criterio de éxito:** solicitar un nuevo código invalida el anterior; el endpoint responde de forma genérica exista o no la cuenta, para no filtrar información de usuarios registrados.
+
+### `BAC-20` - Confirmación de recuperación de contraseña (RF-13)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (posterior a `BAC-19`).
+- **Depende de:** `BAC-19` y `BAC-17` (revocación de sesiones).
+- **Entregable:** `POST /api/auth/password-recovery/confirm`, que valide el código de seis dígitos y su expiración, actualice el hash de la nueva contraseña y revoque las sesiones activas de la cuenta.
+- **Criterio de éxito:** un código vencido o ya usado se rechaza; un código válido cambia la contraseña y cierra las sesiones anteriores.
+
+
+### `BAC-18` - Base transversal de auditoría (append-only)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 4 h
+- **Ventana propuesta:** A definir (junto con `BAC-05`).
+- **Depende de:** `BAC-05`.
+- **Entregable:** tabla `audit_logs` con columnas genéricas y reutilizables por cualquier etapa futura: `user_id`, `timestamp`, `accion`, `resource_type`, `resource_id`, `upid` (nullable, para cuando la acción dispare una tarea de Proxmox), `resultado` y `detalle` (JSON). La tabla debe crearse **append-only**: el rol de aplicación no debe tener permisos `UPDATE`/`DELETE` sobre ella (a nivel de motor de base de datos, no solo por convención de código). El servicio de auditoría se implementa como un middleware/interceptor central de la capa de servicios, no como llamadas sueltas repetidas en cada handler, para que la Etapa 1 (energía de instancias), la Etapa 2 (aprovisionamiento) y la Etapa 3 (snapshots) lo reutilicen sin tocar el esquema. En la fase base debe registrar, sin exponer secretos, la creación y eliminación de usuarios, los cambios de rol y de permisos por instancia, y los resets de contraseña y 2FA (`BAC-06`, `BAC-06B`, `BAC-07`, `BAC-13`, `BAC-15`).
+- **Criterio de éxito:** cada acción administrativa de la fase base queda registrada desde que ocurre; un intento de `UPDATE` o `DELETE` sobre `audit_logs` con las credenciales de la aplicación falla a nivel de base de datos; una acción nueva agregada en una etapa posterior (por ejemplo, `start` de una VM) se audita sin migrar la tabla. El endpoint de consulta con filtros y exportación queda fuera de esta tarea; corresponde a `RF-08` en la Etapa 3.
+
+### `BAC-21` - Contrato base del canal de eventos/notificaciones (RF-11)
+
+- **Área:** Backend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (junto con `BAC-18`).
+- **Depende de:** `BAC-05`.
+- **Entregable:** definición del esquema genérico de evento (`type`, `severity`, `resource_type`, `resource_id`, `message`, `timestamp`, `payload`) que va a viajar por el canal en tiempo real (WebSocket/SSE), sin implementar todavía el motor de alertas por umbral. El esquema debe ser lo bastante genérico como para que el poller de UPID de la Etapa 1 y el motor de alertas por saturación de la Etapa 3 lo reutilicen sin romper contrato con el frontend.
+- **Criterio de éxito:** existe un tipo o interfaz compartida (backend y frontend) para el evento, documentada, y tanto el equipo de Etapa 1 como el de Etapa 3 la referencian en sus tareas en lugar de definir formatos de evento propios.
+

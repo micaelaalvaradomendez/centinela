@@ -58,11 +58,25 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Área:** Backend / Frontend
 - **Asignados:** Cristian, Tayra y Lisandro
 - **Estimación:** 1 h
-- **Ventana propuesta:** A definir (posterior a `FIX-01` a `FIX-04`).
-- **Depende de:** `FIX-01`, `FIX-02`, `FIX-03` y `FIX-04`.
+- **Ventana propuesta:** A definir (posterior a `FIX-01`, `FIX-02` y `FIX-03`).
+- **Depende de:** `FIX-01`, `FIX-02` y `FIX-03`.
 - **Problema:** con el login roto por `FIX-01`, `BAC-06`, `BAC-06B`, `BAC-09`, `BAC-10`, `BAC-11` y `LOGIN-03` no se pudieron verificar de punta a punta, aunque figuren como cerradas en `terminado.md`.
 - **Entregable:** correr `test/back` completo contra el commit con los fixes aplicados y actualizar el estado real de cada tarea afectada en `terminado.md` (o devolverla a este documento si el criterio de éxito no se cumple).
 - **Criterio de éxito:** `test/back` no reporta ningún fallo de cascada originado en el login; cada tarea que figura en `terminado.md` tiene su criterio de éxito confirmado por la suite, no solo por inspección de código.
+
+### `FIX-02` - Desalineación de endpoints de asignación y consulta de permisos (`BAC-07`)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (prioritaria para hito de recursos).
+- **Depende de:** `BAC-05`, `BAC-06`.
+- **Problema (evidencia en `test/back/resource_access_acceptance_test.go`):** `actual.md` define como entregable de `BAC-07` las rutas `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions` con reemplazo atómico y sin duplicados. El backend actual expone `PUT /api/admin/users/:id/instances`, no expone el `GET` de permisos aislado y además permite persistir registros duplicados si el array de entrada repite VMIDs (ej. `[205, 205]`).
+- **Entregable:**
+  1. Renombrar o exponer el endpoint `PUT /api/admin/users/:id/permissions` (manteniendo compatibilidad o migrando `/instances`).
+  2. Implementar `GET /api/admin/users/:id/permissions` retornando el array de VMIDs asignados al usuario.
+  3. Asegurar deduplicación atómica en el servicio/repositorio para que nunca se persistan filas duplicadas en `permisos_instancia`.
+- **Criterio de éxito:** `PUT /api/admin/users/:id/permissions` actualiza atómicamente; `GET /api/admin/users/:id/permissions` retorna los permisos del usuario; enviar VMIDs duplicados persiste exactamente 1 fila por par `(usuario_id, vmid)`; `resource_access_acceptance_test.go` pasa para `BAC-07`.
 
 
 
@@ -272,7 +286,7 @@ Este bloque formaliza la seguridad completa (Fase 2) y cierra el hito integral `
 #### 1. Tareas de desarrollo paralelo
 
 * **Backend:**
-* `BAC-10` y `BAC-11` — Enrolamiento 2FA, QR (`GET /api/auth/2fa/setup`) y persistencia del secreto cifrado con AES-256 (`POST /api/auth/2fa/enable`).
+* `BAC-10` y `BAC-11` — Enrolamiento 2FA, QR (`GET /api/auth/2fa/qr`) y persistencia del secreto cifrado con AES-256 (`POST /api/auth/2fa/verify`).
 
 
 * `BAC-12` — Cambio obligatorio de contraseña temporal (`POST /api/auth/change-password`).

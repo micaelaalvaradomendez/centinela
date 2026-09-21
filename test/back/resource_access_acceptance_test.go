@@ -10,8 +10,12 @@ import (
 func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 	requireIntegration(t)
 
-	adminToken := signedAccessToken(t, "admin-test-id", "ADMIN", "org-test-id")
-	operatorToken := signedAccessToken(t, "operator-test-id", "OPERATOR", "org-test-id")
+	orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
+	if orgID == "" {
+		orgID = "org-test-id"
+	}
+	adminToken := signedAccessToken(t, "admin-test-id", "ADMIN", orgID)
+	operatorToken := signedAccessToken(t, "operator-test-id", "OPERATOR", orgID)
 
 	t.Run("BAC-07 expone GET y PUT /api/admin/users/:id/permissions con actualizacion atomica y sin duplicados", func(t *testing.T) {
 		// Crear usuario de prueba para asignarle permisos

@@ -197,3 +197,14 @@
 - Depende de: FRN-05, FRN-06 y BAC-06B
 - Entregable: Formulario precargado con los datos del usuario seleccionado para modificar su información básica y cambiar su rol mediante un desplegable.  
 - Criterio de éxito: Al confirmar la edición, se llama a PUT /api/admin/users/{id}, se actualiza la tabla y se muestra una alerta visual (toast) de éxito.  
+
+### `FIX-07` - El frontend lee `body.code` en vez de `errorCode`
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** ninguna.
+- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6, hallazgo H1):** el backend responde los errores con el campo `errorCode` (por ejemplo `AUTH_FAILED`), pero `api.js` intenta leer `body.code`, que no existe en la respuesta real.
+- **Entregable:** corregir `api.js` (y cualquier consumidor) para leer `errorCode` del cuerpo de la respuesta.
+- **Criterio de éxito:** los mensajes de error específicos del backend (por ejemplo credenciales inválidas o TOTP vencido) se muestran correctamente en la interfaz en vez de un error genérico.
