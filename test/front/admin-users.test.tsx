@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
@@ -17,7 +17,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 // Siembra una sesión válida antes de navegar.
 function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
-  window.localStorage.setItem('centinela_access', 'access-token');
+  window.sessionStorage.setItem('centinela_access', 'access-token');
   window.localStorage.setItem('centinela_user', JSON.stringify({
     id: 'user-1',
     organizacionId: 'org-1',
@@ -40,8 +40,11 @@ afterEach(() => {
 // para dar por cumplidos los criterios de éxito de actual.md.
 describe('FRN-05 - panel de gestión de usuarios', () => {
   it('un usuario con rol OPERATOR no debe poder ver el panel de administración', async () => {
-    renderAppAs('OPERATOR', '/users');
-    await screen.findByText(/./);
+    const router = renderAppAs('OPERATOR', '/users');
+
+    // El guard administrativo debe sacar al OPERATOR de /users y devolverlo al dashboard.
+    await waitFor(() => expect(router.state.location.pathname).not.toBe('/users'));
+    expect(router.state.location.pathname).toBe('/dashboard');
     expect(screen.queryByRole('heading', { name: 'Gestión de usuarios' })).not.toBeInTheDocument();
   });
 
@@ -66,7 +69,9 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
 
     renderAppAs('ADMIN', '/users');
 
-    expect(await screen.findByText('Ada Lovelace')).toBeVisible();
+    // El panel de detalle lateral muestra el mismo usuario; se verifica la fila de la tabla.
+    const table = await screen.findByRole('table');
+    expect(await within(table).findByText('Ada Lovelace')).toBeVisible();
   });
 });
 
@@ -206,7 +211,7 @@ describe('FRN-07 - selector de asignación de instancias', () => {
 
 describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
   it('envía el JWT Bearer en las peticiones y no borra la sesión ante un 403', async () => {
-    window.localStorage.setItem('centinela_access', 'bearer-token-123');
+    window.sessionStorage.setItem('centinela_access', 'bearer-token-123');
     window.localStorage.setItem('centinela_user', JSON.stringify({ id: 'u1', rol: 'OPERATOR' }));
 
     const fetchMock = vi.fn().mockResolvedValue(new Response(
@@ -217,7 +222,7 @@ describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
 
     renderAppAs('OPERATOR', '/dashboard');
 
-    expect(window.localStorage.getItem('centinela_access')).toBe('bearer-token-123');
+    expect(window.sessionStorage.getItem('centinela_access')).toBe('bearer-token-123');
   });
 
   it('mantiene al usuario en la vista protegida sin forzar logout ante un 403', async () => {
