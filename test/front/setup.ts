@@ -9,4 +9,5 @@ if (!document.elementFromPoint) {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });

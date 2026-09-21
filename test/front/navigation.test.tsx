@@ -17,7 +17,7 @@ const storedUser = {
 
 function renderApplication(path: string, authenticated: boolean) {
   if (authenticated) {
-    window.localStorage.setItem('centinela_access', 'access-token');
+    window.sessionStorage.setItem('centinela_access', 'access-token');
     window.localStorage.setItem('centinela_user', JSON.stringify(storedUser));
   }
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
