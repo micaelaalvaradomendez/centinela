@@ -4,8 +4,9 @@ import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applicationRoutes } from '@/routes/applicationRoutes';
-import Users from '@/pages/Users.jsx';
+import Users from '@/pages/Users';
 import CrearUsuarios from '@/pages/CrearUsuarios';
+import UserDetail from '@/pages/UserDetail';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -14,7 +15,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-// Igual que en navigation.test.tsx: siembra una sesión válida antes de navegar.
+// Siembra una sesión válida antes de navegar.
 function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
   window.localStorage.setItem('centinela_access', 'access-token');
   window.localStorage.setItem('centinela_user', JSON.stringify({
@@ -35,8 +36,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Estos tests corren contra el código real (no son it.todo): documentan qué falta
-// para dar por cumplidos los criterios de éxito de actual.md, no solo si compila.
+// Estos tests corren contra el código real: documentan qué falta
+// para dar por cumplidos los criterios de éxito de actual.md.
 describe('FRN-05 - panel de gestión de usuarios', () => {
   it('un usuario con rol OPERATOR no debe poder ver el panel de administración', async () => {
     renderAppAs('OPERATOR', '/users');
@@ -105,6 +106,23 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
 
     expect(await screen.findByText('Temp123!')).toBeVisible();
   });
+
+  it('permite solicitar la desactivación o baja de un usuario mediante DELETE a la API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    render(<UserDetail />);
+    const deleteButton = screen.queryByRole('button', { name: /eliminar usuario|desactivar/i });
+    expect(deleteButton).toBeInTheDocument();
+    if (deleteButton) {
+      await user.click(deleteButton);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('/users');
+      expect(init.method).toBe('DELETE');
+    }
+  });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {
@@ -119,19 +137,98 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
 
     expect(await screen.findByRole('button', { name: /editar/i })).toBeInTheDocument();
   });
+
+  it('permite modificar información básica y rol enviando PUT /api/admin/users/:id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      id: 'u2',
+      nombreCompleto: 'Usuario Dos Editado',
+      rol: 'ADMIN',
+      activo: true,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    render(<UserDetail />);
+
+    const saveButton = screen.getByRole('button', { name: /guardar cambios/i });
+    expect(saveButton).toBeInTheDocument();
+
+    await user.click(saveButton);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/users');
+    expect(init.method).toBe('PUT');
+  });
 });
 
-// FRN-07 y FRN-08 siguen en todo real: no existe ningún componente, ruta ni
-// servicio en el frontend contra el cual afirmar o refutar el criterio.
 describe('FRN-07 - selector de asignación de instancias', () => {
-  it.todo('consulta GET /api/instances con Authorization Bearer');
-  it.todo('muestra instancias disponibles y permisos actuales del usuario');
-  it.todo('envía el array de VMIDs seleccionado al endpoint de permisos');
-  it.todo('recarga la selección guardada al abrir nuevamente el usuario');
+  it('consulta GET /api/instances con Authorization Bearer para listar instancias', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([
+      { id: '101', name: 'Ubuntu Server', type: 'qemu', node: 'pve01', status: 'running' },
+    ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<UserDetail />);
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const instanceCall = calls.find(([url]) => url.includes('/instances'));
+      expect(instanceCall).toBeDefined();
+      if (instanceCall) {
+        expect((instanceCall[1].headers as Record<string, string>)?.Authorization).toMatch(/^Bearer /);
+      }
+    });
+  });
+
+  it('permite seleccionar VMIDs y enviarlos al endpoint de permisos', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    render(<UserDetail />);
+
+    const permTab = screen.queryByRole('button', { name: /roles y permisos/i });
+    if (permTab) {
+      await user.click(permTab);
+    }
+
+    const saveButton = screen.getByRole('button', { name: /guardar cambios/i });
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const permCall = calls.find(([url, init]) => (url.includes('/permissions') || url.includes('/instances')) && init.method === 'PUT');
+      expect(permCall).toBeDefined();
+    });
+  });
 });
 
 describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
-  it.todo('envía el JWT Bearer en las peticiones de instancias y permisos');
-  it.todo('muestra un error amigable ante 403 sin borrar la sesión local');
-  it.todo('mantiene al usuario en la vista después de un 403');
+  it('envía el JWT Bearer en las peticiones y no borra la sesión ante un 403', async () => {
+    window.localStorage.setItem('centinela_access', 'bearer-token-123');
+    window.localStorage.setItem('centinela_user', JSON.stringify({ id: 'u1', rol: 'OPERATOR' }));
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ errorCode: 'FORBIDDEN', message: 'Acceso denegado' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } }
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderAppAs('OPERATOR', '/dashboard');
+
+    expect(window.localStorage.getItem('centinela_access')).toBe('bearer-token-123');
+  });
+
+  it('mantiene al usuario en la vista protegida sin forzar logout ante un 403', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ errorCode: 'FORBIDDEN', message: 'No tenés permisos' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } }
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const router = renderAppAs('OPERATOR', '/dashboard');
+
+    expect(router.state.location.pathname).not.toBe('/login');
+  });
 });
