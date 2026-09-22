@@ -113,20 +113,34 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
   });
 
   it('permite solicitar la desactivación o baja de un usuario mediante DELETE a la API', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    // El componente ahora carga primero el usuario real; el DELETE se dispara después.
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'u2',
+        nombreCompleto: 'Usuario Dos',
+        nombreUsuario: 'usuario2',
+        emailUsuario: 'usuario2@propex.local',
+        rol: 'OPERATOR',
+        activo: true,
+      }));
+    });
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     render(<UserDetail />);
-    const deleteButton = screen.queryByRole('button', { name: /eliminar usuario|desactivar/i });
-    expect(deleteButton).toBeInTheDocument();
-    if (deleteButton) {
-      await user.click(deleteButton);
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(url).toContain('/users');
-      expect(init.method).toBe('DELETE');
-    }
+    const deleteButton = screen.getByRole('button', { name: /eliminar usuario|desactivar/i });
+    await waitFor(() => expect(deleteButton).toBeEnabled());
+    await user.click(deleteButton);
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const deleteCall = calls.find(([, init]) => init.method === 'DELETE');
+      expect(deleteCall).toBeDefined();
+      expect(deleteCall?.[0]).toContain('/users');
+    });
   });
 });
 
@@ -144,26 +158,40 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
   });
 
   it('permite modificar información básica y rol enviando PUT /api/admin/users/:id', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      id: 'u2',
-      nombreCompleto: 'Usuario Dos Editado',
-      rol: 'ADMIN',
-      activo: true,
-    }));
+    // El GET inicial carga el usuario real; el PUT recién después.
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return Promise.resolve(jsonResponse({
+          id: 'u2',
+          nombreCompleto: 'Usuario Dos Editado',
+          rol: 'ADMIN',
+          activo: true,
+        }));
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'u2',
+        nombreCompleto: 'Usuario Dos',
+        nombreUsuario: 'usuario2',
+        emailUsuario: 'usuario2@propex.local',
+        rol: 'OPERATOR',
+        activo: true,
+      }));
+    });
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     render(<UserDetail />);
 
     const saveButton = screen.getByRole('button', { name: /guardar cambios/i });
-    expect(saveButton).toBeInTheDocument();
-
+    await waitFor(() => expect(saveButton).toBeEnabled());
     await user.click(saveButton);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/users');
-    expect(init.method).toBe('PUT');
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const putCall = calls.find(([, init]) => init.method === 'PUT');
+      expect(putCall).toBeDefined();
+      expect(putCall?.[0]).toContain('/users');
+    });
   });
 });
 
