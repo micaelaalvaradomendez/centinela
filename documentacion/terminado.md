@@ -428,3 +428,25 @@
 - **Depende de:** `FRN-05`, `BAC-07` y `BAC-14`.
 - **Entregable:** selector con instancias reales obtenidas de `GET /api/instances`, instancias asignadas y botón que envíe el array de IDs a `PUT /api/admin/users/{id}/permissions`.
 - **Criterio de éxito:** el administrador puede guardar una matriz de permisos y verla nuevamente al abrir el usuario.
+
+### `FIX-12` - Falta guard de rol administrativo en rutas de gestión de usuarios (`FRN-05`)
+
+- **Área:** Frontend
+- **Asignada:** Belinda / Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir (alta prioridad).
+- **Depende de:** `FIX-08`.
+- **Problema:** las rutas administrativas `/users`, `/users/new` y `/users/:userId` deben verificar el rol del usuario autenticado, no solamente la existencia de un JWT. Sin este guard, un usuario `OPERATOR` puede acceder al panel de administración, incumpliendo `RF-09` y el criterio de éxito de `FRN-05`.
+- **Entregable:** enlazar `loadAdminSession` a las rutas administrativas o agruparlas bajo un layout con dicho guard.
+- **Criterio de éxito:** un usuario `OPERATOR` que navega a `/users` es redirigido a `/dashboard`; un usuario `ADMIN` puede acceder normalmente al panel.
+
+### `FIX-13` - Desalineación de endpoints y PR pendiente en recuperación de contraseñas (`BAC-19` / `BAC-20`)
+
+- **Área:** Backend
+- **Asignados:** Lisandro y Tayra
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** la rama o implementación que contenga el flujo de recuperación.
+- **Problema:** el informe histórico registró endpoints de recuperación ausentes o con rutas diferentes a las definidas en el contrato, lo que provocaba respuestas `404` y requería integrar la implementación correcta en `main`.
+- **Entregable:** confirmar en `main` las rutas oficiales de recuperación, alinear handlers, documentación Swagger y pruebas, y eliminar alias o rutas obsoletas que generen ambigüedad.
+- **Criterio de éxito:** las rutas documentadas para solicitar y confirmar la recuperación responden según contrato en `main`, y las pruebas de `BAC-19` y `BAC-20` pasan sin depender de una rama remota no integrada.
