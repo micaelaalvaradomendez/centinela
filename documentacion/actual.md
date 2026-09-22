@@ -156,3 +156,48 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Aplicar el middleware `RequireInstanceAccess(instanceRepo, "vmid")` en las operaciones por recurso (`GET /instances/:vmid`, `POST /instances/:vmid/start`, etc.).
   3. Asegurar que las solicitudes de operadores sobre VMIDs no autorizados sean interceptadas tempranamente con código `403 Forbidden` y `{ "errorCode": "INSTANCE_ACCESS_DENIED" }`, abortando la cadena antes de invocar cualquier llamada hacia Proxmox VE.
 - **Criterio de éxito:** un operador que intente acceder a un VMID no asignado recibe `403 Forbidden` con `INSTANCE_ACCESS_DENIED`; la aserción de `BAC-08_rechaza_instancia_no_asignada_con_403_sin_llamar_a_Proxmox` en `resource_access_acceptance_test.go` pasa al 100%.
+
+### `SEC-03` - Contexto y sistema reactivo de permisos en Frontend (UI/UX RBAC + Resources)
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 2,5 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 2).
+- **Depende de:** `FRN-04`, `BAC-07` y `BAC-09`.
+- **Problema:** En el frontend actual, el control de roles y permisos está disperso y acoplado únicamente a los loaders de rutas (`loadAdminSession`). No existe un mecanismo reactivo a nivel de componentes (`usePermissions` / `PermissionGate`) para ocultar o deshabilitar condicionalmente acciones según el rol (`ADMIN` vs `OPERATOR`) o según las instancias asignadas al operador. Esto genera que en vistas como `UserDetail.tsx` o `Header.tsx` se muestren controles estáticos o se dependa de que el backend rechace con 403, en lugar de ofrecer una experiencia fluida y consistente.
+- **Entregable:**
+  1. Crear un hook y contexto `usePermissions()` / `useAuthUser()` en `frontend/centinela/src/context/` que exponga helpers como `isAdmin`, `isOperator`, `canAccessInstance(vmid: number)` y `hasRole(role: string)`.
+  2. Crear un componente wrapper `<PermissionGate requiredRole="ADMIN" fallback={...}>` para condicionar la renderización de botones y secciones administrativas (ej: botón "Eliminar usuario", accesos a auditoría, etc.).
+  3. Integrar la reactividad en el menú de navegación y en el header para que las opciones no permitidas a un operador no aparezcan en la interfaz.
+- **Criterio de éxito:** Si un operador inicia sesión, la interfaz no muestra accesos directos ni botones exclusivos de administrador; si intenta interactuar con un componente restringido, el helper `canAccessInstance` evalúa en memoria las instancias permitidas cargadas en la sesión; las pruebas unitarias de componentes verifican el render condicional.
+
+### `SEC-04` - Esquema extensible de niveles de acceso a recursos en Backend y Modelo de Datos
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 2).
+- **Depende de:** `BAC-05`, `BAC-07` y `BAC-08`.
+- **Problema:** La tabla `permisos_instancia` solo almacena `(usuario_id, vmid_proxmox)` como una relación binaria (asignado o no asignado). Sin embargo, en el documento de diseño `Diseño de endpoints para front.md` y en las siguientes etapas (Etapa 1 Ciclo de vida y Etapa 3 Snapshots) se proyectan niveles de acceso sobre las instancias (por ejemplo `FULL_ACCESS` para operar energía/snapshots vs `READ_ONLY` para monitoreo de métricas sin emitir órdenes destructivas). Si no se sienta esta base en el esquema y en el guard ahora, agregar niveles de acceso en la Etapa 1 requerirá migrar tablas en producción y alterar contratos.
+- **Entregable:**
+  1. Agregar en `domain.PermisoInstancia` la columna `nivel_acceso` (VARCHAR(30) default `'FULL_ACCESS'`) con restricción CHECK o enum para los valores `FULL_ACCESS` y `READ_ONLY`.
+  2. Actualizar el puerto `InstanceRepository.VerificarAcceso` para aceptar opcionalmente el nivel de acceso requerido (`requiredLevel: string`).
+  3. Extender el middleware `RequireInstanceAccess(repo, paramName, requiredLevel)` para permitir guards como `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")` en endpoints mutantes (`POST /instances/:vmid/start`, `POST /instances/:vmid/stop`) y tolerar `READ_ONLY` en consultas (`GET /instances/:vmid`).
+  4. Mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto.
+- **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
+
+### `FRN-14` - Suite de pruebas unitarias y de integración para la vista de Auditoría (`Auditoria.tsx`)
+
+- **Área:** Frontend
+- **Asignada:** Belinda / Luz
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (Fase Base / Cierre de Auditoría).
+- **Depende de:** `BAC-18` y `FRN-03`.
+- **Problema:** El backend ya tiene verificada la auditoría append-only y la exportación CSV (`BAC-18` en `password_recovery_acceptance_test.go`), y el frontend tiene maquetado [frontend/centinela/src/pages/Auditoria.tsx](frontend/centinela/src/pages/Auditoria.tsx), pero **no existe ninguna prueba automatizada en `test/front`** que valide que la tabla cargue correctamente los registros de `/admin/audit`, que los filtros (por acción, resultado y fechas) envíen los query params correctos y que el botón de exportación descargue el archivo CSV.
+- **Entregable:**
+  1. Crear la suite `test/front/audit.test.tsx`.
+  2. Testear que la vista realiza la petición `GET /api/admin/audit?pagina=1&tamano=10` con cabecera `Authorization: Bearer`.
+  3. Testear que la interacción con los filtros reactivos y la paginación actualiza los query parameters.
+  4. Testear que el botón "Exportar CSV" dispara la llamada a `/api/admin/audit/export?formato=csv`.
+  5. Testear que si un operador entra a la ruta `/auditoria`, el guard lo redirige a `/dashboard`.
+- **Criterio de éxito:** `npm test` en `test/front` ejecuta y aprueba los casos de prueba de `audit.test.tsx`, garantizando que la auditoría administrativa esté verificada de punta a punta.

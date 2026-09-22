@@ -20,19 +20,6 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 
 ## Fase 0. Cierre del prototipo de login
 
-### `FIX-08` - Auditoría del contrato de códigos de error
-
-- **Área:** Frontend / Backend
-- **Asignados:** Cristian y Lisandro
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** ninguna.
-- **Problema:** el backend y el frontend deben compartir una lista única de valores `errorCode`; el informe de pruebas registró una posible desalineación entre los códigos emitidos y los mensajes manejados por el cliente.
-- **Entregable:** inventario de todos los `errorCode` emitidos por el backend, su estado HTTP y su manejo explícito en frontend. Corregir las diferencias verificadas y documentar los códigos que deliberadamente usan mensaje genérico.
-- **Criterio de éxito:** cada código del contrato tiene una respuesta y un mensaje de frontend verificables, sin depender de nombres históricos como `body.code`.
-
-
-
 
 
 ## Fase 2. Cierre de autenticación y asignación de máquinas

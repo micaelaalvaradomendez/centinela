@@ -36,7 +36,11 @@ func TestMain(m *testing.M) {
 
 	_, _ = runCompose("down", "--volumes", "--remove-orphans")
 	if output, err := runCompose("up", "--build", "--detach", "--wait"); err != nil {
-		setupErr = fmt.Errorf("no se pudo iniciar el entorno: %w\n%s", err, output)
+		// En Docker, a veces el contenedor backend arranca en el milisegundo en que PostgreSQL reinicia tras init.sql.
+		time.Sleep(2 * time.Second)
+		if output2, err2 := runCompose("up", "--detach", "--wait"); err2 != nil {
+			setupErr = fmt.Errorf("no se pudo iniciar el entorno: %w\n%s\nReintento:\n%s", err, output, output2)
+		}
 	}
 
 	code := m.Run()
