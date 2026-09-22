@@ -1,6 +1,7 @@
 package back_test
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -12,10 +13,19 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 
 	orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
 	if orgID == "" {
-		orgID = "org-test-id"
+		orgID = "00000000-0000-0000-0000-000000000001"
 	}
-	adminToken := signedAccessToken(t, "admin-test-id", "ADMIN", orgID)
-	operatorToken := signedAccessToken(t, "operator-test-id", "OPERATOR", orgID)
+	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
+	operatorID := queryDatabase(t, "SELECT id FROM usuarios WHERE rol = 'OPERATOR' LIMIT 1;")
+	if operatorID == "" {
+		queryDatabase(t, fmt.Sprintf(
+			"INSERT INTO usuarios (id, organizacion_id, nombre_completo, nombre_usuario, email_usuario, contrasena_hash, rol, activo, cambio_contrasena, totp_vinculado, fecha_creacion) VALUES (uuid_generate_v7(), '%s', 'Operador Recursos', 'op_resource', 'operator.resource@elcentinela.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'OPERATOR', true, false, true, NOW());",
+			orgID,
+		))
+		operatorID = queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'operator.resource@elcentinela.com' LIMIT 1;")
+	}
+	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
+	operatorToken := signedAccessToken(t, operatorID, "OPERATOR", orgID)
 
 	t.Run("BAC-07 expone GET y PUT /api/admin/users/:id/permissions con actualizacion atomica y sin duplicados", func(t *testing.T) {
 		// Crear usuario de prueba para asignarle permisos

@@ -16,6 +16,7 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **RF-13 (recuperación de contraseña por el propio usuario) se suma a la fase base**, para no dejar el flujo de recuperación cubierto solo con el reset administrativo (`BAC-15`).
 - **La auditoría (RF-08) es una base transversal, no una tarea aislada de la Etapa 3.** Desde `BAC-18` la tabla `audit_logs` debe diseñarse como append-only (sin `UPDATE`/`DELETE` habilitados para la aplicación) y con columnas genéricas (`resource_type`, `resource_id`, `upid` nullable) para que la Etapa 1 (energía de instancias), la Etapa 2 (aprovisionamiento) y la Etapa 3 (snapshots) reutilicen la misma tabla sin migrar el esquema ni reconstruir historial. Toda tarea que agregue una acción auditable en cualquier etapa debe registrar contra esta tabla, no crear una paralela.
 - **El contrato del canal de eventos/notificaciones (base de RF-11) se define en la fase base**, aunque el motor de alertas completo se construya recién en la Etapa 3, para que el poller de UPID de la Etapa 1 y las alertas de saturación de la Etapa 3 compartan el mismo esquema de evento desde el principio (ver `BAC-21`).
+- **Servidor SMTP real descartado:** La integración con un proveedor SMTP real queda formalmente descartada del alcance. La entrega de correos y credenciales temporales queda resuelta de forma definitiva y completa mediante `MockEmailService` por consola a través del puerto `EmailService` (`BAC-16`), cumpliendo con mínimos privilegios (Zero-Trust), logs sanitizados y control estructurado de fallos sin dependencias de infraestructura externa.
 
 ## Fase 0. Cierre del prototipo de login
 
@@ -52,94 +53,65 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Problema (evidencia en `ANALISIS-READINESS.md`, sección 5):** `navigation.test.tsx` escribe el token en `localStorage`, pero la app lo lee de `sessionStorage` (`src/storage/tokenStorage.ts`) desde el commit `432d747`. El producto funciona; el test quedó desactualizado y falla.
 - **Entregable:** actualizar `navigation.test.tsx` para que escriba el token en `sessionStorage`.
 - **Criterio de éxito:** `FRN-03` pasa en `test/front` sin tocar el código de producto.
+- **Propuesta de mejora de seguridad:** Se implementó el almacenamiento de los JWT mediante `sessionStorage`. Como mejora de seguridad, se sugiere evaluar el uso de cookies `HttpOnly`, principalmente para el `refreshToken`, ya que evita que JavaScript pueda acceder directamente a este token y reduce su exposición ante ataques XSS. Esto requeriría adaptar el manejo del refresh en el backend (ver `siguientesetapas.md`).
 
 ### `FIX-11` - Re-verificación completa tras el fix crítico
 
 - **Área:** Backend / Frontend
 - **Asignados:** Cristian, Tayra y Lisandro
 - **Estimación:** 1 h
-- **Ventana propuesta:** A definir (posterior a `FIX-01`, `FIX-02` y `FIX-03`).
-- **Depende de:** `FIX-01`, `FIX-02` y `FIX-03`.
+- **Ventana propuesta:** A definir (posterior a `FIX-01` y `FIX-03`).
+- **Depende de:** `FIX-01` y `FIX-03`.
 - **Problema:** con el login roto por `FIX-01`, `BAC-06`, `BAC-06B`, `BAC-09`, `BAC-10`, `BAC-11` y `LOGIN-03` no se pudieron verificar de punta a punta, aunque figuren como cerradas en `terminado.md`.
 - **Entregable:** correr `test/back` completo contra el commit con los fixes aplicados y actualizar el estado real de cada tarea afectada en `terminado.md` (o devolverla a este documento si el criterio de éxito no se cumple).
 - **Criterio de éxito:** `test/back` no reporta ningún fallo de cascada originado en el login; cada tarea que figura en `terminado.md` tiene su criterio de éxito confirmado por la suite, no solo por inspección de código.
 
-### `FIX-02` - Desalineación de endpoints de asignación y consulta de permisos (`BAC-07`)
+### `FIX-12` - Falta guard de rol administrativo en rutas de gestión de usuarios (`FRN-05`)
+
+- **Área:** Frontend
+- **Asignada:** Belinda / Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir (alta prioridad).
+- **Depende de:** `FIX-08`.
+- **Problema (evidencia en `test/front/admin-users.test.tsx`):** en `applicationRoutes.tsx`, las rutas administrativas `/users`, `/users/new` y `/users/:userId` solo cuentan con `loader: loadProtectedSession` (que comprueba que exista token JWT), pero no verifican el rol del usuario autenticado. Esto permite que un usuario con rol `OPERATOR` ingrese al panel de administración de usuarios en lugar de ser redirigido a `/dashboard`, incumpliendo el requerimiento `RF-09` y el criterio de éxito de `FRN-05` ("el administrador ve el listado real y un operador no puede acceder a la vista"). El guard requerido (`loadAdminSession`) ya existe en `sessionGuard.ts`, pero no está enlazado a las rutas.
+- **Entregable:**
+  1. Importar `loadAdminSession` en `src/routes/applicationRoutes.tsx`.
+  2. Asignar `loader: loadAdminSession` a las rutas `/users`, `/users/new` y `/users/:userId` (o agruparlas bajo un layout/sub-ruta administrativa con dicho guard).
+- **Criterio de éxito:** un usuario con rol `OPERATOR` que navega hacia `/users` es redirigido inmediatamente a `/dashboard`; la prueba `un usuario con rol OPERATOR no debe poder ver el panel de administración` de `test/front/admin-users.test.tsx` pasa exitosamente.
+
+### `FIX-13` - Desalineación de endpoints y PR pendiente en recuperación de contraseñas (`BAC-19` / `BAC-20`)
 
 - **Área:** Backend
-- **Asignado:** Lisandro / Tayra
+- **Asignados:** Lisandro y Tayra
 - **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir (prioritaria para hito de recursos).
-- **Depende de:** `BAC-05`, `BAC-06`.
-- **Problema (evidencia en `test/back/resource_access_acceptance_test.go`):** `actual.md` define como entregable de `BAC-07` las rutas `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions` con reemplazo atómico y sin duplicados. El backend actual expone `PUT /api/admin/users/:id/instances`, no expone el `GET` de permisos aislado y además permite persistir registros duplicados si el array de entrada repite VMIDs (ej. `[205, 205]`).
+- **Ventana propuesta:** A definir (alta prioridad).
+- **Depende de:** rama remota `origin/feat/gestion-credenciales`.
+- **Problema (evidencia en `test/back/password_recovery_acceptance_test.go`):** los endpoints de recuperación de contraseña devuelven `404 page not found`. La auditoría técnica del repositorio reveló que el código fue implementado en la rama remota `origin/feat/gestion-credenciales`, pero nunca fue integrado a `main` vía Pull Request. Además, en dicha rama los endpoints se nombraron de forma inconsistente con la especificación de `RF-13` y `actual.md` (`/api/auth/password/forgot` y `/api/auth/password/reset` en lugar de `/api/auth/password-recovery/request` y `/api/auth/password-recovery/confirm`).
 - **Entregable:**
-  1. Renombrar o exponer el endpoint `PUT /api/admin/users/:id/permissions` (manteniendo compatibilidad o migrando `/instances`).
-  2. Implementar `GET /api/admin/users/:id/permissions` retornando el array de VMIDs asignados al usuario.
-  3. Asegurar deduplicación atómica en el servicio/repositorio para que nunca se persistan filas duplicadas en `permisos_instancia`.
-- **Criterio de éxito:** `PUT /api/admin/users/:id/permissions` actualiza atómicamente; `GET /api/admin/users/:id/permissions` retorna los permisos del usuario; enviar VMIDs duplicados persiste exactamente 1 fila por par `(usuario_id, vmid)`; `resource_access_acceptance_test.go` pasa para `BAC-07`.
+  1. Alinear en la rama `feat/gestion-credenciales` los paths de los endpoints al contrato oficial de `actual.md` (`POST /api/auth/password-recovery/request` y `POST /api/auth/password-recovery/confirm`), o bien exponer alias de compatibilidad en `main.go`.
+  2. Abrir PR de `origin/feat/gestion-credenciales` a `main`, validar que no rompa regresiones e integrarlo.
+- **Criterio de éxito:** las peticiones a `POST /api/auth/password-recovery/request` y `POST /api/auth/password-recovery/confirm` responden según contrato; las pruebas de `password_recovery_acceptance_test.go` pasan en verde sobre `main`.
 
+### `FIX-15` - Implementación de cookies HttpOnly para refreshToken (Mitigación XSS)
 
+- **Área:** Frontend / Backend
+- **Asignados:** Cristian y Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FIX-10`.
+- **Problema / Propuesta:** Se implementó el almacenamiento de los JWT mediante `sessionStorage`. Como mejora de seguridad, se debe evaluar e implementar el uso de cookies `HttpOnly`, principalmente para el `refreshToken`, ya que evita que JavaScript pueda acceder directamente a este token y reduce su exposición ante ataques XSS. Esto requeriría adaptar el manejo del refresh en el backend.
+- **Entregable:**
+  1. Backend: configurar `/api/auth/refresh` y login para emitir el `refreshToken` mediante cookie `Set-Cookie` con flags `HttpOnly`, `Secure` y `SameSite=Strict`, y consumirlo desde la cookie en lugar de body JSON.
+  2. Frontend: adaptar el interceptor HTTP y cliente de autenticación para enviar credenciales automáticamente (`credentials: 'include'`) sin almacenar `refreshToken` en memoria/storage accesible por JS.
+- **Criterio de éxito:** el `refreshToken` no es accesible desde JavaScript en el cliente; las peticiones de renovación de sesión son transparentes y seguras mediante la cookie HttpOnly.
 
 ## Fase 2. Cierre de autenticación y asignación de máquinas
 
-
+*(Nota de alcance: `BAC-16` se encuentra finalizada y validada en `terminado.md` con `MockEmailService`; la integración con un servidor SMTP real quedó formalmente descartada).*
 
 ---
 
-
-### `BAC-16` - Entrega segura de credenciales temporales
-
-- **Área:** Backend / Infraestructura
-- **Asignados:** Lisandro y Nico
-- **Estimación:** 3 h
-- **Ventana propuesta:** 18/09/2026, 09:00-12:00
-- **Depende de:** `BAC-06`, `BAC-15` y de la configuración SMTP.
-- **Entregable:** integración SMTP o proveedor equivalente para enviar la contraseña temporal al crear o restablecer una cuenta, con secretos fuera del repositorio y sin registrar la contraseña en logs.
-- **Criterio de éxito:** el usuario recibe una única credencial temporal y el administrador obtiene un resultado controlado si el envío falla, sin exponer la clave en respuestas posteriores ni registros.
-
-
-
-
-
-### `BAC-18` - Base transversal de auditoría (append-only)
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 4 h
-- **Ventana propuesta:** A definir (junto con `BAC-05`).
-- **Depende de:** `BAC-05`.
-- **Entregable:** tabla `audit_logs` con columnas genéricas y reutilizables por cualquier etapa futura: `user_id`, `timestamp`, `accion`, `resource_type`, `resource_id`, `upid` (nullable, para cuando la acción dispare una tarea de Proxmox), `resultado` y `detalle` (JSON). La tabla debe crearse **append-only**: el rol de aplicación no debe tener permisos `UPDATE`/`DELETE` sobre ella (a nivel de motor de base de datos, no solo por convención de código). El servicio de auditoría se implementa como un middleware/interceptor central de la capa de servicios, no como llamadas sueltas repetidas en cada handler, para que la Etapa 1 (energía de instancias), la Etapa 2 (aprovisionamiento) y la Etapa 3 (snapshots) lo reutilicen sin tocar el esquema. En la fase base debe registrar, sin exponer secretos, la creación y eliminación de usuarios, los cambios de rol y de permisos por instancia, y los resets de contraseña y 2FA (`BAC-06`, `BAC-06B`, `BAC-07`, `BAC-13`, `BAC-15`).
-- **Criterio de éxito:** cada acción administrativa de la fase base queda registrada desde que ocurre; un intento de `UPDATE` o `DELETE` sobre `audit_logs` con las credenciales de la aplicación falla a nivel de base de datos; una acción nueva agregada en una etapa posterior (por ejemplo, `start` de una VM) se audita sin migrar la tabla. El endpoint de consulta con filtros y exportación queda fuera de esta tarea; corresponde a `RF-08` en la Etapa 3.
-
-### `BAC-21` - Contrato base del canal de eventos/notificaciones (RF-11)
-
-- **Área:** Backend
-- **Asignados:** Tayra y Lisandro
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (junto con `BAC-18`).
-- **Depende de:** `BAC-05`.
-- **Entregable:** definición del esquema genérico de evento (`type`, `severity`, `resource_type`, `resource_id`, `message`, `timestamp`, `payload`) que va a viajar por el canal en tiempo real (WebSocket/SSE), sin implementar todavía el motor de alertas por umbral. El esquema debe ser lo bastante genérico como para que el poller de UPID de la Etapa 1 y el motor de alertas por saturación de la Etapa 3 lo reutilicen sin romper contrato con el frontend.
-- **Criterio de éxito:** existe un tipo o interfaz compartida (backend y frontend) para el evento, documentada, y tanto el equipo de Etapa 1 como el de Etapa 3 la referencian en sus tareas en lugar de definir formatos de evento propios.
-
-### `BAC-19` - Solicitud de recuperación de contraseña (RF-13)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (posterior a `BAC-16`).
-- **Depende de:** `BAC-05` y `BAC-16` (servicio SMTP configurado).
-- **Entregable:** `POST /api/auth/password-recovery/request`, que valide el formato del correo, genere un código temporal de seis dígitos con expiración, invalide códigos previos de la misma cuenta y lo envíe por correo.
-- **Criterio de éxito:** solicitar un nuevo código invalida el anterior; el endpoint responde de forma genérica exista o no la cuenta, para no filtrar información de usuarios registrados.
-
-### `BAC-20` - Confirmación de recuperación de contraseña (RF-13)
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (posterior a `BAC-19`).
-- **Depende de:** `BAC-19` y `BAC-17` (revocación de sesiones).
-- **Entregable:** `POST /api/auth/password-recovery/confirm`, que valide el código de seis dígitos y su expiración, actualice el hash de la nueva contraseña y revoque las sesiones activas de la cuenta.
-- **Criterio de éxito:** un código vencido o ya usado se rechaza; un código válido cambia la contraseña y cierra las sesiones anteriores.
+*(Nota: `BAC-19`, `BAC-20` y `BAC-21` fueron completadas, integradas y verificadas 100% en `terminado.md`).*
 
 
 

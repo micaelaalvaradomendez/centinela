@@ -172,7 +172,13 @@
 - **Entregable:** `GET /api/admin/users`, `POST /api/admin/users` y `DELETE /api/admin/users/{id}`. La creación debe generar una contraseña temporal y establecer `must_change_password: true`.
 - **Criterio de éxito:** un administrador puede listar, crear y desactivar usuarios; un operador recibe `403 Forbidden`.
 
+
+
+
 ### `FRN-05` - Panel de gestión de usuarios
+
+> [!WARNING]
+> **Estado: Parcial.** La tabla ya consume la API real (`GET /api/admin/users`) y renderiza datos, pero las rutas `/users` en `applicationRoutes.tsx` carecen de `loader: loadAdminSession`, permitiendo el acceso a usuarios `OPERATOR`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-12`.
 
 - **Área:** Frontend
 - **Asignado:** Belinda
@@ -198,6 +204,7 @@
 - Entregable: Formulario precargado con los datos del usuario seleccionado para modificar su información básica y cambiar su rol mediante un desplegable.  
 - Criterio de éxito: Al confirmar la edición, se llama a PUT /api/admin/users/{id}, se actualiza la tabla y se muestra una alerta visual (toast) de éxito.  
 
+
 ### `FIX-07` - El frontend lee `body.code` en vez de `errorCode`
 
 - **Área:** Frontend
@@ -208,3 +215,184 @@
 - **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6, hallazgo H1):** el backend responde los errores con el campo `errorCode` (por ejemplo `AUTH_FAILED`), pero `api.js` intenta leer `body.code`, que no existe en la respuesta real.
 - **Entregable:** corregir `api.js` (y cualquier consumidor) para leer `errorCode` del cuerpo de la respuesta.
 - **Criterio de éxito:** los mensajes de error específicos del backend (por ejemplo credenciales inválidas o TOTP vencido) se muestran correctamente en la interfaz en vez de un error genérico.
+
+### `FRN-09` - Vinculación 2FA mediante QR
+
+- **Área:** Frontend
+- **Asignadas:** Belinda y Luz
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 14:00-17:00
+- **Depende de:** `BAC-10`, `BAC-11` y `LOGIN-02`.
+- **Entregable:** vista o modal obligatorio para cuentas sin 2FA, con QR, clave de vinculación manual, ingreso del código de seis dígitos y estados de carga y error.
+- **Criterio de éxito:** la cuenta no puede acceder a las rutas protegidas hasta confirmar un código válido; al finalizar, continúa el login sin mostrar nuevamente el secreto.
+
+### `FIX-01` - Colisión de índice único rompe el login repetido (CRÍTICA)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (máxima prioridad, antes que cualquier otra tarea de `BAC-05` en adelante).
+- **Depende de:** ninguna; bloquea la verificación de `BAC-06`, `BAC-06B`, `BAC-07`, `BAC-08`, `BAC-09`, `BAC-10`, `BAC-11`, `BAC-14` y `LOGIN-03`.
+- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 3):** `models.go` reutiliza el mismo nombre `uniqueIndex:idx_usuario_vmid` en cuatro tablas (`SesionActiva.UsuarioID`, `PermisoInstancia.UsuarioID+VmidProxmox`, `Auditoria.UsuarioID`, `Notificacion.UsuarioID`). El índice terminó aplicado sobre `sesiones_activas.usuario_id`, así que la segunda sesión del mismo usuario viola la unicidad y el login devuelve `401 AUTH_FAILED` con `duplicate key value violates unique constraint "idx_usuario_vmid"`. Al mismo tiempo, el unique real que debía existir sobre `permisos_instancia(usuario_id, vmid_proxmox)` (parte del criterio de éxito de `BAC-05`) nunca se creó.
+- **Entregable:** renombrar el índice compuesto de `PermisoInstancia` a algo único (por ejemplo `idx_permisos_usuario_vmid`), quitar el `uniqueIndex` de `SesionActiva.UsuarioID` (una sesión no es única por usuario) y agregar el constraint real faltante sobre `permisos_instancia(usuario_id, vmid_proxmox)`.
+- **Criterio de éxito:** un mismo usuario puede loguearse más de una vez sin recibir `401`; `test/back` deja de reportar la colisión de `idx_usuario_vmid` en `backend_acceptance_test.go`; el chequeo de esquema de `BAC-05` confirma el unique real sobre `permisos_instancia`.
+
+
+### `FIX-06` - Modal de alta y edición de usuarios sin funcionalidad real (`FRN-06` / `FRN-06B`)
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 3 h
+- **Ventana propuesta:** A definir (posterior a `FIX-01` y `FIX-05`).
+- **Depende de:** `FIX-01` y `FIX-05`.
+- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 5):** el modal no tiene selector de rol, no dispara el `POST` al confirmar el alta, no muestra la contraseña temporal devuelta por el backend y no existe la acción de editar (`PUT /api/admin/users/{id}`).
+- **Entregable:** completar el modal de alta con selector de rol y `POST` real mostrando la contraseña temporal, y agregar la acción de edición que llame a `PUT /api/admin/users/{id}` y actualice la tabla.
+- **Criterio de éxito:** un administrador puede crear un usuario y ver su contraseña temporal, editar su rol y ver el cambio reflejado sin recargar manualmente la tabla.
+
+
+
+### `FIX-08` - Restaurar protección de rutas y guards de sesión (`FRN-03` / `FRN-05`)
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir (alta prioridad).
+- **Depende de:** ninguna.
+- **Problema (evidencia en `test/front/RESULTADOS.md`, sección pull 20/09):** el commit `6b08566` en `centinela/src/routes/applicationRoutes.tsx` movió `/dashboard`, `/instances`, `/users`, `/users/new`, `/users/:userId` y `/auditoria` al layout público (`MainLayoutAuth`) como "rutas temporales de diseño". Esto anuló el guard `loadProtectedSession`, permitiendo que cualquier usuario acceda a estas vistas sin iniciar sesión ni pasar el 2FA, rompiendo el criterio de éxito de `FRN-03` y `FRN-05` en producto y haciendo fallar `navigation.test.tsx`.
+- **Entregable:** reubicar las rutas protegidas (`/dashboard`, `/instances`, `/users`, `/users/new`, `/users/:userId`, `/auditoria`) dentro del grupo con `ProtectedLayout` y `loader: loadProtectedSession`. Si se requieren vistas de diseño sin backend, utilizar mocks dentro del contexto autenticado en lugar de remover la protección de rutas.
+- **Criterio de éxito:** un usuario no autenticado que intenta navegar a `/dashboard` o `/users` es redirigido a `/login`; las pruebas de navegación de `test/front` (`navigation.test.tsx`) validan la protección de rutas correctamente.
+
+### `FIX-03` - El guard de re-enrolamiento 2FA no rechaza reemplazar un secreto ya vinculado (`BAC-10`)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (posterior a `FIX-01`).
+- **Depende de:** `FIX-01`.
+- **Problema (evidencia en `ANALISIS-READINESS.md`, sección 6):** el criterio de éxito documentado de `BAC-10` exige que "un usuario ya vinculado no pueda reemplazar su secreto sin pasar por el flujo de restablecimiento", pero el server actual sí permite generar un secreto nuevo sobre una cuenta con `is_2fa_enabled: true`.
+- **Entregable:** `GET /api/auth/2fa/qr` debe rechazar la generación de un nuevo secreto si la cuenta ya tiene 2FA habilitado, devolviendo un error que indique que debe usarse el flujo de restablecimiento administrativo (`BAC-13`).
+- **Criterio de éxito:** una cuenta con `is_2fa_enabled: true` recibe un error controlado al pedir un nuevo QR; solo puede repetir el enrolamiento después de un reset administrativo.
+
+### `FRN-08` - Interceptor HTTP y manejo de `403 Forbidden`
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2 h
+- **Ventana propuesta:** 15/09/2026, 14:00-16:00
+- **Depende de:** `BAC-08` y `FRN-04`.
+- **Entregable:** interceptor Axios o Fetch para enviar `Authorization: Bearer <JWT>` y mostrar un mensaje amigable ante un `403` sin cerrar la sesión.
+- **Criterio de éxito:** las peticiones incluyen el JWT y un operador sin permiso recibe una respuesta visual clara.
+
+
+### `BAC-10` - Enrolamiento 2FA y generación de QR
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** 16/09/2026, 09:00-11:00
+- **Depende de:** `BAC-05` y `LOGIN-03`.
+- **Entregable:** `GET /api/auth/2fa/qr`, accesible mediante una sesión restringida, que genere un secreto TOTP único, una URI `otpauth://` y un código QR. También debe devolver el secreto para vinculación manual, sin persistirlo como habilitado antes de la confirmación.
+- **Criterio de éxito:** un usuario sin 2FA obtiene un QR y una clave manual compatibles con una aplicación autenticadora; un usuario ya vinculado no puede reemplazar su secreto sin pasar por el flujo de restablecimiento.
+
+### `BAC-11` - Validación y persistencia del secreto TOTP
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 3 h
+- **Ventana propuesta:** 16/09/2026, 11:00-14:00
+- **Depende de:** `BAC-10` y `BAC-05`.
+- **Entregable:** `POST /api/auth/2fa/enable` para validar el primer código de seis dígitos, cifrar el secreto con AES-256 usando una clave externa a la base de datos y establecer `is_2fa_enabled: true`. El flujo de login también debe validar los códigos posteriores contra el secreto persistido antes de emitir el JWT de acceso completo.
+- **Criterio de éxito:** el secreto nunca se almacena ni se expone en texto plano después del enrolamiento; un código válido habilita el 2FA y permite completar el login, mientras que códigos inválidos, vencidos o reutilizados son rechazados.
+
+### `BAC-13` - Restablecimiento administrativo de 2FA
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** 17/09/2026, 09:00-11:00
+- **Depende de:** `BAC-06`, `BAC-08` y `BAC-11`.
+- **Entregable:** `POST /api/admin/users/{id}/2fa/reset`, restringido a administradores, que invalide el secreto TOTP, establezca `is_2fa_enabled: false` y revoque las sesiones activas del usuario afectado.
+- **Criterio de éxito:** un operador recibe `403 Forbidden`; tras el restablecimiento, los códigos del secreto anterior dejan de funcionar y el usuario debe repetir `BAC-10`, `BAC-11` y `FRN-09` en su siguiente acceso. La suite de pruebas `password_recovery_acceptance_test.go` confirma que responde HTTP 200/204 para administradores y 403 para operadores.
+
+### `BAC-15` - Restablecimiento administrativo de contraseña
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** 17/09/2026, 14:00-16:00
+- **Depende de:** `BAC-06` y `BAC-12`.
+- **Entregable:** `POST /api/admin/users/{id}/reset-password`, restringido a administradores, que genere una contraseña temporal segura, actualice su hash, establezca `must_change_password: true` y revoque las sesiones activas del usuario.
+- **Criterio de éxito:** un operador recibe `403 Forbidden`; la clave anterior deja de funcionar y el usuario debe cambiar la nueva contraseña temporal en el siguiente acceso.
+
+
+### `BAC-16` - Entrega segura de credenciales temporales (Mailer Service RF-13)
+
+- **Área:** Backend / Infraestructura
+- **Asignados:** Lisandro y Nico
+- **Estimación:** 3 h
+- **Estado:** Completada la arquitectura y los criterios de seguridad mediante Mailer Service simulado (`MockEmailService`).
+- **Depende de:** `BAC-06`, `BAC-15`.
+- **Implementación (Cumple con DoD y Seguridad):**
+  - **Desacoplamiento (Arquitectura Hexagonal):** Se creó el puerto `EmailService` y se inyectó en los servicios correspondientes (`AuthService` y `UserService`).
+  - **Mínimo Privilegio (Cero Confianza):** Se modificaron los endpoints `POST /api/admin/users` y `POST /api/admin/users/{id}/password/reset`. Las contraseñas temporales ya no se retornan en los payloads JSON de respuesta pública.
+  - **Sanitización de Logs:** Ningún log del backend expone la contraseña en texto plano, a excepción del entorno controlado del simulador de correo (`MockEmailService`) que actúa como bandeja de entrada de consola.
+  - **Manejo de Fallos Estructurado:** Se implementó el control de errores. Si el envío simulado falla, el sistema aborta la transacción antes de persistir inconsistencias y devuelve un `502 Bad Gateway` con el `errorCode: "EMAIL_DELIVERY_FAILED"`, sin exponer trazas internas.
+- **Decisión de alcance:** La integración con servidor SMTP real queda formalmente descartada del alcance. La solución definitiva del proyecto es `MockEmailService` por consola mediante el puerto `EmailService`.
+- **Criterio de éxito:** el usuario recibe su credencial de forma segura por el puerto de correo sin exposición en JSON ni persistencia en texto plano; las suites de aceptación confirman hash seguro y control estructurado.
+
+### `BAC-17` - Logout y revocación de sesión/JWT
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (posterior a `BAC-05`).
+- **Depende de:** `BAC-03` y `BAC-05`.
+- **Entregable:** `POST /api/auth/logout` y un mecanismo de invalidación de sesión (tabla `sessions` o lista de revocación con TTL) que puedan reutilizar `BAC-13` y `BAC-15` para revocar sesiones activas al resetear 2FA o contraseña.
+- **Criterio de éxito:** un JWT revocado deja de autorizar peticiones aunque no haya expirado por tiempo; `BAC-13` y `BAC-15` consumen este mecanismo en lugar de simular la revocación.
+
+### `BAC-18` - Base transversal de auditoría (append-only)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 4 h
+- **Ventana propuesta:** A definir (junto con `BAC-05`).
+- **Depende de:** `BAC-05`.
+- **Entregable:** tabla `audit_logs` con columnas genéricas y reutilizables por cualquier etapa futura: `user_id`, `timestamp`, `accion`, `resource_type`, `resource_id`, `upid` (nullable, para cuando la acción dispare una tarea de Proxmox), `resultado` y `detalle` (JSON). La tabla debe crearse **append-only**: el rol de aplicación no debe tener permisos `UPDATE`/`DELETE` sobre ella (a nivel de motor de base de datos, no solo por convención de código). El servicio de auditoría se implementa como un middleware/interceptor central de la capa de servicios, no como llamadas sueltas repetidas en cada handler, para que la Etapa 1 (energía de instancias), la Etapa 2 (aprovisionamiento) y la Etapa 3 (snapshots) lo reutilicen sin tocar el esquema. En la fase base debe registrar, sin exponer secretos, la creación y eliminación de usuarios, los cambios de rol y de permisos por instancia, y los resets de contraseña y 2FA (`BAC-06`, `BAC-06B`, `BAC-07`, `BAC-13`, `BAC-15`).
+- **Criterio de éxito:** cada acción administrativa de la fase base queda registrada desde que ocurre; un intento de `UPDATE` o `DELETE` sobre `audit_logs` con las credenciales de la aplicación falla a nivel de base de datos; una acción nueva agregada en una etapa posterior (por ejemplo, `start` de una VM) se audita sin migrar la tabla. El endpoint de consulta con filtros y exportación queda fuera de esta tarea; corresponde a `RF-08` en la Etapa 3.
+
+### `BAC-12` - Cambio obligatorio de contraseña temporal
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Depende de:** `BAC-02`, `BAC-05` y `BAC-06`.
+- **Entregable:** `PUT /api/account/password`, accesible con una sesión restringida, que compruebe la contraseña temporal, valide la nueva clave, actualice su hash e indique `cambio_contrasena: false`. Mientras el indicador sea verdadero, el resto de endpoints protegidos permanece bloqueado con HTTP 403 `PASSWORD_CHANGE_REQUIRED`.
+- **Criterio de éxito:** la contraseña temporal deja de ser válida después del cambio, la nueva contraseña nunca se guarda en texto plano y el usuario no obtiene acceso completo antes de finalizar el proceso. Verificado 100% en `TestTareasBackendEIntegracion`.
+
+### `BAC-19` - Solicitud de recuperación de contraseña (RF-13)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Depende de:** `BAC-05` y `BAC-16`.
+- **Entregable:** `POST /api/auth/password/forgot`, que valide el formato del correo, genere un código temporal de seis dígitos con expiración de 15 minutos, invalide códigos previos de la misma cuenta y lo envíe mediante el puerto `EmailService` (`MockEmailService`).
+- **Criterio de éxito:** solicitar un nuevo código invalida el anterior; el endpoint responde de forma genérica exista o no la cuenta para no filtrar información de usuarios registrados. Verificado 100% en `TestHitoRecuperacionDeContrasenasYNotificaciones`.
+
+### `BAC-20` - Confirmación de recuperación de contraseña (RF-13)
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2 h
+- **Depende de:** `BAC-19` y `BAC-17`.
+- **Entregable:** `POST /api/auth/password/reset`, que valide el código de seis dígitos y su expiración, actualice el hash de la nueva contraseña y revoque las sesiones activas de la cuenta en `sesiones_activas`.
+- **Criterio de éxito:** un código vencido o ya usado se rechaza con error controlado; un código válido cambia la contraseña y cierra las sesiones anteriores. Verificado 100% en `TestHitoRecuperacionDeContrasenasYNotificaciones`.
+
+### `BAC-21` - Contrato base del canal de eventos/notificaciones (RF-11)
+
+- **Área:** Backend / Frontend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 2 h
+- **Depende de:** `BAC-05`.
+- **Entregable:** definición del esquema genérico de evento (`type`, `severity`, `resource_type`, `resource_id`, `message`, `timestamp`, `payload`) compartido entre backend y frontend. En el backend quedó el struct `RealtimeEvent` en `internal/core/ports/event_port.go` con constantes y validador `NewRealtimeEvent`; en el frontend quedó la interfaz en `centinela/src/types/notifications.ts`.
+- **Criterio de éxito:** existe un tipo/interfaz compartida y sincronizada entre Go y TypeScript. Verificado 100% en `TestHitoRecuperacionDeContrasenasYNotificaciones`.
+

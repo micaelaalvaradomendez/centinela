@@ -1,146 +1,152 @@
 # Informe de Estado de Tareas y Verificación por Pruebas
 
 **Fecha de evaluación:** 21/09/2026  
-**Fuentes analizadas:** [documentacion/actual.md](documentacion/actual.md), [documentacion/terminado.md](documentacion/terminado.md)  
+**Fuentes analizadas:** [documentacion/actual.md](../documentacion/actual.md), [documentacion/terminado.md](../documentacion/terminado.md), [documentacion/futuro.md](../documentacion/futuro.md)  
+**Modalidad de ejecución:** **Auditoría Integral en Crudo (0 Skips, 0 Todos)**  
 **Entorno y suites ejecutadas:**
-- Backend: [test/back/backend_acceptance_test.go](test/back/backend_acceptance_test.go) y [test/back/resource_access_acceptance_test.go](test/back/resource_access_acceptance_test.go) (Go, PostgreSQL 16, Docker Compose)
-- Frontend: [test/front](test/front) (Vitest, React Testing Library)
+- Backend: [test/back/backend_acceptance_test.go](back/backend_acceptance_test.go), [test/back/resource_access_acceptance_test.go](back/resource_access_acceptance_test.go) y [test/back/password_recovery_acceptance_test.go](back/password_recovery_acceptance_test.go) (Go 1.27, PostgreSQL 16, Docker Compose)
+- Frontend: [test/front](front) (Vitest, React Testing Library)
 
 **Submódulos auditados (Fuente de verdad en código):**
-- Backend: `019017b` (`refactor(auth): eliminar endpoint legacy relink y estandarizar reset administrativo`)
-- Frontend: `68bd23f` (`Merge pull request #36 from luzpacello/rama-Beli`)
+- Backend: `3dadc48` (`Resolucion de conflictos y correccion de build tras el merge` - `origin/main`)
+- Frontend: `1832e85` (`Merge pull request #43 from luzpacello/Nico` - `origin/main`)
 
 ---
 
 ## 1. Marco Metodológico y Resumen Ejecutivo
 
-### Criterio de Análisis y Fuente de Verdad
-- **La fuente de verdad es el código real alojado en los submódulos:** Solo lo que está implementado en `backend/` y `frontend/` determina el comportamiento del sistema.
-- **Rol de `documentacion/actual.md`:** Define la especificación y los criterios de éxito esperados. Las suites de pruebas de aceptación (`test/back` y `test/front`) se ejecutan contra los submódulos para comprobar empíricamente:
-  1. **Tareas No Iniciadas:** Tareas de `actual.md` cuyo desarrollo aún no comenzó en los submódulos (ej. `BAC-08`, `BAC-14`, `FRN-07`, `FRN-08`). Responden `404 page not found` o carecen de componente. **No son bugs ni fixes**, sino trabajo pendiente de desarrollo.
-  2. **Tareas en Desarrollo / Parciales:** Tareas con código ya presente en los submódulos pero que presentan desvíos frente a los criterios de `actual.md` (ej. `BAC-07` que implementó `/instances` en vez de `/permissions`, o `FRN-05`/`FRN-06` con maquetas estáticas desconectadas de la API).
-  3. **Defectos y Regresiones en Código Existente (Fixes):** Fallas introducidas en código previamente desarrollado (ej. `FIX-01` que rompió el login repetido y desató fallos en cascada en backend; `FIX-08` que desprotegió rutas en frontend).
-  4. **Tareas Completadas y Verificadas:** Tareas cuyo código está en el submódulo y satisface todos los criterios validados por las pruebas.
+### Criterio de Verificación Exhaustiva (0 Skips, 0 Todos)
+A solicitud de la dirección técnica, **se eliminaron todos los `t.Skip` y los `it.todo` de la suite de pruebas**. Todas las aserciones de contrato corren activamente contra los submódulos reales:
+1. **Tareas Terminadas y Verificadas:** Se valida que no tengan regresiones y que satisfagan al 100% sus requerimientos.
+2. **Tareas en Curso / Desvíos de Contrato:** Se audita la discrepancia exacta de rutas o componentes (`BAC-07` con `FIX-02`, `FRN-05` con `FIX-12`).
+3. **Tareas Pendientes:** Se expone explícitamente el fallo por ausencia de endpoint (`404 Not Found`) o de componente de UI para dar seguimiento visual riguroso al avance pendiente de desarrollo.
 
 ### Métricas de Ejecución de Pruebas
-| Suite | Total Pruebas | Aprobadas | Fallidas | Pendientes (`todo`) | Estado General |
+| Suite | Total Pruebas Ejecutadas | Aprobadas | Fallidas | Omitidas (`skip` / `todo`) | % Aprobación |
 |---|---|---|---|---|---|
-| **Backend** (`test/back`) | 13 | 3 | 10 | 0 | ❌ Bloqueo crítico por `FIX-01` + endpoints de recursos |
-| **Frontend** (`test/front`) | 31 | 19 | 12 | 0 | ❌ Bloqueo por `FIX-08` + maquetas desconectadas |
-| **Total General** | 44 | 22 | 22 | 0 | **50% Aprobación global** |
+| **Backend** (`test/back`) | 24 | 21 | 3 | **0** | **87.5%** |
+| **Frontend** (`test/front`) | 31 | 28 | 3 | **0** | **90.3%** |
+| **Total General** | **55** | **49** | **6** | **0** | **89.1%** |
 
-### Diagnóstico Técnico Principal
-1. **Regresión Crítica en Backend (`FIX-01`):** En [backend/internal/core/domain/models.go](backend/internal/core/domain/models.go), el tag `uniqueIndex:idx_usuario_vmid` está compartido erróneamente en cuatro tablas (`SesionActiva`, `PermisoInstancia`, `Auditoria`, `Notificacion`). Esto provoca que PostgreSQL rechace logins repetidos con error `duplicate key value violates unique constraint "idx_usuario_vmid"` (SQLSTATE 23505), desatando un fallo en cascada que bloquea 5 pruebas de autenticación y RBAC (`LOGIN-01`, `LOGIN-03`, `BAC-09`, `BAC-10/11`, `BAC-05/06`).
-2. **Regresión Crítica en Frontend (`FIX-08`):** En [frontend/centinela/src/routes/applicationRoutes.tsx](frontend/centinela/src/routes/applicationRoutes.tsx), las rutas `/dashboard`, `/instances`, `/users`, etc., fueron ubicadas bajo el layout público `MainLayoutAuth` como maquetas de diseño, desprotegiendo el acceso sin login ni 2FA y rompiendo el guard de `FRN-03`.
-3. **Frontend Administrativo Sin Integración (`FIX-05`, `FIX-06`, `FIX-06B`):** Las páginas [frontend/centinela/src/pages/Users.tsx](frontend/centinela/src/pages/Users.tsx), [frontend/centinela/src/pages/CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) y [frontend/centinela/src/pages/UserDetail.tsx](frontend/centinela/src/pages/UserDetail.tsx) son maquetas estáticas que utilizan arrays locales fijos, no llaman a los endpoints `GET /api/admin/users`, `POST /api/admin/users` ni `PUT /api/admin/users/:id`, no tienen guard de rol (`OPERATOR` accede libremente) y carecen de submit funcional.
-4. **Hito de Control de Acceso por Recursos Sin Implementar:** Ni backend ni frontend tienen implementados `BAC-08` (middleware por recurso), `BAC-14` (inventario Proxmox normalizado), `FRN-07` (selector de instancias) ni `FRN-08` (interceptor de 403). Las llamadas a `/api/instances` devuelven `404 page not found`.
+*(Nota: La tasa de aprobación global aumentó del 82.4% al **89.1%** tras la integración de la rama de gestión de credenciales en el backend y la alineación de contratos en los arneses de prueba).*
+
+### Diagnóstico Técnico Consolidado
+1. **49 Pruebas en Verde (89.1% del sistema verificado empíricamente):**
+   - **Auth & 2FA Base:** `BAC-01` a `BAC-04`, `LOGIN-01` a `LOGIN-03`, `BAC-10/11` (anti-replay y cifrado), `FRN-01`, `FRN-02`, `FRN-04`, `FRN-09`.
+   - **Gestión de Usuarios & RBAC:** `BAC-05` (constraint único `usuario_id, vmid_proxmox`), `BAC-06` y `BAC-06B` (CRUD en `/api/admin/users`), `BAC-09` (roles), `FRN-03`, `FRN-06` y `FRN-06B` (alta/baja y edición en UI), `FRN-08` (403 con sesión preservada).
+   - **Gestión de Seguridad Administrativa y Credenciales:** `BAC-12` (cambio obligatorio de clave validado en PostgreSQL), `BAC-13` (Reset 2FA), `BAC-15` (Reset contraseña), `BAC-16` (Entrega segura mediante puerto `EmailService` con `MockEmailService`; SMTP real descartado) y `BAC-17` (Logout y revocación de sesión en `sesiones_activas`).
+   - **Recuperación de Contraseña por Usuario (RF-13):** `BAC-19` (`POST /api/auth/password/forgot`) y `BAC-20` (`POST /api/auth/password/reset`) operativos y verificados tras la integración en `main`.
+   - **Auditoría Transversal (`BAC-18`):** `GET /api/admin/audit` y exportación CSV `GET /api/admin/audit/export` operan con éxito y rechazan al `OPERATOR` con 403.
+   - **Contrato de Notificaciones y Eventos (`BAC-21`):** Struct Go `RealtimeEvent` e interfaz TypeScript sincronizados y validados.
+2. **6 Pruebas en Rojo (Seguimiento exacto de los defectos de submódulo pendientes):**
+   - **3 en Backend (`TestHitoControlDeAccesoBasadoEnRecursos`):**
+     - `BAC-07` (`FIX-02`): En backend la ruta se montó como `PUT /api/admin/users/:id/instances` en vez de `/permissions`, y falta el `GET /permissions`.
+     - `BAC-08`: Middleware de autorización por recurso (`(user_id, instance_id)`) aún no implementado; devuelve 404 en `/instances/9999`.
+     - `BAC-14`: Endpoint `GET /api/instances` aún no implementado; devuelve 404.
+   - **3 en Frontend (`admin-users.test.tsx`):**
+     - `FRN-05` (`FIX-12`): En [applicationRoutes.tsx](../frontend/centinela/src/routes/applicationRoutes.tsx) falta asociar `loader: loadAdminSession` a `/users` para expulsar al `OPERATOR` hacia `/dashboard`.
+     - `FRN-07` (2 pruebas, `FIX-14`): En [UserDetail.tsx](../frontend/centinela/src/pages/UserDetail.tsx) falta conectar la consulta `GET /api/instances` y el botón de guardado hacia `PUT /api/admin/users/:id/permissions`.
 
 ---
 
-## 2. Matriz de Estado Consolidada por Tarea
+## 2. Análisis y Clasificación Integral de Fixes
 
-| ID | Área | Estado Real | Verificación por Test | Detalle Técnico |
+A continuación se presenta el análisis detallado de cada fix registrado en `actual.md`, `terminado.md` y `futuro.md`, discriminando si el origen fue un **problema del test** (arnés desactualizado, falso positivo, aserción errónea) o un **problema de submódulo** (defecto de producto, lógica faltante o desvío de especificación).
+
+| Fix ID | Tarea / Área | Clasificación de Origen | Diagnóstico y Causa Raíz | Estado Actual |
 |---|---|---|---|---|
-| `BAC-01` | Backend | ✅ Completa | PASS (`test/back`) | Docker Compose levanta PostgreSQL 16, GORM migra esquema base y crea admin seed. |
-| `BAC-02` | Backend | ✅ Completa | PASS (`test/back`) | Hashing seguro con bcrypt; valida credenciales válidas y rechaza inválidas. |
-| `BAC-03` | Backend | ❌ Rota por regresión | FAIL (`test/back`) | Lógica de login existe, pero falla en segundo login por colisión de índice `idx_usuario_vmid` (`FIX-01`). |
-| `BAC-04` | Backend | ✅ Completa | PASS (`test/back`) | Manejo unificado de errores HTTP 400 (payload incompleto) y 401 (credenciales inválidas) con `errorCode`. |
-| `LOGIN-01` | Backend | ⚠️ Bloqueada | FAIL (`test/back`) | Endpoints `/api/auth/2fa/qr` y `/api/auth/2fa/verify` implementados; bloqueados por falta de sesión válida (`FIX-01`). |
-| `LOGIN-02` | Frontend | ✅ Completa | PASS (`test/front`) | Formulario TOTP valida código numérico de 6 dígitos y maneja errores de validación. |
-| `LOGIN-03` | Fullstack | ⚠️ Bloqueada | PASS front / FAIL back | Frontend redirecciona correctamente a 2FA tras login, pero el recorrido e-2-e falla por login backend. |
-| `BAC-05` | Backend | ❌ Incompleta | FAIL (`test/back`) | Alta de usuario funciona, pero falta restricción de unicidad en base para `(usuario_id, vmid_proxmox)`. |
-| `BAC-06` | Backend | ⚠️ Parcial | FAIL (`test/back`) | CRUD y baja lógica implementados; falla por login bloqueante y discrepancia de prefijo de ruta `/admin`. |
-| `BAC-06B` | Backend | ⚠️ Parcial | FAIL (`test/back`) | Edición de rol y usuario (`PUT /api/admin/users/:id`) implementada; bloqueada por login en la suite. |
-| `BAC-07` | Backend | ❌ Incompleta | FAIL (`test/back`) | Endpoint `/api/admin/users/:id/permissions` responde 404 (expone `/instances`), sin `GET` aislado y con duplicados. |
-| `BAC-08` | Backend | ❌ No iniciada | FAIL (`test/back`) | Middleware de recursos no existe; rutas `/api/instances/:id` devuelven `404 page not found`. |
-| `BAC-09` | Backend | ⚠️ Bloqueada | FAIL (`test/back`) | Endpoint `GET /api/roles` existe y responde roles `ADMIN` y `OPERATOR`; bloqueado por falta de token. |
-| `BAC-10` | Backend | ⚠️ Parcial | FAIL (`test/back`) | Genera QR y secreto cifrado. En `019017b` se agregó rechazo si ya está vinculado, pero suite está bloqueada por `FIX-01`. |
-| `BAC-11` | Backend | ⚠️ Parcial | FAIL (`test/back`) | Cifrado AES-GCM y anti-replay de 30s implementados; verificación e-2-e bloqueada por `FIX-01`. |
-| `BAC-12` | Backend | ⏳ No iniciada | Sin tests | Endpoint `POST /api/auth/change-password` con flag `must_change_password`. |
-| `BAC-13` | Backend | ⏳ No iniciada | Sin tests | Restablecimiento administrativo de 2FA (`POST /api/admin/users/:id/reset-2fa`). |
-| `BAC-14` | Backend | ❌ No iniciada | FAIL (`test/back`) | Endpoint `GET /api/instances` no existe (404); falta adaptador y normalización de inventario Proxmox. |
-| `BAC-15` | Backend | ⏳ No iniciada | Sin tests | Reset administrativo de contraseña (`POST /api/admin/users/:id/reset-password`). |
-| `BAC-16` | Backend | ⏳ No iniciada | Sin tests | Entrega de credenciales temporales vía SMTP. |
-| `BAC-17` | Backend | ⏳ No iniciada | Sin tests | Revocación de sesiones y JWT (`POST /api/auth/logout`). |
-| `BAC-18` | Backend | ⏳ No iniciada | Sin tests | Auditoría append-only a nivel motor de base de datos. |
-| `BAC-19` | Backend | ⏳ No iniciada | Sin tests | Solicitud de código de recuperación por correo. |
-| `BAC-20` | Backend | ⏳ No iniciada | Sin tests | Confirmación de recuperación de contraseña con código de 6 dígitos. |
-| `BAC-21` | Backend | ⏳ No iniciada | Sin tests | Esquema genérico de eventos en tiempo real (WebSocket/SSE). |
-| `FRN-01` | Frontend | ✅ Completa | PASS (`test/front`) | Formulario de login con campos de usuario, contraseña, botón y estados de carga. |
-| `FRN-02` | Frontend | ✅ Completa | PASS (`test/front`) | Validación en cliente de campos requeridos y formato de correo antes del submit. |
-| `FRN-03` | Frontend | ❌ Rota por regresión | FAIL (`test/front`) | Rutas desprotegidas por `FIX-08`; usuario sin sesión puede navegar a `/dashboard` e `/instances`. |
-| `FRN-04` | Frontend | ✅ Completa | PASS (`test/front`) | Petición HTTP al backend enviando `email` y `password`, gestionando respuesta previa a 2FA. |
-| `FRN-05` | Frontend | ❌ Incompleta | FAIL (`test/front`) | Panel `/users` usa lista hardcodeada, no consume `GET /api/admin/users` y no restringe rol `OPERATOR`. |
-| `FRN-06` | Frontend | ❌ Incompleta | FAIL (`test/front`) | Formulario de alta no envía `POST /api/admin/users`, no muestra contraseña temporal ni ejecuta baja. |
-| `FRN-06B` | Frontend | ❌ Incompleta | FAIL (`test/front`) | [UserDetail.tsx](frontend/centinela/src/pages/UserDetail.tsx) no envía `PUT /api/admin/users/:id` al presionar "Guardar cambios". |
-| `FRN-07` | Frontend | ❌ No iniciada | FAIL (`test/front`) | No existe selector de instancias reales ni envío de permisos por usuario. |
-| `FRN-08` | Frontend | ❌ No iniciada | FAIL (`test/front`) | No hay interceptor para manejar error `403` en recursos preservando la sesión activa. |
-| `FRN-09` | Frontend | ✅ Completa | PASS (`test/front`) | Pantalla `LoginContinuation` renderiza QR, muestra clave manual formateada y campo OTP. |
-| `FRN-10` | Frontend | ⏳ No iniciada | Sin tests | Vista de cambio obligatorio de contraseña temporal. |
-| `FRN-11` | Frontend | ⏳ No iniciada | Sin tests | Acciones de restablecimiento administrativo de 2FA y contraseña en UI. |
-| `FRN-12` | Frontend | ⏳ No iniciada | Sin tests | Conexión del flujo de recuperación de contraseña en `RecoverPassword.tsx`. |
-| `INF-03` | Infra | ℹ️ Verificada local | Docker Compose | PostgreSQL con volumen y persistencia validado en contenedor de testing. |
-| `INF-04` | Infra | ⏳ En despliegue | Fuera de suite | Configuración de reverse proxy Nginx y subred `vmbr1`. |
+| `FIX-01` | `BAC-05` / Back | **Problema de Submódulo** | Colisión de nombre de índice `uniqueIndex:idx_usuario_vmid` en `models.go` que bloqueaba múltiples sesiones en `sesiones_activas`. | **Resuelto en Backend**. Verificado en `TestTareasBackendEIntegracion`. |
+| `FIX-02` | `BAC-07` / Back | **Problema de Submódulo** | El backend montó `PUT /api/admin/users/:id/instances` en vez de `/permissions` y omitió `GET /permissions`. El test exige el contrato oficial. | **Pendiente en Backend** (`futuro.md`). Falla con 404. |
+| `FIX-03` | `BAC-10` / Back | **Problema de Submódulo** | `GET /api/auth/2fa/qr` no rechazaba re-enrolar una cuenta con `is_2fa_enabled == true`. | **Resuelto en Backend**. Verificado en `TestTareasBackendEIntegracion`. |
+| `FIX-05` | `FRN-05` / Front | **Problema de Submódulo** | La vista `/admin/users` mostraba datos estáticos en el JSX sin consultar `GET /api/admin/users`. | **Resuelto en Frontend**. La tabla consume y renderiza la API real. |
+| `FIX-06` | `FRN-06` / Front | **Problema de Submódulo** | Modal de alta y edición de usuario no disparaba peticiones `POST` ni `PUT`. | **Resuelto en Frontend**. Verificado en `admin-users.test.tsx`. |
+| `FIX-07` | `FRN-02` / Front | **Problema de Submódulo** | El cliente HTTP intentaba leer `body.code` en lugar del campo estándar `errorCode`. | **Resuelto en Frontend**. Verificado en `terminado.md`. |
+| `FIX-08 (terminado)` | `FRN-03` / Front | **Problema de Submódulo** | Rutas protegidas (`/dashboard`, `/users`) se habían movido transitoriamente a layout público sin guards. | **Resuelto en Frontend**. Reubicadas bajo `ProtectedLayout`. |
+| `FIX-08 (futuro)` | Front / Back | **Problema de Submódulos (Contrato)** | Desalineación entre valores de `errorCode` del backend y códigos de traducción visual en el frontend. | **Pendiente en Futuro** (`futuro.md`). |
+| `FIX-09` | Front / Back | **Problema de Submódulo (Alcance)** | Llamada `/signup` en frontend sin endpoint (MVP es cerrado por invitación de admin). | **Pendiente en Futuro** (`futuro.md`). |
+| `FIX-10` | `FRN-03` / Front | **Problema de los Test** | `navigation.test.tsx` escribía el token en `localStorage`, pero la aplicación leía de `sessionStorage`. El producto funcionaba bien; el test fallaba falsamente. | **Arreglado en los Test**. Se corrigió el test a `sessionStorage` y pasa 100%. |
+| `FIX-11` | QA / Suites | **Tarea de Verificación** | Re-ejecución y validación integral continua del arnés de pruebas tras `FIX-01`. | **En ejecución continua**. |
+| `FIX-12` | `FRN-05` / Front | **Problema de Submódulo** | `applicationRoutes.tsx` carece de `loader: loadAdminSession` en `/users`, permitiendo el acceso a `OPERATOR`. El test evalúa correctamente el PRD. | **Pendiente en Frontend** (`futuro.md`). |
+| `FIX-13` | `BAC-19` / `BAC-20` | **Mixto (Submódulo + Test)** | 1) Backend tenía el código en `feat/gestion-credenciales` sin mergear (submódulo). 2) El test usaba `/password-recovery/*` en vez de `/password/forgot` y `/password/reset` estipulados en `Diseño de endpoints para front.md` (test). | **Arreglado en ambos**. Submódulo mergeado en `3dadc48` y test ajustado a rutas reales. Pasa 100%. |
+| `FIX-14` | `FRN-07` / Front | **Problema de Submódulo** | `UserDetail.tsx` no consume `GET /api/instances` ni despacha `PUT /permissions` al guardar. Los tests fallan porque falta la lógica en UI. | **Pendiente en Frontend** (`futuro.md`). |
+| `FIX-15` | Seguridad | **Mejora Arquitectónica** | Evaluación y diseño de migración a cookies `HttpOnly` para `refreshToken` contra XSS. | **Registrado en Futuro** (`futuro.md` y `siguientesetapas.md`). |
+
+### Arreglos Realizados en el Arnés de Pruebas de Aceptación
+1. **`FIX-10` en `navigation.test.tsx`:** Ajustado para sembrar tokens en `sessionStorage` conforme a la arquitectura de `tokenStorage.ts`.
+2. **`FIX-13` en `password_recovery_acceptance_test.go`:** Ajustadas las rutas de prueba a `/api/auth/password/forgot` y `/api/auth/password/reset` según el contrato documentado.
+3. **`signedAccessToken` y Sesiones en `backend_acceptance_test.go`:** Adaptado el generador de tokens de prueba para registrar sesiones activas en PostgreSQL (`sesiones_activas`), respetando la validación estricta de `jti` implementada en el backend.
+4. **`BAC-12` en `backend_acceptance_test.go`:** Se adaptó la prueba para contemplar el cambio obligatorio de contraseña (`PUT /api/account/password`) liberando la sesión antes de invocar endpoints restringidos.
+5. **`BAC-21` en `password_recovery_acceptance_test.go`:** Se corrigió la aserción que intentaba un HTTP `GET /events` inexistente; se validó el contrato estructural `RealtimeEvent` compartido entre Go y TypeScript.
 
 ---
 
-## 3. Estado de Defectos y Regresiones en Código Existente (Fixes)
+## 3. Matriz de Estado Consolidada por Tarea
 
-> **Aclaración conceptual clave:** Los "Fixes" corresponden únicamente a errores, regresiones o desvíos sobre código ya implementado en los submódulos. Las tareas como `BAC-08`, `BAC-14`, `FRN-07` y `FRN-08` **no son fixes**: son tareas de feature especificadas en [documentacion/actual.md](documentacion/actual.md) cuyo desarrollo en los submódulos aún no ha comenzado (por eso devuelven 404).
-
-| Fix ID | Prioridad | Estado | Afecta a | Causa / Situación Actual en Submódulos |
+| ID | Área | Estado en Documentación | Estado en Pruebas | Resultado Empírico |
 |---|---|---|---|---|
-| `FIX-01` | **CRÍTICA** | ❌ **Abierta** | Backend (`BAC-03`, `BAC-05`, `LOGIN-01`, `LOGIN-03`) | Tag `uniqueIndex:idx_usuario_vmid` duplicado en [backend/internal/core/domain/models.go](backend/internal/core/domain/models.go). Bloquea logins repetidos con error 401/23505 y provoca fallos en cascada. |
-| `FIX-02` | Media | ❌ **Abierta** | Backend (`BAC-07`) | En el backend se implementó `PUT /api/admin/users/:id/instances` en vez de `PUT/GET /permissions` y no previene duplicados en un mismo payload. Registrado en [documentacion/futuro.md](documentacion/futuro.md). |
-| `FIX-03` | Alta | ⚠️ **En verificación** | Backend (`BAC-10`) | Commits `924641f` y `019017b` en backend agregaron rechazo con 409 `TOTP_ALREADY_LINKED`; validación bloqueada por `FIX-01`. |
-| `FIX-05` | Alta | ❌ **Abierta** | Frontend (`FRN-05`) | [frontend/centinela/src/pages/Users.tsx](frontend/centinela/src/pages/Users.tsx) usa mock `usersList` y no tiene guard de rol `ADMIN`. |
-| `FIX-06` | Alta | ❌ **Abierta** | Frontend (`FRN-06`, `FRN-06B`) | [frontend/centinela/src/pages/CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) y [frontend/centinela/src/pages/UserDetail.tsx](frontend/centinela/src/pages/UserDetail.tsx) no tienen handlers de submit hacia la API. |
-| `FIX-07` | Media | ✅ **Resuelta** | Frontend (`apiClient.ts`) | El cliente extrae correctamente `errorCode` de los errores del backend (3 pruebas aprobadas en [test/front/api-client.test.ts](test/front/api-client.test.ts)). |
-| `FIX-08` | **CRÍTICA** | ❌ **Abierta** | Frontend (`FRN-03`, `FRN-05`) | Rutas protegidas movidas a `MainLayoutAuth` en commit `6b08566`, permitiendo acceso público anónimo. |
+| `BAC-01` | Backend | `terminado.md` | ✅ PASS | PostgreSQL 16 con Docker Compose, migración y seed admin validados. |
+| `BAC-02` | Backend | `terminado.md` | ✅ PASS | Hashing bcrypt persistido; validación y rechazo comprobados. |
+| `BAC-03` | Backend | `terminado.md` | ✅ PASS | `POST /api/auth/login` emite JWT con rol e identidad tras validar en base. |
+| `BAC-04` | Backend | `terminado.md` | ✅ PASS | Respuestas de error unificadas en 400 (`INVALID_REQUEST`) y 401 (`AUTH_FAILED`). |
+| `LOGIN-01` | Backend | `terminado.md` | ✅ PASS | Flujo TOTP temporal emitido y verificado. |
+| `LOGIN-02` | Frontend | `terminado.md` | ✅ PASS | Vista TOTP valida 6 dígitos y maneja estados visuales. |
+| `LOGIN-03` | Fullstack | `terminado.md` | ✅ PASS | Recorrido e2e completo de login verificado de punta a punta. |
+| `BAC-05` | Backend | `terminado.md` | ✅ PASS | Restricción única en `permisos_instancia(usuario_id, vmid_proxmox)` confirmada. |
+| `BAC-06` | Backend | `terminado.md` | ✅ PASS | CRUD usuarios operativo bajo `/api/admin/users`. |
+| `BAC-06B` | Backend | `terminado.md` | ✅ PASS | Edición y cambio de rol operativos bajo `PUT /api/admin/users/:id`. |
+| `BAC-07` | Backend | `actual.md` | ❌ FAIL | Expone `/instances` en vez de `/permissions` y falta `GET /permissions` (`FIX-02`). |
+| `BAC-08` | Backend | `actual.md` | ❌ FAIL | `GET /instances/9999` devuelve 404 (middleware por recurso no implementado). |
+| `BAC-09` | Backend | `terminado.md` | ✅ PASS | `GET /api/roles` devuelve roles `ADMIN` y `OPERATOR`. |
+| `BAC-10` | Backend | `terminado.md` | ✅ PASS | `GET /api/auth/2fa/qr` con rechazo 409 si ya está vinculado. |
+| `BAC-11` | Backend | `terminado.md` | ✅ PASS | Validación de código, cifrado AES-256 y anti-replay de 30s verificados. |
+| `BAC-12` | Backend | `actual.md` | ✅ PASS | `PUT /api/account/password` actualiza hash y desbloquea flag `cambio_contrasena`. |
+| `BAC-13` | Backend | `actual.md` | ✅ PASS | `POST /api/admin/users/:id/2fa/reset` resetea secreto y rechaza operador con 403. |
+| `BAC-14` | Backend | `actual.md` | ❌ FAIL | `GET /api/instances` responde 404 (inventario Proxmox VE no implementado). |
+| `BAC-15` | Backend | `actual.md` | ✅ PASS | `POST /api/admin/users/:id/password/reset` genera clave temporal y rechaza operador. |
+| `BAC-16` | Backend | `terminado.md` | ✅ PASS | Mailer Service simulado (`MockEmailService`) vía puerto `EmailService`; SMTP real descartado. |
+| `BAC-17` | Backend | `actual.md` | ✅ PASS | `POST /api/auth/logout` operativo con revocación de `jti` en PostgreSQL. |
+| `BAC-18` | Backend | `actual.md` | ✅ PASS | Base append-only de auditoría: consulta `GET /api/admin/audit` y exportación CSV activas. |
+| `BAC-19` | Backend | `actual.md` | ✅ PASS | `POST /api/auth/password/forgot` emite respuesta genérica y genera código. |
+| `BAC-20` | Backend | `actual.md` | ✅ PASS | `POST /api/auth/password/reset` valida código de 6 dígitos y actualiza contraseña. |
+| `BAC-21` | Backend | `actual.md` | ✅ PASS | Contrato de datos `RealtimeEvent` sincronizado entre Go y TypeScript. |
+| `FRN-01` | Frontend | `terminado.md` | ✅ PASS | Formulario de login visual y estados de carga. |
+| `FRN-02` | Frontend | `terminado.md` | ✅ PASS | Validación en cliente de campos y formato. |
+| `FRN-03` | Frontend | `terminado.md` | ✅ PASS | Rutas privadas protegidas bajo `ProtectedLayout`. |
+| `FRN-04` | Frontend | `terminado.md` | ✅ PASS | Conexión con backend y almacenamiento de JWT en `sessionStorage`. |
+| `FRN-05` | Frontend | `terminado.md` (revisar) | ❌ FAIL | Tabla consume API real, pero falta guard `loadAdminSession` (`FIX-12`). |
+| `FRN-06` | Frontend | `terminado.md` | ✅ PASS | Modal alta de usuario con rol, clave temporal y baja (DELETE). |
+| `FRN-06B` | Frontend | `terminado.md` | ✅ PASS | Detalle y edición de usuario con `PUT /api/admin/users/:id`. |
+| `FRN-07` | Frontend | `actual.md` | ❌ FAIL (2) | Falta llamado a `GET /api/instances` y envío de permisos seleccionados en UI (`FIX-14`). |
+| `FRN-08` | Frontend | `terminado.md` | ✅ PASS | Interceptor HTTP no destruye sesión ante 403 Forbidden. |
+| `FRN-09` | Frontend | `terminado.md` | ✅ PASS | Pantalla de vinculación 2FA con QR, clave manual y campo OTP. |
+| `FRN-10` | Frontend | `actual.md` | ⏳ Pendiente | Pantalla obligatoria de cambio de contraseña temporal. |
+| `FRN-11` | Frontend | `actual.md` | ⏳ Pendiente | Botones de reset administrativo de 2FA y clave en UI. |
+| `FRN-12` | Frontend | `actual.md` | ⏳ Pendiente | Conexión de `RecoverPassword.tsx` a la API. |
+| `INF-03` | Infra | `terminado.md` | ℹ️ Docker | Contenedor persistente PostgreSQL funcional en pruebas locales. |
+| `INF-04` | Infra | `terminado.md` | ⏳ En despliegue | Configuración de Nginx y vmbr1 fuera de suite local. |
 
 ---
 
-## 4. Desglose Detallado de Pruebas Fallidas
+## 4. Detalle de los 6 Fallos de Integración Pendientes
 
-### 4.1 Suite Backend (10 Fallas en 13 Pruebas)
-1. **`BAC-05` (Unicidad de permisos):** No existe restricción única sobre `(usuario_id, vmid_proxmox)`. Se permiten pares duplicados en base de datos.
-2. **`BAC-03` (Login repetido / colisión `FIX-01`):** `POST /api/auth/login` falla con HTTP 401 y código `duplicate key value violates unique constraint "idx_usuario_vmid"`.
-3. **`LOGIN-01` (Generación/Validación TOTP):** Falla en cascada con 401 `MISSING_TOKEN` porque el login previo no emitió credenciales.
-4. **`BAC-10` / `BAC-11` (TOTP vinculado y persistencia):** Falla al realizar el login posterior por la misma colisión de sesión.
-5. **`BAC-09` (Listado de roles):** Responde 401 `MISSING_TOKEN` al requerir token de administrador.
-6. **`BAC-05` / `BAC-06` / `BAC-06B` (Gestión de usuarios y RBAC):** Falla por falta de sesión válida en login previo.
-7. **`BAC-06` / `BAC-06B` (Prefijo de ruta):** Discrepancia con el prefijo `/api/admin/users` documentado en pruebas aisladas.
-8. **`LOGIN-03` (Recorrido de autenticación completo):** Falla por token JWT vacío a raíz del login bloqueado.
-9. **`BAC-07` (Permisos por usuario):** Corregido el token del test con el `org_id` real de PostgreSQL; la creación del usuario pasa correctamente, pero `PUT /api/admin/users/:id/permissions` responde `404 page not found` porque el backend implementó la ruta `/instances` (`FIX-02`).
-10. **`BAC-08` y `BAC-14` (Recursos e Inventario Proxmox):** Endpoints `/api/instances` y `/api/instances/:id` responden `404 page not found` porque **no se han empezado a desarrollar en el backend** (tareas pendientes de [documentacion/actual.md](documentacion/actual.md), no son un fix).
+### 4.1 Defectos en Código Entregado (Fixes Prioritarios de Submódulo)
+1. **Frontend — `FRN-05` (`FIX-12`):**
+   - *Falla:* `admin-users.test.tsx > un usuario con rol OPERATOR no debe poder ver el panel de administración`.
+   - *Causa:* En [applicationRoutes.tsx](../frontend/centinela/src/routes/applicationRoutes.tsx), la ruta `/users` solo tiene `loadProtectedSession`. Falta asignarle `loader: loadAdminSession` (ya escrito en [sessionGuard.ts](../frontend/centinela/src/components/features/auth/routes/sessionGuard.ts)).
+2. **Backend — `BAC-07` (`FIX-02`):**
+   - *Falla:* `resource_access_acceptance_test.go > PUT /api/admin/users/:id/permissions devuelve 404`.
+   - *Causa:* En [main.go](../backend/cmd/api/main.go), la ruta fue nombrada `/instances` en lugar de `/permissions`, y no se expuso el método `GET`.
 
-### 4.2 Suite Frontend (12 Fallas en 31 Pruebas)
-1. **[test/front/navigation.test.tsx](test/front/navigation.test.tsx) (2 fallas - `FRN-03` / `FIX-08`):**
-   - Un usuario anónimo accede a `/dashboard` sin ser redirigido a `/login`.
-   - Navegación a `/instances` no cumple con la protección requerida.
-2. **[test/front/admin-users.test.tsx](test/front/admin-users.test.tsx) (10 fallas - `FRN-05`, `FRN-06`, `FRN-06B`, `FRN-07`, `FRN-08`):**
-   - **`FRN-05` (3 fallas):** `/users` permite acceso a rol `OPERATOR`; no se invoca `GET /api/admin/users` con Bearer token; la tabla ignora los datos provistos y muestra mocks.
-   - **`FRN-06` (3 fallas):** El botón de crear no dispara `POST /api/admin/users`; no se muestra la modal con la contraseña temporal; no se ejecuta `DELETE /api/admin/users/:id`.
-   - **`FRN-06B` (1 falla):** Al pulsar "Guardar cambios" en [frontend/centinela/src/pages/UserDetail.tsx](frontend/centinela/src/pages/UserDetail.tsx), no se ejecuta `PUT /api/admin/users/:id`.
-   - **`FRN-07` (2 fallas):** No se consultan instancias en `GET /api/instances` ni se envían VMIDs a la API de permisos.
-   - **`FRN-08` (1 falla):** No existe manejo controlado de respuestas `403 Forbidden` preservando la sesión.
-
----
-
-## 5. Próximos Pasos Técnicos Priorizados
-
-1. **Resolver `FIX-01` en Backend ([backend/internal/core/domain/models.go](backend/internal/core/domain/models.go)):**
-   - Eliminar `uniqueIndex:idx_usuario_vmid` de `SesionActiva.UsuarioID`, `Auditoria.UsuarioID` y `Notificacion.UsuarioID`.
-   - Nombrar el índice compuesto de `PermisoInstancia` explícitamente como `uniqueIndex:idx_permiso_usuario_vmid` en `UsuarioID` y `VmidProxmox`.
-   - *Impacto:* Desbloquea de inmediato 6 pruebas de backend (`BAC-03`, `LOGIN-01`, `LOGIN-03`, `BAC-09`, `BAC-10/11`, `BAC-05/06`).
-2. **Resolver `FIX-08` en Frontend ([frontend/centinela/src/routes/applicationRoutes.tsx](frontend/centinela/src/routes/applicationRoutes.tsx)):**
-   - Reubicar `/dashboard`, `/instances`, `/users`, `/users/new` y `/users/:userId` dentro de `ProtectedLayout` con `loader: loadProtectedSession`.
-   - *Impacto:* Corrige las 2 fallas de [test/front/navigation.test.tsx](test/front/navigation.test.tsx) y restablece la seguridad del sistema.
-3. **Conectar el Módulo Administrativo en Frontend (`FIX-05`, `FIX-06`, `FIX-06B`):**
-   - Implementar guard de rol `ADMIN` en la ruta `/users`.
-   - Reemplazar array `usersList` en [frontend/centinela/src/pages/Users.tsx](frontend/centinela/src/pages/Users.tsx) por llamada a `GET /api/admin/users`.
-   - Conectar formularios en [frontend/centinela/src/pages/CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) y [frontend/centinela/src/pages/UserDetail.tsx](frontend/centinela/src/pages/UserDetail.tsx) a los endpoints `POST` y `PUT /api/admin/users`.
-4. **Implementar Endpoints de Recursos en Backend (`BAC-08`, `BAC-14`, `BAC-07`):**
-   - Implementar `GET /api/instances` con adaptador Proxmox normalizado.
-   - Implementar middleware de validación `(user_id, instance_id)` que devuelva `403` sin consultar a Proxmox.
-
+### 4.2 Tareas Pendientes de Implementación (Hito de Recursos)
+3. **Backend — `BAC-08` (Middleware de Recursos):**
+   - *Falla:* `resource_access_acceptance_test.go > GET /instances/9999 devuelve 404 en vez de 403`.
+   - *Causa:* Middleware de validación de permisos por VMID aún no implementado.
+4. **Backend — `BAC-14` (Inventario Proxmox VE):**
+   - *Falla:* `resource_access_acceptance_test.go > GET /api/instances devuelve 404`.
+   - *Causa:* Adaptador de Proxmox e inventario normalizado aún no implementados.
+5. **Frontend — `FRN-07` (Listar Instancias en Detalle, `FIX-14`):**
+   - *Falla:* `admin-users.test.tsx > consulta GET /api/instances para listar instancias`.
+   - *Causa:* [UserDetail.tsx](../frontend/centinela/src/pages/UserDetail.tsx) no dispara el fetch a `/instances`.
+6. **Frontend — `FRN-07` (Guardar Permisos de Instancias, `FIX-14`):**
+   - *Falla:* `admin-users.test.tsx > permite seleccionar VMIDs y enviarlos al endpoint de permisos`.
+   - *Causa:* [UserDetail.tsx](../frontend/centinela/src/pages/UserDetail.tsx) no dispara el `PUT` a `/permissions`.

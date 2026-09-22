@@ -2,6 +2,8 @@ Una vez que terminen **`futuro.md`** (con la prueba integral `LOGIN-04` aprobada
 
 **RF-12 (organizaciones / multi-tenant) queda descartado del MVP por decisión del equipo.** Ninguna tarea de las tres etapas siguientes debe reservar `organization_id` en ninguna tabla; si se retoma en el futuro, va a requerir migración y backfill de todo lo ya construido.
 
+**La integración con un servidor SMTP real queda formalmente descartada del alcance del proyecto.** La entrega de correos queda resuelta de forma definitiva mediante el simulador por consola `MockEmailService` (desacoplado a través del puerto `EmailService`), cumpliendo con la política de mínimo privilegio (Zero-Trust), sanitización de logs y control estructurado de errores sin dependencia de infraestructura externa.
+
 A partir de ahí, entran de lleno a **las funcionalidades operativas del hipervisor**. Para no improvisar y tener todo listo en ClickUp antes de que terminen la semana que viene, el trabajo que sigue debe estructurarse en **3 etapas consecutivas** hasta la entrega final:
 
 ---
@@ -216,7 +218,7 @@ flowchart LR
 * Endpoint de exportación que respete los filtros aplicados.
 
 
-* **Motor de alertas por saturación (`RF-11`):** evaluador periódico de la salud/consumo del nodo (CPU, RAM, disco) que dispare eventos de alta severidad sobre el mismo canal definido en `BAC-21`, con umbrales configurables, e integración SMTP para el envío de correo cuando la severidad lo amerite.
+* **Motor de alertas por saturación (`RF-11`):** evaluador periódico de la salud/consumo del nodo (CPU, RAM, disco) que dispare eventos de alta severidad sobre el mismo canal definido en `BAC-21`, con umbrales configurables y emisión a través del canal en tiempo real y el simulador de correo `MockEmailService`.
 
 
 
@@ -251,6 +253,15 @@ flowchart LR
 * **Smoke Test y UAT:** Simulación integral punta a punta de todos los casos de uso para la defensa académica.
 
 
+* **Integración con proveedor SMTP real (Continuación de BAC-16 / Si alcanza el tiempo):**
+  - Conectar el backend a un servidor SMTP real (SendGrid, Mailgun o servidor propio) mediante un nuevo adaptador `SmtpEmailService` que reemplace al actual `MockEmailService`.
+  - Inyección de variables de entorno reales (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, etc.).
+  - *Garantía de Arquitectura Hexagonal:* Gracias al puerto `EmailService`, ni la capa de dominio (`AuthService`, `UserService`) ni los handlers HTTP sufrirán ningún cambio; solo bastará con crear el adaptador SMTP y conectarlo en el `main.go`. Si el tiempo no alcanza antes de la entrega final, se deja como se implementó en la fase base (con el simulador de consola `MockEmailService`).
+
+
+* **Evaluación de almacenamiento seguro de tokens (Mejora post FIX-10):**
+  - Se implementó el almacenamiento de los JWT mediante `sessionStorage`.
+  - Como mejora de seguridad para evaluar en esta etapa, analizar el uso de cookies `HttpOnly` y `Secure`, principalmente para el `refreshToken`, ya que evita que JavaScript pueda acceder directamente a este token y reduce su exposición ante ataques XSS. Esto requeriría adaptar el manejo del endpoint de refresh en el backend para emitir y leer la cookie.
 
 ---
 

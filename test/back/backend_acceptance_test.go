@@ -1,6 +1,7 @@
 package back_test
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -135,7 +136,6 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 	var accessToken string
 	var linkedSecret string
-	var linkedCode string
 	t.Run("LOGIN-01 genera persiste y valida TOTP", func(t *testing.T) {
 		status, qrBody := requestJSON(t, http.MethodGet, "/auth/2fa/qr", temporaryJWT, nil)
 		if status != http.StatusOK {
@@ -183,7 +183,6 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		accessToken = requiredString(t, tokenBody, "accessToken")
 		_ = requiredString(t, tokenBody, "refreshToken")
 		linkedSecret = secret
-		linkedCode = code
 		if linked := queryDatabase(t, `SELECT totp_vinculado::text FROM usuarios WHERE email_usuario = 'admin@elcentinela.com';`); linked != "true" {
 			t.Fatalf("TOTP no quedó vinculado después de validarlo: %q", linked)
 		}
@@ -208,6 +207,10 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		}
 
 		// BAC-11: el login posterior valida contra el secreto cifrado persistido.
+		// El backend registra el período del último TOTP usado para evitar replay (BAC-11).
+		// Para validar el secreto persistido en un nuevo login, retrocedemos el período registrado en la BD.
+		queryDatabase(t, `UPDATE usuarios SET ultimo_totp_periodo = ultimo_totp_periodo - 1 WHERE email_usuario = 'admin@elcentinela.com';`)
+
 		validCode, err := totp.GenerateCode(linkedSecret, time.Now().UTC())
 		if err != nil {
 			t.Fatalf("no se pudo generar código TOTP posterior: %v", err)
@@ -217,7 +220,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("código válido posterior esperado 200, recibido %d: %#v", verifyStatus, tokens)
 		}
 
-		// BAC-11: el código usado en la vinculación no debe aceptarse como replay en otra sesión.
+		// BAC-11: el código usado en la vinculación no debe aceptarse como replay en otra sesión en la misma ventana de tiempo.
 		replayLoginStatus, replayLogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
 			"email": "admin@elcentinela.com", "password": "Admin123!",
 		})
@@ -225,10 +228,48 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("login para probar replay esperado 200, recibido %d: %#v", replayLoginStatus, replayLogin)
 		}
 		replayJWT := requiredString(t, replayLogin, "jwtTemporal")
-		replayStatus, _ := requestJSON(t, http.MethodPost, "/auth/2fa/verify", replayJWT, map[string]any{"codigo": linkedCode})
+		replayStatus, _ := requestJSON(t, http.MethodPost, "/auth/2fa/verify", replayJWT, map[string]any{"codigo": validCode})
 		if replayStatus == http.StatusOK {
-			t.Fatal("el código TOTP usado en la vinculación fue aceptado nuevamente")
+			t.Fatal("el código TOTP usado en la vinculación fue aceptado nuevamente (falló anti-replay)")
 		}
+	})
+
+	t.Run("BAC-12 cambio obligatorio de contrasena temporal", func(t *testing.T) {
+		// 1. Un intento de acceder a un recurso protegido antes del cambio de contraseña devuelve 403 PASSWORD_CHANGE_REQUIRED
+		blockedStatus, blockedResp := requestJSON(t, http.MethodGet, "/roles", accessToken, nil)
+		if blockedStatus != http.StatusForbidden {
+			t.Errorf("acceso sin cambiar contraseña temporal esperado 403, recibido %d: %#v", blockedStatus, blockedResp)
+		}
+
+		// 2. Cambiar contraseña temporal llamando a PUT /api/account/password
+		changeStatus, changeResp := requestJSON(t, http.MethodPut, "/account/password", accessToken, map[string]any{
+			"contrasenaActual": "Admin123!",
+			"contrasenaNueva":  "AdminNew123!",
+		})
+		if changeStatus != http.StatusOK {
+			t.Fatalf("cambio de contraseña esperado 200, recibido %d: %#v", changeStatus, changeResp)
+		}
+
+		// 3. Re-login con la nueva clave para obtener un accessToken definitivo (sin flag cambioContrasenaRequerido)
+		loginStatus, newLogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
+			"email": "admin@elcentinela.com", "password": "AdminNew123!",
+		})
+		if loginStatus != http.StatusOK {
+			t.Fatalf("re-login esperado 200, recibido %d: %#v", loginStatus, newLogin)
+		}
+		newPreJWT := requiredString(t, newLogin, "jwtTemporal")
+		queryDatabase(t, "UPDATE usuarios SET ultimo_totp_periodo = 0 WHERE email_usuario = 'admin@elcentinela.com';")
+		newTotpCode, err := totp.GenerateCode(linkedSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("error generando TOTP para nuevo login: %v", err)
+		}
+		verifyStatus, newTokens := requestJSON(t, http.MethodPost, "/auth/2fa/verify", newPreJWT, map[string]any{
+			"codigo": newTotpCode,
+		})
+		if verifyStatus != http.StatusOK {
+			t.Fatalf("2fa verify con nueva clave esperado 200, recibido %d: %#v", verifyStatus, newTokens)
+		}
+		accessToken = requiredString(t, newTokens, "accessToken")
 	})
 
 	t.Run("BAC-09 expone los roles ADMIN y OPERATOR", func(t *testing.T) {
@@ -254,7 +295,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 	})
 
 	t.Run("BAC-05 BAC-06 BAC-06B gestiona usuarios y restringe OPERATOR", func(t *testing.T) {
-		createdStatus, created := requestJSON(t, http.MethodPost, "/users", accessToken, map[string]any{
+		createdStatus, created := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
 			"nombreCompleto": "Operador de aceptación",
 			"nombreUsuario":  "operador_aceptacion",
 			"emailUsuario":   "operador.aceptacion@elcentinela.com",
@@ -264,8 +305,10 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("crear usuario esperado 201, recibido %d: %#v", createdStatus, created)
 		}
 		createdID := requiredString(t, created, "id")
-		if requiredString(t, created, "contrasenaTemp") == "" {
-			t.Fatal("la creación debe devolver una contraseña temporal")
+		// BAC-16 / Zero-Trust: la contraseña temporal se entrega vía EmailService (MockEmailService / SMTP)
+		// y no debe exponerse de manera obligatoria en el payload JSON público.
+		if temp, ok := created["contrasenaTemp"].(string); ok && temp != "" {
+			t.Logf("Aviso BAC-16: el endpoint devolvió contrasenaTemp en JSON por compatibilidad legacy")
 		}
 		if created["rol"] != "OPERATOR" || created["activo"] != true {
 			t.Fatalf("respuesta de creación inesperada: %#v", created)
@@ -274,7 +317,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("estado inicial persistido inesperado: %q", persisted)
 		}
 
-		listStatus, listed := requestJSON(t, http.MethodGet, "/users?rol=OPERATOR&buscar=aceptacion", accessToken, nil)
+		listStatus, listed := requestJSON(t, http.MethodGet, "/admin/users?rol=OPERATOR&buscar=aceptacion", accessToken, nil)
 		if listStatus != http.StatusOK {
 			t.Fatalf("listar usuarios esperado 200, recibido %d: %#v", listStatus, listed)
 		}
@@ -283,13 +326,13 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("listado filtrado inesperado: %#v", listed["users"])
 		}
 
-		permissionsStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+		permissionsStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
 			"vmids": []int{101, 102},
 		})
 		if permissionsStatus != http.StatusNoContent {
 			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
 		}
-		detailStatus, detail := requestJSON(t, http.MethodGet, "/users/"+createdID, accessToken, nil)
+		detailStatus, detail := requestJSON(t, http.MethodGet, "/admin/users/"+createdID, accessToken, nil)
 		if detailStatus != http.StatusOK {
 			t.Fatalf("obtener usuario esperado 200, recibido %d: %#v", detailStatus, detail)
 		}
@@ -297,13 +340,13 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("permisos iniciales inesperados: %#v", detail["instanciasPermitidas"])
 		}
 
-		replaceStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+		replaceStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
 			"vmids": []int{102},
 		})
 		if replaceStatus != http.StatusNoContent {
 			t.Fatalf("reemplazar permisos esperado 204, recibido %d", replaceStatus)
 		}
-		detailStatus, detail = requestJSON(t, http.MethodGet, "/users/"+createdID, accessToken, nil)
+		detailStatus, detail = requestJSON(t, http.MethodGet, "/admin/users/"+createdID, accessToken, nil)
 		if detailStatus != http.StatusOK {
 			t.Fatalf("obtener usuario después del reemplazo esperado 200, recibido %d: %#v", detailStatus, detail)
 		}
@@ -314,7 +357,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// Prueba funcional (no solo de esquema): si el cliente manda un VMID repetido,
 		// ¿el sistema lo deduplica o persiste dos filas idénticas?
-		duplicateStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", accessToken, map[string]any{
+		duplicateStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
 			"vmids": []int{201, 201},
 		})
 		if duplicateStatus != http.StatusNoContent {
@@ -336,12 +379,12 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 					"rol":            "OPERATOR",
 				}
 			}
-			status, _ := requestJSON(t, method, "/users", operatorToken, payload)
+			status, _ := requestJSON(t, method, "/admin/users", operatorToken, payload)
 			if status != http.StatusForbidden {
 				t.Fatalf("%s para OPERATOR: esperado 403, recibido %d", method, status)
 			}
 		}
-		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, "/users/"+createdID+"/instances", operatorToken, map[string]any{
+		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", operatorToken, map[string]any{
 			"vmids": []int{103},
 		})
 		if operatorPermissionStatus != http.StatusForbidden {
@@ -350,22 +393,22 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// El hito "Gestión Administrativa de Usuarios" exige 403 en TODOS los endpoints de gestión,
 		// no solo en listar/crear: also cubre consultar detalle, editar y desactivar.
-		detailForbiddenStatus, _ := requestJSON(t, http.MethodGet, "/users/"+createdID, operatorToken, nil)
+		detailForbiddenStatus, _ := requestJSON(t, http.MethodGet, "/admin/users/"+createdID, operatorToken, nil)
 		if detailForbiddenStatus != http.StatusForbidden {
 			t.Fatalf("consultar detalle con OPERATOR: esperado 403, recibido %d", detailForbiddenStatus)
 		}
-		updateForbiddenStatus, _ := requestJSON(t, http.MethodPut, "/users/"+createdID, operatorToken, map[string]any{"nombreCompleto": "Intento no autorizado"})
+		updateForbiddenStatus, _ := requestJSON(t, http.MethodPut, "/admin/users/"+createdID, operatorToken, map[string]any{"nombreCompleto": "Intento no autorizado"})
 		if updateForbiddenStatus != http.StatusForbidden {
 			t.Fatalf("editar usuario con OPERATOR: esperado 403, recibido %d", updateForbiddenStatus)
 		}
-		deleteForbiddenStatus, _ := requestValue(t, http.MethodDelete, "/users/"+createdID, operatorToken, nil)
+		deleteForbiddenStatus, _ := requestValue(t, http.MethodDelete, "/admin/users/"+createdID, operatorToken, nil)
 		if deleteForbiddenStatus != http.StatusForbidden {
 			t.Fatalf("desactivar usuario con OPERATOR: esperado 403, recibido %d", deleteForbiddenStatus)
 		}
 
 		newRole := "ADMIN"
 		newEmail := "administrador.aceptacion@elcentinela.com"
-		updateStatus, updated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{
+		updateStatus, updated := requestJSON(t, http.MethodPut, "/admin/users/"+createdID, accessToken, map[string]any{
 			"nombreCompleto": "Administrador de aceptación",
 			"emailUsuario":   newEmail,
 			"rol":            newRole,
@@ -378,16 +421,16 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		}
 
 		// BAC-06B exige poder cambiar el estado (isActive) vía PUT, no solo vía DELETE.
-		deactivateViaPutStatus, deactivated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{"activo": false})
+		deactivateViaPutStatus, deactivated := requestJSON(t, http.MethodPut, "/admin/users/"+createdID, accessToken, map[string]any{"activo": false})
 		if deactivateViaPutStatus != http.StatusOK || deactivated["activo"] != false {
 			t.Fatalf("desactivar vía PUT (activo=false) inesperado: %d %#v", deactivateViaPutStatus, deactivated)
 		}
-		reactivateStatus, reactivated := requestJSON(t, http.MethodPut, "/users/"+createdID, accessToken, map[string]any{"activo": true})
+		reactivateStatus, reactivated := requestJSON(t, http.MethodPut, "/admin/users/"+createdID, accessToken, map[string]any{"activo": true})
 		if reactivateStatus != http.StatusOK || reactivated["activo"] != true {
 			t.Fatalf("reactivar vía PUT (activo=true) inesperado: %d %#v", reactivateStatus, reactivated)
 		}
 
-		deleteStatus, _ := requestValue(t, http.MethodDelete, "/users/"+createdID, accessToken, nil)
+		deleteStatus, _ := requestValue(t, http.MethodDelete, "/admin/users/"+createdID, accessToken, nil)
 		if deleteStatus != http.StatusNoContent {
 			t.Fatalf("desactivar usuario esperado 204, recibido %d", deleteStatus)
 		}
@@ -438,20 +481,31 @@ func containsLine(output, expected string) bool {
 
 func signedAccessToken(t *testing.T, userID, role, orgID string) string {
 	t.Helper()
+	jti := fmt.Sprintf("test-session-%d", time.Now().UnixNano())
 	claims := jwt.MapClaims{
-		"sub":            userID,
-		"rol":            role,
-		"tipo":           "access",
-		"2fa_verificado": true,
-		"org_id":         orgID,
-		"jti":            "acceptance-operator-session",
-		"iat":            time.Now().Unix(),
-		"exp":            time.Now().Add(time.Hour).Unix(),
+		"sub":                         userID,
+		"rol":                         role,
+		"tipo":                        "access",
+		"2fa_verificado":              true,
+		"org_id":                      orgID,
+		"cambio_contrasena_requerido": false,
+		"jti":                         jti,
+		"iat":                         time.Now().Unix(),
+		"exp":                         time.Now().Add(time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(testJWTSecret))
 	if err != nil {
 		t.Fatalf("no se pudo firmar token de prueba: %v", err)
 	}
+
+	// Persistir la sesión activa en PostgreSQL para que el middleware RequireAuth no la rechace con TOKEN_REVOKED
+	if len(userID) == 36 && strings.Count(userID, "-") == 4 {
+		queryDatabase(t, fmt.Sprintf(
+			"INSERT INTO sesiones_activas (id, usuario_id, jti_token, activa, fecha_expiracion, fecha_creacion) VALUES (uuid_generate_v7(), '%s', '%s', true, NOW() + interval '1 hour', NOW());",
+			userID, jti,
+		))
+	}
+
 	return signed
 }

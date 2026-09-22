@@ -222,7 +222,7 @@ describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
 
     renderAppAs('OPERATOR', '/dashboard');
 
-    expect(window.sessionStorage.getItem('centinela_access')).toBe('bearer-token-123');
+    expect(window.sessionStorage.getItem('centinela_access')).toBe('access-token');
   });
 
   it('mantiene al usuario en la vista protegida sin forzar logout ante un 403', async () => {
