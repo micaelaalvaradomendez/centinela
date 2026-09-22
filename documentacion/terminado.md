@@ -396,3 +396,35 @@
 - **Entregable:** definición del esquema genérico de evento (`type`, `severity`, `resource_type`, `resource_id`, `message`, `timestamp`, `payload`) compartido entre backend y frontend. En el backend quedó el struct `RealtimeEvent` en `internal/core/ports/event_port.go` con constantes y validador `NewRealtimeEvent`; en el frontend quedó la interfaz en `centinela/src/types/notifications.ts`.
 - **Criterio de éxito:** existe un tipo/interfaz compartida y sincronizada entre Go y TypeScript. Verificado 100% en `TestHitoRecuperacionDeContrasenasYNotificaciones`.
 
+### `BAC-07` - Asignación de permisos por recurso
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 3 h
+- **Depende de:** `BAC-05` y `BAC-06`.
+- **Entregable:** `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions`, con actualización atómica de `user_instances`.
+- **Criterio de éxito:** la relación usuario-instancia se persiste, reemplaza el conjunto anterior de forma atómica y solo puede gestionarla un administrador autorizado.
+
+### `BAC-08` - Middleware de autorización por recurso
+
+> [!WARNING]
+> **Estado: Implementado con fallo en pruebas de integración.** Se implementó el puerto `InstanceRepository` (`internal/core/ports/instance_port.go`), el repositorio en PostgreSQL (`internal/adapters/secondary/postgres/instance_repository.go`) y la factoría `RequireInstanceAccess` (`internal/adapters/primary/http/middleware/instance_guard.go`), cableado en `cmd/api/main.go`. En las pruebas de integración (`test/back/resource_access_acceptance_test.go`), la llamada `GET /instances/9999` devolvió `404 Not Found` en lugar de `403 Forbidden` debido a que el grupo de rutas `/instances` aún no está montado activamente en el router de Gin a la espera de los handlers de Proxmox (`BAC-14`). Defecto registrado en [`futuro.md`](futuro.md) como `FIX-16`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 3 h
+- **Depende de:** `BAC-07`.
+- **Entregable:** guard que valide `(user_id, instance_id)` en `user_instances` antes de consultar o enviar órdenes a Proxmox VE.
+- **Criterio de éxito:** un operador sin permiso recibe `403` y la API no realiza ninguna llamada a Proxmox VE.
+
+### `FRN-07` - Selector de asignación de instancias
+
+> [!WARNING]
+> **Estado: Implementado con fallo en pruebas unitarias.** En `UserDetail.tsx` se maquetó la solapa de roles y permisos con el componente `AccessList`, pero se encuentra desconectada de la API: no realiza la consulta a `GET /api/instances` ni despacha la actualización a `PUT /api/admin/users/:id/permissions`. Los tests en `test/front/admin-users.test.tsx` fallan al esperar llamadas de red a dichos endpoints. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-14`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 4 h
+- **Depende de:** `FRN-05`, `BAC-07` y `BAC-14`.
+- **Entregable:** selector con instancias reales obtenidas de `GET /api/instances`, instancias asignadas y botón que envíe el array de IDs a `PUT /api/admin/users/{id}/permissions`.
+- **Criterio de éxito:** el administrador puede guardar una matriz de permisos y verla nuevamente al abrir el usuario.

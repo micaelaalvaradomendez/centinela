@@ -113,20 +113,32 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
   });
 
   it('permite solicitar la desactivación o baja de un usuario mediante DELETE a la API', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'u1',
+        nombreCompleto: 'Ada Lovelace',
+        nombreUsuario: 'alovelace',
+        emailUsuario: 'ada@example.com',
+        rol: 'ADMIN',
+        activo: true,
+      }));
+    });
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     render(<UserDetail />);
-    const deleteButton = screen.queryByRole('button', { name: /eliminar usuario|desactivar/i });
+    const deleteButton = await screen.findByRole('button', { name: /eliminar usuario|desactivar/i });
     expect(deleteButton).toBeInTheDocument();
-    if (deleteButton) {
-      await user.click(deleteButton);
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(url).toContain('/users');
-      expect(init.method).toBe('DELETE');
-    }
+    await user.click(deleteButton);
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const deleteCall = calls.find(([_, init]) => init?.method === 'DELETE');
+      expect(deleteCall).toBeDefined();
+      expect(deleteCall?.[0]).toContain('/users');
+    });
   });
 });
 
@@ -144,26 +156,40 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
   });
 
   it('permite modificar información básica y rol enviando PUT /api/admin/users/:id', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      id: 'u2',
-      nombreCompleto: 'Usuario Dos Editado',
-      rol: 'ADMIN',
-      activo: true,
-    }));
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return Promise.resolve(jsonResponse({
+          id: 'u2',
+          nombreCompleto: 'Usuario Dos Editado',
+          rol: 'ADMIN',
+          activo: true,
+        }));
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'u2',
+        nombreCompleto: 'Usuario Dos',
+        nombreUsuario: 'user2',
+        emailUsuario: 'user2@example.com',
+        rol: 'ADMIN',
+        activo: true,
+      }));
+    });
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     render(<UserDetail />);
 
-    const saveButton = screen.getByRole('button', { name: /guardar cambios/i });
+    const saveButton = await screen.findByRole('button', { name: /guardar cambios/i });
     expect(saveButton).toBeInTheDocument();
 
     await user.click(saveButton);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/users');
-    expect(init.method).toBe('PUT');
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as [string, RequestInit][];
+      const putCall = calls.find(([_, init]) => init?.method === 'PUT');
+      expect(putCall).toBeDefined();
+      expect(putCall?.[0]).toContain('/users');
+    });
   });
 });
 

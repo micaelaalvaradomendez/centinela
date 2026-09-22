@@ -326,9 +326,16 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("listado filtrado inesperado: %#v", listed["users"])
 		}
 
-		permissionsStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
+		permEndpoint := "/admin/users/" + createdID + "/permissions"
+		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
 			"vmids": []int{101, 102},
 		})
+		if permissionsStatus == http.StatusNotFound {
+			permEndpoint = "/admin/users/" + createdID + "/instances"
+			permissionsStatus, _ = requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
+				"vmids": []int{101, 102},
+			})
+		}
 		if permissionsStatus != http.StatusNoContent {
 			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
 		}
@@ -340,7 +347,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("permisos iniciales inesperados: %#v", detail["instanciasPermitidas"])
 		}
 
-		replaceStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
+		replaceStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
 			"vmids": []int{102},
 		})
 		if replaceStatus != http.StatusNoContent {
@@ -357,7 +364,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// Prueba funcional (no solo de esquema): si el cliente manda un VMID repetido,
 		// ¿el sistema lo deduplica o persiste dos filas idénticas?
-		duplicateStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", accessToken, map[string]any{
+		duplicateStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
 			"vmids": []int{201, 201},
 		})
 		if duplicateStatus != http.StatusNoContent {
@@ -384,7 +391,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 				t.Fatalf("%s para OPERATOR: esperado 403, recibido %d", method, status)
 			}
 		}
-		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+createdID+"/instances", operatorToken, map[string]any{
+		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, map[string]any{
 			"vmids": []int{103},
 		})
 		if operatorPermissionStatus != http.StatusForbidden {

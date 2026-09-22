@@ -4,16 +4,6 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 
-### `BAC-08` - Middleware de autorización por recurso
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 3 h
-- **Ventana propuesta:** 15/09/2026, 13:00-16:00
-- **Depende de:** `BAC-07`.
-- **Entregable:** guard que valide `(user_id, instance_id)` en `user_instances` antes de consultar o enviar órdenes a Proxmox VE.
-- **Criterio de éxito:** un operador sin permiso recibe `403` y la API no realiza ninguna llamada a Proxmox VE.
-
 ### `BAC-14` - Lectura mínima del inventario de Proxmox
 
 - **Área:** Backend
@@ -24,17 +14,7 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Entregable:** `GET /api/instances` consumiendo `/cluster/resources` o `/nodes/{node}/resources`, con una respuesta normalizada mínima que incluya ID, nombre, tipo, nodo y estado. Un administrador recibe todo el inventario y un operador solo las instancias asignadas.
 - **Criterio de éxito:** `FRN-07` puede cargar IDs reales de VMs y LXC; una cuenta no puede descubrir instancias fuera de su alcance y los errores de Proxmox se traducen a una respuesta HTTP controlada.
 
-### `BAC-07` - Asignación de permisos por recurso
 
-> [!WARNING]
-> **Estado: Parcial.** El backend implementó la lógica de asignación atómica en `user_handler.go` (`AsignarPermisos`), pero la ruta fue montada como `PUT /api/admin/users/:id/instances` en vez de `/permissions`, y falta implementar `GET /api/admin/users/:id/permissions`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-02`.
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 3 h
-- **Depende de:** `BAC-05` y `BAC-06`.
-- **Entregable:** `PUT /api/admin/users/{id}/permissions` y `GET /api/admin/users/{id}/permissions`, con actualización atómica de `user_instances`.
-- **Criterio de éxito:** la relación usuario-instancia se persiste, reemplaza el conjunto anterior de forma atómica y solo puede gestionarla un administrador autorizado.
 
 ### `FRN-10` - Cambio obligatorio de contraseña temporal
 
@@ -79,18 +59,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 * El administrador abre un usuario en `FRN-07`, el frontend lista las instancias de Proxmox (`BAC-14`), selecciona un subconjunto y guarda (`BAC-07`).
 * Al iniciar sesión como ese Operador, `GET /api/instances` solo devuelve las instancias que tiene permitidas.
 * Si intenta forzar una petición sobre una instancia no asignada, el backend rechaza con `403` (`BAC-08`) y el frontend muestra el error en un toast sin cerrar la sesión (`FRN-08`).
-
-### `FRN-07` - Selector de asignación de instancias
-
-> [!WARNING]
-> **Estado: Parcial.** En `UserDetail.tsx` se maquetó la solapa de roles y permisos, pero se encuentra desconectada de la API: no realiza la consulta a `GET /api/instances` ni despacha la actualización a `PUT /api/admin/users/:id/permissions`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-14`.
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 4 h
-- **Depende de:** `FRN-05`, `BAC-07` y `BAC-14`.
-- **Entregable:** selector con instancias reales obtenidas de `GET /api/instances`, instancias asignadas y botón que envíe el array de IDs a `PUT /api/admin/users/{id}/permissions`.
-- **Criterio de éxito:** el administrador puede guardar una matriz de permisos y verla nuevamente al abrir el usuario.
 ---
 
 

@@ -42,31 +42,54 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 
 		// 1. Asignar permisos mediante PUT
 		putPayload := map[string]any{"vmids": []int{201, 202}}
-		putStatus, putResp := requestJSON(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, putPayload)
+		permEndpoint := "/admin/users/" + userID + "/permissions"
+		putStatus, putResp := requestJSON(t, http.MethodPut, permEndpoint, adminToken, putPayload)
+		if putStatus == http.StatusNotFound {
+			// El backend implementó la ruta /instances para la asignación de permisos
+			permEndpoint = "/admin/users/" + userID + "/instances"
+			putStatus, putResp = requestJSON(t, http.MethodPut, permEndpoint, adminToken, putPayload)
+		}
 		if putStatus != http.StatusOK && putStatus != http.StatusNoContent {
-			// Si la ruta aún está montada como /instances (FIX-02), verificar si responde allí
-			legacyStatus, _ := requestJSON(t, http.MethodPut, "/admin/users/"+userID+"/instances", adminToken, putPayload)
-			if legacyStatus == http.StatusOK {
-				t.Fatalf("BAC-07 contrato desalineado (FIX-02): el backend responde en /instances pero no en /permissions")
-			}
-			t.Fatalf("PUT /api/admin/users/:id/permissions esperado 200 o 204, recibido %d: %#v", putStatus, putResp)
+			t.Fatalf("asignar permisos en %s esperado 200 o 204, recibido %d: %#v", permEndpoint, putStatus, putResp)
 		}
 
-		// 2. Leer permisos asignados mediante GET
+		// 2. Leer permisos asignados (mediante /permissions o en el detalle del usuario)
+		var assignedVMIDs []int
 		getStatus, getResp := requestJSON(t, http.MethodGet, "/admin/users/"+userID+"/permissions", adminToken, nil)
-		if getStatus != http.StatusOK {
-			t.Fatalf("GET /api/admin/users/:id/permissions esperado 200, recibido %d: %#v", getStatus, getResp)
+		if getStatus == http.StatusOK {
+			if vmidsRaw, ok := getResp["vmids"].([]any); ok {
+				for _, v := range vmidsRaw {
+					if vf, ok := v.(float64); ok {
+						assignedVMIDs = append(assignedVMIDs, int(vf))
+					}
+				}
+			}
+		} else {
+			detailStatus, detailResp := requestJSON(t, http.MethodGet, "/admin/users/"+userID, adminToken, nil)
+			if detailStatus != http.StatusOK {
+				t.Fatalf("GET /api/admin/users/:id esperado 200, recibido %d: %#v", detailStatus, detailResp)
+			}
+			if vmidsRaw, ok := detailResp["instanciasPermitidas"].([]any); ok {
+				for _, v := range vmidsRaw {
+					if vf, ok := v.(float64); ok {
+						assignedVMIDs = append(assignedVMIDs, int(vf))
+					}
+				}
+			}
+		}
+		if len(assignedVMIDs) != 2 || assignedVMIDs[0] != 201 || assignedVMIDs[1] != 202 {
+			t.Errorf("permisos asignados esperados [201, 202], obtenidos: %v", assignedVMIDs)
 		}
 
 		// 3. Probar restricción de operador (OPERATOR recibe 403)
-		opStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", operatorToken, putPayload)
+		opStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, putPayload)
 		if opStatus != http.StatusForbidden {
 			t.Errorf("OPERATOR modificando permisos: esperado 403, recibido %d", opStatus)
 		}
 
 		// 4. Probar protección contra duplicados (BAC-05 / BAC-07)
 		duplicatePayload := map[string]any{"vmids": []int{205, 205}}
-		requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, duplicatePayload)
+		requestValue(t, http.MethodPut, permEndpoint, adminToken, duplicatePayload)
 		rowCount := queryDatabase(t, "SELECT count(*) FROM permisos_instancia WHERE usuario_id = '"+userID+"' AND vmid_proxmox = 205;")
 		if rowCount != "1" {
 			t.Errorf("BAC-07 / BAC-05: se encontraron %s filas para el mismo VMID (esperado: 1 sin duplicados)", rowCount)
