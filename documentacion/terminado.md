@@ -177,8 +177,8 @@
 
 ### `FRN-05` - Panel de gestión de usuarios
 
-> [!WARNING]
-> **Estado: Parcial.** La tabla ya consume la API real (`GET /api/admin/users`) y renderiza datos, pero las rutas `/users` en `applicationRoutes.tsx` carecen de `loader: loadAdminSession`, permitiendo el acceso a usuarios `OPERATOR`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-12`.
+> [!NOTE]
+> **Estado: Completada (verificado el 23/09/2026).** El guard administrativo se resolvió con `FIX-12`: las rutas `/users`, `/users/new` y `/users/:userId` están bajo `loadAdminSession`. `test/front/admin-users.test.tsx`, bloque FRN-05 (3/3), verifica la redirección del OPERATOR, `GET /api/admin/users` con Bearer y la tabla con datos reales.
 
 - **Área:** Frontend
 - **Asignado:** Belinda
@@ -190,6 +190,13 @@
 
 ### `FRN-06` - Modal de creación y desactivación de usuarios
 
+> [!WARNING]
+> **Estado: Implementado con retroceso detectado (23/09/2026).** El alta envía `POST /api/admin/users` correctamente, pero hay dos problemas:
+> - Desde `BAC-16` el backend ya no devuelve `contrasenaTemp`, y `CrearUsuarios.tsx` depende de ese campo para mostrar el resultado. Un alta exitosa **no muestra ninguna confirmación**.
+> - "Eliminar usuario" (`detailsUserPage.tsx:110`) no tiene acción y no envía `DELETE`.
+>
+> Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-24`.
+
 - **Área:** Frontend
 - **Asignado:** Luz
 - **Estimación:** 3 h
@@ -199,6 +206,9 @@
 - **Criterio de éxito:** el administrador puede completar altas y bajas desde la interfaz y los errores se muestran de forma comprensible.
 
 ### FRN-06B — Modal de Edición de Usuario y Cambio de Rol:
+
+> [!WARNING]
+> **Estado: Implementado con retroceso detectado (23/09/2026).** El formulario precargado existe (`informationOfUser.tsx`), pero editar nombre, correo, rol o estado no se persiste. "Guardar cambios" solo guarda permisos de instancia y se deshabilita si no cambió ninguno; en el frontend no existe `PUT /api/admin/users/:id`. Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06B. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-25`.
 - Asignado: Luz | Estimación: 2h
 - Depende de: FRN-05, FRN-06 y BAC-06B
 - Entregable: Formulario precargado con los datos del usuario seleccionado para modificar su información básica y cambiar su rol mediante un desplegable.  
@@ -342,6 +352,9 @@
 
 ### `BAC-17` - Logout y revocación de sesión/JWT
 
+> [!NOTE]
+> La revocación atómica de access y refresh token se completó en una segunda iteración: `BAC-17` - *Cierre de sesión y revocación atómica*, al final de este archivo.
+
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2 h
@@ -351,6 +364,9 @@
 - **Criterio de éxito:** un JWT revocado deja de autorizar peticiones aunque no haya expirado por tiempo; `BAC-13` y `BAC-15` consumen este mecanismo en lugar de simular la revocación.
 
 ### `BAC-18` - Base transversal de auditoría (append-only)
+
+> [!WARNING]
+> **Estado: Implementado con retroceso detectado (23/09/2026).** El registro, la consulta, los filtros, la exportación CSV y el 403 al operador funcionan. Pero la base de datos **permite `UPDATE` y `DELETE` sobre `auditoria`** con las credenciales de la aplicación: no hay trigger, `REVOKE` ni regla, así que no se cumple el criterio "falla a nivel de base de datos". Prueba: `test/back/password_recovery_acceptance_test.go`, caso `BAC-18…`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-23`.
 
 - **Área:** Backend
 - **Asignado:** Tayra
@@ -407,8 +423,11 @@
 
 ### `BAC-08` - Middleware de autorización por recurso
 
-> [!WARNING]
-> **Estado: Implementado con fallo en pruebas de integración.** Se implementó el puerto `InstanceRepository` (`internal/core/ports/instance_port.go`), el repositorio en PostgreSQL (`internal/adapters/secondary/postgres/instance_repository.go`) y la factoría `RequireInstanceAccess` (`internal/adapters/primary/http/middleware/instance_guard.go`), cableado en `cmd/api/main.go`. En las pruebas de integración (`test/back/resource_access_acceptance_test.go`), la llamada `GET /instances/9999` devolvió `404 Not Found` en lugar de `403 Forbidden` debido a que el grupo de rutas `/instances` aún no está montado activamente en el router de Gin a la espera de los handlers de Proxmox (`BAC-14`). Defecto registrado en [`futuro.md`](futuro.md) como `FIX-16`.
+> [!NOTE]
+> **Estado: Completada (verificado el 23/09/2026).** El defecto de rutas no montadas se resolvió con `FIX-16`, ver más abajo. `test/back/resource_access_acceptance_test.go` verifica:
+> - `403 INSTANCE_ACCESS_DENIED` en `GET`, `start` y `stop` sobre instancias no asignadas;
+> - que Proxmox no recibe la orden;
+> - que las instancias asignadas y el ADMIN pasan el guard.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -419,8 +438,13 @@
 
 ### `FRN-07` - Selector de asignación de instancias
 
-> [!WARNING]
-> **Estado: Implementado con fallo en pruebas unitarias.** En `UserDetail.tsx` se maquetó la solapa de roles y permisos con el componente `AccessList`, pero se encuentra desconectada de la API: no realiza la consulta a `GET /api/instances` ni despacha la actualización a `PUT /api/admin/users/:id/permissions`. Los tests en `test/front/admin-users.test.tsx` fallan al esperar llamadas de red a dichos endpoints. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-14`.
+> [!NOTE]
+> **Estado: Completada (verificado el 23/09/2026).** El selector se conectó a la API con `FIX-14`, ver más abajo. `detailsUserPage.tsx`, `rolesAndPermissions.tsx` y `useUserInstanceAccess.ts`:
+> - consultan `GET /api/instances` con Bearer;
+> - marcan las instancias asignadas;
+> - envían `PUT /api/admin/users/:id/permissions` con `{ vmids }`.
+>
+> Pendiente relacionado: guardar el perfil junto con los permisos (`FIX-25`).
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -462,3 +486,139 @@
 - **Entregable:** inventario de todos los `errorCode` emitidos por el backend, su estado HTTP y su manejo explícito en frontend. Corregir las diferencias verificadas y documentar los códigos que deliberadamente usan mensaje genérico.
 - **Criterio de éxito:** cada código del contrato tiene una respuesta y un mensaje de frontend verificables, sin depender de nombres históricos como `body.code`.
 
+
+---
+
+# Verificación del 23/09/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `15032da` y frontend `3192cf4` (`origin/main` en ambos casos).
+
+**Hito: Control de Acceso Basado en Recursos (completado).** El administrador abre un usuario en `FRN-07`, lista las instancias reales (`BAC-14`), asigna un subconjunto (`BAC-07`). El operador solo ve esas instancias en `GET /api/instances`, recibe `403 INSTANCE_ACCESS_DENIED` sobre las demás (`BAC-08`/`FIX-16`), y el frontend lo muestra en un toast sin cerrar la sesión (`FRN-08`). Verificado de punta a punta en `test/back/login04_acceptance_test.go`, pasos 6.2 a 6.4, en `resource_access_acceptance_test.go` y en `test/front/admin-users.test.tsx`.
+
+### `BAC-14` - Lectura mínima del inventario de Proxmox
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 3 h
+- **Depende de:** `BAC-08` y de las credenciales de lectura de Proxmox VE.
+- **Entregable:** `GET /api/instances` consumiendo `/cluster/resources` o `/nodes/{node}/resources`, con una respuesta normalizada mínima que incluya ID, nombre, tipo, nodo y estado. Un administrador recibe todo el inventario y un operador solo las instancias asignadas.
+- **Criterio de éxito:** `FRN-07` puede cargar IDs reales de VMs y LXC; una cuenta no puede descubrir instancias fuera de su alcance y los errores de Proxmox se traducen a una respuesta HTTP controlada.
+- **Verificación:** ✅ `resource_access_acceptance_test.go`, caso `BAC-14…`, contra un stub de Proxmox VE. Verifica:
+  - 401 sin token.
+  - El ADMIN recibe exactamente las VMs y LXC, sin nodos ni storages, con `{ id, name, type: vm|lxc, node, status }`.
+  - El operador ve solo lo asignado y existente.
+  - `404 INSTANCE_NOT_FOUND` para un VMID inexistente.
+  - Implementación: `instance_handler.go` y `proxmox/client.go`.
+
+### `FIX-16` - Montar middleware de autorización por recurso en rutas de instancias (`BAC-08`)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-08` y `BAC-14`.
+- **Entregable:** habilitar el grupo `/instances` bajo `RequireAuth()` y aplicar `RequireInstanceAccess(instanceRepo, "vmid")` en `GET /instances/:vmid`, `POST /instances/:vmid/start` y `POST /instances/:vmid/stop`, cortando con `403 INSTANCE_ACCESS_DENIED` antes de llamar a Proxmox.
+- **Criterio de éxito:** un operador que intente acceder a un VMID no asignado recibe `403 Forbidden` con `INSTANCE_ACCESS_DENIED`.
+- **Verificación:** ✅ `main.go:211-216`. En `resource_access_acceptance_test.go`, caso `FIX-16…`, el guard corta GET, start y stop, y el stub de Proxmox no registra la orden.
+
+### `BAC-17` - Cierre de sesión y revocación atómica de sesiones (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Depende de:** `BAC-03` y `BAC-04`.
+- **Entregable:** `POST /api/auth/logout` bajo `RequireAuth`, que obtiene el JTI del access token y revoca atómicamente `jtiRefresh` y `jtiAccess` en `sesiones_activas`. Tras el logout, el access token recibe `401 TOKEN_REVOKED`, y la acción se audita como `LOGOUT`.
+- **Criterio de éxito:** tras el logout, ambos tokens quedan con `activa: false`; cualquier petición con el access token revocado es rechazada con 401; la auditoría registra el evento.
+- **Verificación:** ✅ `session_security_acceptance_test.go`, caso `BAC-17…`, con tokens reales del circuito login → 2FA. Verifica:
+  - 401 sin Bearer.
+  - 204 con Bearer.
+  - `TOKEN_REVOKED` posterior al logout.
+  - El refresh posterior falla.
+  - Ambas sesiones inactivas en la base.
+  - Un registro `LOGOUT` nuevo.
+- **Integración pendiente:** con el contrato actual el refresh token viaja en el body. El frontend ya no lo envía (`SEC-02`), así que el logout disparado desde la interfaz responde 400 hasta que se implemente `SEC-01`, que sigue en `actual.md`.
+
+### `FRN-13` - Flujo integral de logout y limpieza de sesión en cliente (Frontend)
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 2 h
+- **Depende de:** `BAC-17`.
+- **Entregable:**
+  1. `logoutSession()` envía `Authorization: Bearer <accessToken>`.
+  2. La sesión local se limpia siempre, aunque la llamada falle.
+  3. Hay un listener global de `centinela:api-unauthorized` / `TOKEN_REVOKED` que limpia la sesión y redirige a `/login`.
+- **Criterio de éxito:** "Cerrar sesión" revoca en el backend, limpia las credenciales y redirige a `/login` con `replace: true`; un 401 remoto expulsa al usuario.
+- **Verificación:** ✅ `test/front/session-security.test.ts`, bloque FRN-13 (6/6). Verifica:
+  - Bearer y `credentials: include` en el logout.
+  - Limpieza ante caída de red, 500 y 401.
+  - `historyAction: REPLACE`.
+  - Listener de `TOKEN_REVOKED` (`ApiResponseNotifier.tsx`).
+- **Integración pendiente:** la revocación en el backend depende de `SEC-01` (ver `BAC-17`).
+
+### `SEC-02` - Cliente frontend compatible con refresh token HttpOnly
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2 h
+- **Depende de:** `SEC-01` y `BAC-17`.
+- **Entregable:**
+  1. Eliminar el almacenamiento, la lectura y el tipado de `refreshToken`.
+  2. Mantener `credentials: 'include'`.
+  3. Aceptar respuestas sin `refreshToken`.
+  4. Renovar la sesión sin enviar el token en el body.
+  5. Conservar solo el `accessToken` en `sessionStorage`.
+- **Criterio de éxito:** JavaScript no puede leer el refresh token desde el almacenamiento, la memoria de la aplicación ni las respuestas HTTP; la renovación y el logout funcionan mediante cookies.
+- **Verificación:** ✅ `session-security.test.ts`, bloque SEC-02 (4/4); commits `08d44ee` a `390b4b8` en `origin/main`. Verifica:
+  - `tokenStorage` sin `getRefreshToken`.
+  - No se persiste el refresh token que llegue en el body.
+  - El interceptor renueva con `POST /auth/refresh` sin el token y con `credentials: include`.
+  - El logout no envía el token.
+- **Integración pendiente:** el backend todavía no acepta estas peticiones (`400 INVALID_REQUEST`) hasta `SEC-01`. Caso `SEC-01 SEC-02 integracion…` en `test/back`.
+
+### `FIX-14` - Integración frontend del selector de instancias (`FRN-07`)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 4 h
+- **Depende de:** `BAC-07` y `BAC-14`.
+- **Entregable:**
+  1. Carga de `GET /api/instances` con Bearer.
+  2. Marcado de los VMIDs asignados (`GET /api/admin/users/:id/permissions`).
+  3. Envío de `PUT /api/admin/users/:id/permissions` con `{ vmids: number[] }`, con estados de carga y toast.
+- **Criterio de éxito:** las pruebas de `FRN-07` en `test/front/admin-users.test.tsx` pasan al 100%.
+- **Verificación:** ✅ `admin-users.test.tsx`, bloque FIX-14 / FRN-07 (3/3). La parte de guardar "junto a la edición del perfil" queda en `FIX-25`.
+
+### `FRN-10` - Cambio obligatorio de contraseña temporal
+
+> [!WARNING]
+> **Estado: Implementado con problema (23/09/2026).** La vista `/change-password` funciona: se deriva ante `403 PASSWORD_CHANGE_REQUIRED`, se bloquea la navegación, se envía `PUT /api/account/password`, se muestran los errores del backend y se valida la longitud. Pero **no ofrece la opción de cerrar sesión**, y el criterio exige que la cuenta "solo pueda cerrar sesión o cambiarla". Prueba: `test/front/password-change.test.tsx` (6/7). Defecto registrado en [`futuro.md`](futuro.md) como `FIX-21`. La validación de complejidad ya figura en `FIX-20`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2 h
+- **Depende de:** `BAC-12` y `FRN-04`.
+- **Entregable:** vista de nueva contraseña y confirmación que detecte `must_change_password`, bloquee la navegación general y llame al endpoint de cambio. El endpoint real es `PUT /api/account/password`; la versión anterior de esta tarea citaba `POST /api/auth/change-password`, que no existe.
+- **Criterio de éxito:** una cuenta con contraseña temporal solo puede cerrar sesión o cambiarla; después del cambio continúa al enrolamiento o validación 2FA que corresponda.
+
+### `FRN-14` - Suite de pruebas unitarias y de integración para la vista de Auditoría (`Auditoria.tsx`)
+
+> [!WARNING]
+> **Estado: Implementado con problema (23/09/2026).** La suite `test/front/audit.test.tsx` existe y verifica:
+> - la carga paginada con Bearer;
+> - los registros reales;
+> - los filtros de acción, resultado y fechas;
+> - la paginación;
+> - la exportación CSV con Bearer.
+>
+> **Falla el caso 5:** en el código commiteado, `/auditoria` está bajo `loadProtectedSession` y no bajo `loadAdminSession` (`applicationRoutes.tsx`), así que **un OPERATOR puede entrar a la vista**. Resultado: 6/7. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-22`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda / Luz
+- **Estimación:** 2 h
+- **Depende de:** `BAC-18` y `FRN-03`.
+- **Entregable:** suite `test/front/audit.test.tsx` que verifique:
+  1. `GET /api/admin/audit?pagina=1&tamano=10` con Bearer.
+  2. Los filtros y la paginación.
+  3. La exportación `/api/admin/audit/export?formato=csv`.
+  4. La redirección de un operador desde `/auditoria` a `/dashboard`.
+- **Criterio de éxito:** `npm test` en `test/front` aprueba los casos de `audit.test.tsx`.

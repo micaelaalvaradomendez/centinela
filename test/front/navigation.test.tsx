@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { describe, expect, it } from 'vitest';
@@ -11,18 +12,51 @@ const storedUser = {
   nombreCompleto: 'Administrador de prueba',
   email: 'admin@centinela.local',
   rol: 'ADMIN',
-  instanciasPermitidas: [],
+  instanciasPermitidas: [] as number[],
   tiene2FA: true,
 };
 
-function renderApplication(path: string, authenticated: boolean) {
-  if (authenticated) {
-    window.sessionStorage.setItem('centinela_access', 'access-token');
-    window.localStorage.setItem('centinela_user', JSON.stringify(storedUser));
-  }
+function seedSession(user: Partial<typeof storedUser> = {}) {
+  window.sessionStorage.setItem('centinela_access', 'access-token');
+  window.localStorage.setItem('centinela_user', JSON.stringify({ ...storedUser, ...user }));
+}
+
+function renderApplication(path: string, authenticated: boolean, user: Partial<typeof storedUser> = {}) {
+  if (authenticated) seedSession(user);
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
   render(<RouterProvider router={router} />);
   return router;
+}
+
+// SEC-03 pide el hook y el gate en src/context/ sin fijar el nombre del archivo:
+// se busca cualquier módulo de esa carpeta que exporte usePermissions y PermissionGate.
+type PermissionsModule = {
+  usePermissions?: () => {
+    isAdmin: boolean;
+    isOperator: boolean;
+    hasRole: (role: string) => boolean;
+    canAccessInstance: (vmid: number) => boolean;
+  };
+  PermissionGate?: React.ComponentType<{ requiredRole: string; fallback?: React.ReactNode; children?: React.ReactNode }>;
+  [key: string]: unknown;
+};
+const contextModules = import.meta.glob<PermissionsModule>('@/context/**/*.{ts,tsx,js,jsx}');
+
+async function loadPermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions' | 'PermissionGate'>> & PermissionsModule> {
+  for (const load of Object.values(contextModules)) {
+    const module = await load();
+    if (typeof module.usePermissions === 'function' && module.PermissionGate) {
+      return module as never;
+    }
+  }
+  throw new Error(`SEC-03 no implementada: ningún módulo de src/context exporta usePermissions y PermissionGate (revisados: ${Object.keys(contextModules).join(', ') || 'ninguno'})`);
+}
+
+// Si el módulo exporta un Provider, se usa; si el hook lee la sesión directamente, no hace falta.
+function withProvider(module: PermissionsModule, children: React.ReactNode) {
+  const providerName = Object.keys(module).find((name) => /Provider$/.test(name));
+  const Provider = providerName ? module[providerName] as React.ComponentType<{ children: React.ReactNode }> : null;
+  return Provider ? React.createElement(Provider, null, children) : children;
 }
 
 describe('FRN-03 - navbar y rutas base', () => {
@@ -37,10 +71,67 @@ describe('FRN-03 - navbar y rutas base', () => {
     const user = userEvent.setup();
     const router = renderApplication('/dashboard', true);
 
-    expect(await screen.findByRole('heading', { name: /Hola, Admin!/ })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: /Hola, Admin/ })).toBeVisible();
     await user.click(screen.getByRole('link', { name: 'Instancias' }));
 
     expect(await screen.findByRole('heading', { name: 'Inventario de instancias' })).toBeVisible();
     expect(router.state.location.pathname).toBe('/instances');
+  });
+});
+
+describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
+  it('usePermissions expone isAdmin, isOperator, hasRole y canAccessInstance según la sesión', async () => {
+    const module = await loadPermissionsModule();
+    seedSession({ rol: 'OPERATOR', instanciasPermitidas: [101] });
+    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
+    function Probe() {
+      permissions = module.usePermissions();
+      return null;
+    }
+
+    render(<>{withProvider(module, <Probe />)}</>);
+
+    expect(permissions).toMatchObject({ isAdmin: false, isOperator: true });
+    expect(permissions!.hasRole('OPERATOR')).toBe(true);
+    expect(permissions!.hasRole('ADMIN')).toBe(false);
+    expect(permissions!.canAccessInstance(101)).toBe(true);
+    expect(permissions!.canAccessInstance(999)).toBe(false);
+  });
+
+  it('PermissionGate muestra el contenido al ADMIN y el fallback al OPERATOR', async () => {
+    const { PermissionGate, ...module } = await loadPermissionsModule();
+    const gate = () => withProvider(module, (
+      <PermissionGate requiredRole="ADMIN" fallback={<p>Sin permiso</p>}>
+        <button type="button">Eliminar usuario</button>
+      </PermissionGate>
+    ));
+
+    seedSession({ rol: 'OPERATOR' });
+    const { unmount } = render(<>{gate()}</>);
+    expect(screen.queryByRole('button', { name: 'Eliminar usuario' })).not.toBeInTheDocument();
+    expect(screen.getByText('Sin permiso')).toBeInTheDocument();
+    unmount();
+
+    seedSession({ rol: 'ADMIN' });
+    render(<>{gate()}</>);
+    expect(screen.getByRole('button', { name: 'Eliminar usuario' })).toBeInTheDocument();
+  });
+
+  it('un OPERATOR no ve accesos administrativos en el menú (Usuarios, Crear usuario, Auditoría)', async () => {
+    renderApplication('/dashboard', true, { rol: 'OPERATOR', nombreCompleto: 'Operador Test' });
+
+    expect(await screen.findByRole('heading', { name: /Hola/i })).toBeVisible();
+    for (const name of ['Usuarios', 'Crear usuario', 'Auditoría']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it('un ADMIN ve los accesos administrativos en el menú, incluida Auditoría', async () => {
+    renderApplication('/dashboard', true);
+
+    expect(await screen.findByRole('heading', { name: /Hola, Admin/ })).toBeVisible();
+    for (const name of ['Usuarios', 'Crear usuario', 'Auditoría']) {
+      expect(screen.getByRole('link', { name })).toBeVisible();
+    }
   });
 });

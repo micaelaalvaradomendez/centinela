@@ -1,72 +1,53 @@
-# Resultado base de las pruebas frontend
+# Resultados de las pruebas frontend
 
-Fecha de ejecución: 18/09/2026 (commit `7775b62`).
+**Fecha:** 23/09/2026. **Frontend probado:** `3192cf4` (`origin/main`), exportado con `git archive` y ejecutado con `CENTINELA_FRONTEND_DIR`. **Comando:** `pnpm test` (2 corridas, mismo resultado, ~21 s).
 
-## Resumen
+| Métrica | `origin/main` (3192cf4) | Submódulo local (5b91e80 + 3 parches sin commitear) |
+|---|---:|---:|
+| Archivos | 12 (6 con fallos) | 12 (6 con fallos) |
+| Pruebas | 72 | 72 |
+| Aprueban | **55** | 50 |
+| Fallan | **17** | 22 |
 
-| Métrica | Resultado |
-|---|---:|
-| Archivos de prueba | 5 |
-| Pruebas totales | 28 |
-| Aprobadas | 14 |
-| Fallidas | 7 |
-| Pendientes (`todo`) | 7 |
+La referencia es la columna de `origin/main`. El submódulo local está 13 commits atrás: le falta SEC-02, por eso fallan 5 pruebas de `session-security` y una de FRN-10. Además, un parche local mueve `/auditoria` bajo el guard de admin y **oculta** el fallo de FRN-14.
 
-## Estado derivado
+## Por archivo (`origin/main`)
 
-| Tarea | Resultado | Conclusión |
-|---|---|---|
-| `FRN-01` | Pruebas aprobadas | El formulario y su estado de carga cumplen el alcance comprobado. |
-| `FRN-02` | Pruebas aprobadas | Los campos vacíos y el correo inválido se bloquean antes del envío. |
-| `FRN-03` | Pruebas aprobadas | La protección de rutas y navegación Dashboard -> Instancias pasan con los encabezados actuales. |
-| `FRN-04` | Pruebas aprobadas | El payload usa `password` y la respuesta pre-2FA del backend es aceptada. |
-| `LOGIN-02` | Pruebas aprobadas | El contrato QR/verificación y la validación numérica del OTP pasan. |
-| `LOGIN-03` | Pruebas aprobadas | La redirección al enrolamiento 2FA tras un login válido funciona correctamente. |
-| `FRN-09` | Prueba enfocada aprobada | `LoginContinuation` muestra el QR, la clave manual formateada y el formulario de seis dígitos usando el JWT temporal. |
-| `FRN-05` | **3 fallidas** | Sin guard de rol para `OPERATOR`, sin llamada a `GET /api/users`, tabla con datos fijos. |
-| `FRN-06` | **3 fallidas** | Sin selector de rol, sin `onSubmit`/`POST /api/users`, sin mostrar la contraseña temporal. |
-| `FRN-06B` | **1 fallida** | No existe ninguna acción de edición por usuario. |
-| `FRN-07` | Pendiente (`todo`) | No existe ningún componente de selector de instancias contra el cual escribir una prueba real. |
-| `FRN-08` | Pendiente (`todo`) | No existe ningún interceptor ni superficie de error `403` contra la cual escribir una prueba real. |
+| Archivo | Pruebas | Fallan | Tareas |
+|---|---:|---:|---|
+| `admin-users.test.tsx` | 13 | 3 | FRN-05 ✅, FRN-06 ❌ (2), FRN-06B ❌ (1), FIX-14/FRN-07 ✅, FRN-08 ✅ |
+| `admin-recovery.test.tsx` | 4 | 3 | FRN-11 ❌ |
+| `recover-password.test.tsx` | 4 | 3 | FRN-12 ❌ |
+| `navigation.test.tsx` | 6 | 3 | FRN-03 ✅, SEC-03 ❌ |
+| `password-change.test.tsx` | 10 | 4 | FRN-10 🟡 (FIX-21, FIX-20) |
+| `audit.test.tsx` | 7 | 1 | FRN-14 🟡 |
+| `session-security.test.ts` | 12 | 0 | FRN-13 ✅, SEC-02 ✅, FIX-08 ✅ |
+| `login-form`, `authentication-contract`, `two-factor-form`, `two-factor-enrollment`, `api-client` | 16 | 0 | FRN-01, FRN-02, FRN-04, LOGIN-02, LOGIN-03, FRN-09, FIX-07 ✅ |
 
-## Fallos detectados
+## Fallos y causa
 
-Los criterios de `FRN-05`, `FRN-06` y `FRN-06B` dejaron de ser `it.todo` (que Vitest nunca ejecuta) y ahora son 7 pruebas reales en [test/front/admin-users.test.tsx](test/front/admin-users.test.tsx); **las 7 fallan** contra el código actual:
+Los 17 fallos son **del producto**. En la primera corrida también fallaron 4 pruebas por problemas del propio test, que ya se corrigieron:
+- FRN-13 sembraba `centinela_user` y `centinela_refresh` en sessionStorage, que la app ya no usa.
+- FRN-08 buscaba un texto que el toast renderiza dos veces.
 
-1. Un `OPERATOR` puede ver el panel `/users` igual que un `ADMIN` (sin guard de rol en [sessionGuard.ts](frontend/centinela/src/components/features/auth/routes/sessionGuard.ts)).
-2. [Users.jsx](frontend/centinela/src/pages/Users.jsx) nunca llama a `GET /api/users`.
-3. La tabla de usuarios ignora cualquier dato real y siempre muestra "Sin usuarios".
-4. [CrearUsuarios.tsx](frontend/centinela/src/pages/CrearUsuarios.tsx) no tiene selector de rol.
-5. El botón "Crear usuario" no dispara ningún `POST /api/users` (no hay `<form>` ni `onSubmit`).
-6. No se muestra la contraseña temporal (`contrasenaTemp`) tras crear un usuario.
-7. No existe ninguna acción "Editar" por fila.
+| Tarea | Prueba | Error | Causa en el código |
+|---|---|---|---|
+| FRN-11 | restablecer contraseña pide confirmación | `Unable to find role="dialog"` | `Users.tsx:354`: el botón "Restablecer contraseña" no tiene `onClick` |
+| FRN-11 | al confirmar envía POST …/password/reset | `Unable to find role="dialog"` | ídem; no hay diálogo ni llamada |
+| FRN-11 | restablecer 2FA es una acción separada | `Unable to find role="button" … restablecer 2fa` | No existe la acción de reset 2FA en el menú de acciones |
+| FRN-12 | paso 1 envía POST /auth/password/forgot | `expected [] to have a length of 1` | `RecoverPassword.tsx` solo hace `setCurrentStep`; no llama a la API |
+| FRN-12 | paso final envía POST /auth/password/reset | `expected [] to have a length of 1` | ídem (el submit del paso 3 vuelve al paso 1) |
+| FRN-12 | código inválido o vencido se informa | `expected [] to have a length of 1` | ídem; no se muestra `RESET_FAILED` |
+| SEC-03 | usePermissions expone helpers | `ningún módulo de src/context exporta usePermissions y PermissionGate` | `src/context/AuthContext.js` está vacío |
+| SEC-03 | PermissionGate contenido/fallback | ídem | ídem |
+| SEC-03 | un ADMIN ve accesos, incluida Auditoría | `Unable to find … link "Auditoría"` | `Sidebar.tsx` no tiene ningún enlace a `/auditoria` |
+| FRN-14 | un operador en /auditoria vuelve a /dashboard | `expected '/auditoria' to be '/dashboard'` | `applicationRoutes.tsx`: `/auditoria` está bajo `loadProtectedSession` y no bajo `loadAdminSession` |
+| FRN-10 | la pantalla ofrece cerrar sesión | `Unable to find role="button" … cerrar sesión` | `ChangePassword.tsx` no tiene opción de logout (FIX-21) |
+| FRN-10 | 3 casos: no cumple la complejidad del backend | `expected [ [ '/api/account/password', … ] ] to have a length of +0` | `ChangePassword.tsx:27` solo valida el largo; faltan las reglas de `crypto/password.go:89` (FIX-20) |
+| FRN-06 | tras el alta informa el resultado (BAC-16) | `Unable to find … usuario creado\|correo…` | `CrearUsuarios.tsx:56` solo muestra algo si llega `contrasenaTemp`, pero el backend ya no la envía (BAC-16). Un alta exitosa **no muestra ninguna confirmación** |
+| FRN-06 | "Eliminar usuario" solicita DELETE | `la acción no envió DELETE a la API` | `detailsUserPage.tsx:110`: botón sin `onClick` |
+| FRN-06B | editar y guardar envía PUT /admin/users/:id | `guardar no envió PUT /admin/users/u2` | "Guardar cambios" solo persiste permisos y se deshabilita si no cambió ninguno. No existe `PUT /admin/users/:id` en el frontend |
 
-## Alcance
+## Nota de integración
 
-Esta suite valida las tareas con responsabilidad frontend presentes en [documentacion/actual.md](documentacion/actual.md). Los criterios administrativos y del hito de recursos están preparados como `todo` porque todavía no existe la vista `/admin/users`, el selector de instancias ni la integración frontend de `GET /api/instances`.
-
-Pull del 18/09/2026 (`78659d0` -> `7775b62`): se agregaron cuatro componentes UI aislados (`toast`, `bardge`, `tabs`, `nativeSelected`) que ningún archivo de página importa todavía. No cambian el estado de `FRN-05` a `FRN-08`; quedan disponibles para cuando se conecten los formularios y tablas administrativas.
-
-## Pull del 20/09/2026 (`7775b62` -> `68bd23f`)
-
-Se trajeron los commits que reescriben `Users.jsx` -> `Users.tsx`, amplían `CrearUsuarios.tsx`, agregan `UserDetail.tsx` y `Auditoria.tsx`, migran el almacenamiento de token de `localStorage` a `sessionStorage` (`tokenStorage.ts`) y suman `apiClient.ts`/`ApiResponseNotifier.tsx`. Al re-ejecutar `pnpm test` el resultado pasó de 14 aprobadas/7 fallidas/7 `todo` (28 pruebas) a **15 aprobadas/7 fallidas/7 `todo` (29 pruebas)**.
-
-### Mejoras confirmadas
-
-- La prueba de selector de rol en `CrearUsuarios.tsx` (parte de `FRN-06`) y la prueba de acción "Editar" por fila (`FRN-06B`) **ya no fallan**: `CrearUsuarios.tsx` ahora tiene selector de rol y `UserDetail.tsx` cubre la edición.
-
-### Regresión CONFIRMADA en `FRN-03` (navbar y rutas base) — bug real de producto, no del test
-
-Las dos pruebas de `navigation.test.tsx`, que en el pull anterior estaban **aprobadas**, ahora **fallan**. La primera hipótesis (más abajo, tachada por la verificación) era que el test estaba desalineado por el cambio de `localStorage` a `sessionStorage`. Se verificó esa hipótesis modificando temporalmente el test para sembrar la sesión en `sessionStorage` (la clave real que usa `tokenStorage.ts`) y volviendo a correrlo: **las dos pruebas siguieron fallando**, incluida "redirige a login cuando no existe una sesión" corriendo con el storage completamente vacío. Eso descarta el storage como causa y expone la causa real:
-
-**`centinela/src/routes/applicationRoutes.tsx`, commit `6b08566` (Belinda, 20/09/2026 06:01), sacó `/dashboard`, `/instances`, `/users` y `/users/new` del grupo protegido por `loadProtectedSession` y las movió al grupo público (`MainLayoutAuth`), y sumó ahí mismo las rutas nuevas `/auditoria` y `/users/:userId`.** El comentario del propio commit dice: *"Rutas temporales de diseño: se pueden visualizar sin sesión ni backend."* El grupo protegido (`ProtectedLayout` + `loadProtectedSession`) quedó con una sola ruta índice que redirige a `/dashboard`, pero `/dashboard` ya no está adentro del grupo protegido — o sea que el guard no se ejecuta nunca para esas rutas.
-
-**Efecto real, no solo de prueba:** cualquiera puede navegar directamente a `/dashboard`, `/instances`, `/users`, `/users/new`, `/users/:userId` o `/auditoria` sin haber iniciado sesión ni pasado el 2FA. Esto revierte el criterio de éxito de `FRN-03` (aislamiento por rol/sesión, `RF-01`) y de `FRN-05` (panel de administración solo para `ADMIN`) directamente en el producto, más allá de lo que cualquier suite de test pueda decir.
-
-**Corrección sobre el informe previo:** [documentacion/ANALISIS-READINESS.md](../../documentacion/ANALISIS-READINESS.md) (19/09/2026) había atribuido esta falla únicamente al desalineamiento de storage del test (*"con login real, el dashboard se renderiza"*, concluyendo que el criterio "probablemente sigue cumpliéndose"). Esa conclusión es incorrecta para el commit `6b08566` (posterior a ese análisis, del 20/09): el dashboard se renderiza tanto con sesión como sin ella, porque la ruta ya no tiene guard. El desalineamiento de storage en `setup.ts`/`navigation.test.tsx` también existe y conviene corregirlo, pero no es la causa de esta falla puntual.
-
-### Recomendación antes de seguir
-
-1. **Prioridad alta, bug de producto:** revertir el commit `6b08566` en la parte de `applicationRoutes.tsx`, o mover `/dashboard`, `/instances`, `/users`, `/users/new`, `/users/:userId` y `/auditoria` de vuelta al grupo con `loader: loadProtectedSession`. Si se necesitan para diseño sin backend, usar datos mockeados detrás del guard, no sacarlas de la protección.
-2. Corregir `test/front/setup.ts` para también hacer `window.sessionStorage.clear()` en `afterEach`, y actualizar `navigation.test.tsx` para sembrar la sesión en `sessionStorage` (vía las mismas claves que usa `tokenStorage.ts`). Esto es necesario mantenimiento del test, independiente del bug de arriba.
-3. No conviene todavía escribir pruebas nuevas para `FRN-07` (selector de instancias) o `FRN-08` (interceptor 403): ningún componente para eso apareció en este pull. La vista `Auditoria.tsx` tampoco tiene contraparte de backend (el endpoint de auditoría es una tarea reservada para la Etapa 3, ver `documentacion/siguientesetapas.md`), así que escribir un test de contrato contra ella sería prematuro; como mucho cabría un smoke test de que la vista renderiza, pero no valida ningún `RF` todavía implementado según `actual.md`.
+FRN-13 y SEC-02 pasan del lado del cliente, pero **el backend todavía rechaza sus peticiones**: `POST /auth/logout` y `POST /auth/refresh` con body `{}` responden 400. Esto se verifica en `test/back`, en el caso `SEC-01 SEC-02 integracion…`, y se resuelve con SEC-01 en el backend.

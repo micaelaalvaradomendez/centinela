@@ -1,185 +1,157 @@
 package back_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
-func signedRefreshToken(t *testing.T, userID, orgID string) (string, string) {
-	t.Helper()
-	jti := fmt.Sprintf("test-refresh-%d", time.Now().UnixNano())
-	claims := jwt.MapClaims{
-		"sub":    userID,
-		"tipo":   "refresh",
-		"org_id": orgID,
-		"jti":    jti,
-		"iat":    time.Now().Unix(),
-		"exp":    time.Now().Add(7 * 24 * time.Hour).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte(testJWTSecret))
-	if err != nil {
-		t.Fatalf("no se pudo firmar refresh token de prueba: %v", err)
-	}
-	queryDatabase(t, fmt.Sprintf(
-		"INSERT INTO sesiones_activas (id, usuario_id, jti_token, activa, fecha_expiracion, fecha_creacion) VALUES (uuid_generate_v7(), '%s', '%s', true, NOW() + interval '7 days', NOW());",
-		userID, jti,
-	))
-	return signed, jti
-}
-
-// Este archivo valida el contrato de las tareas, fixes y mejoras de seguridad:
-// - BAC-17: Cierre de sesión y revocación atómica de sesiones (Backend)
-// - SEC-01: Refresh token en cookie HttpOnly en backend (Backend)
-// - FIX-08: Auditoría y unificación del contrato de códigos de error (Backend)
+// Contrato de seguridad de sesiones (documentacion/actual.md):
+//   - BAC-17: logout con revocación atómica de access + refresh y auditoría LOGOUT
+//   - SEC-01: refresh token exclusivamente en cookie HttpOnly
+//   - FIX-08: contrato uniforme { errorCode, message } (terminado.md, regresión)
+//
+// Todos los tokens se obtienen del circuito real login -> 2FA; la prueba no firma tokens propios.
 func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 	requireIntegration(t)
 
 	orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
-	if orgID == "" {
-		orgID = "00000000-0000-0000-0000-000000000001"
-	}
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
-	if adminID == "" {
-		t.Fatal("no se encontró usuario admin@elcentinela.com en base de datos")
+	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
+	user := createActiveUser(t, adminToken, "sesiones", "OPERATOR")
+
+	// refreshCredential devuelve el refresh token por el canal que el backend use hoy:
+	// body JSON (contrato previo) o cookie (SEC-01).
+	refreshCredential := func(session loginResult) (map[string]any, []*http.Cookie) {
+		if session.RefreshCookie != nil {
+			return nil, []*http.Cookie{session.RefreshCookie}
+		}
+		return map[string]any{"refreshToken": session.RefreshToken}, nil
 	}
 
-	t.Run("BAC-17 revocacion atomica de accessToken y refreshToken en logout", func(t *testing.T) {
-		// 1. Iniciar sesión para obtener tokens reales emitidos por el backend
-		adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
-		claims := decodeJWTClaims(t, adminToken)
-		accessJTI, _ := claims["jti"].(string)
-
-		// Crear una sesión de refresh en base de datos asociada a este usuario
-		refreshTokenStr, refreshJTI := signedRefreshToken(t, adminID, orgID)
-
-		// 2. Ejecutar logout enviando Authorization: Bearer <accessToken> y body con refreshToken
-		logoutPayload := map[string]any{
-			"refreshToken": refreshTokenStr,
-		}
-		status, _ := requestValue(t, http.MethodPost, "/auth/logout", adminToken, logoutPayload)
-		if status != http.StatusNoContent && status != http.StatusOK {
-			t.Fatalf("POST /api/auth/logout esperado 204 o 200, recibido %d", status)
+	t.Run("BAC-17 logout revoca atomicamente access y refresh y registra LOGOUT", func(t *testing.T) {
+		session := loginWithTOTP(t, user.Email, user.Password, user.Secret)
+		accessJTI, _ := decodeJWTClaims(t, session.AccessToken)["jti"].(string)
+		if session.RefreshToken == "" && session.RefreshCookie == nil {
+			t.Fatalf("2fa/verify no entregó refresh token ni en JSON ni en cookie: %s", session.Verify.RawBody)
 		}
 
-		// 3. El accessToken revocado DEBE ser rechazado inmediatamente con 401 en cualquier llamada protegida
-		profStatus, profBody := requestJSON(t, http.MethodGet, "/account/profile", adminToken, nil)
-		if profStatus != http.StatusUnauthorized {
-			t.Errorf("BAC-17 acceso con accessToken post-logout: esperado 401 (TOKEN_REVOKED), recibido %d: %#v", profStatus, profBody)
-		} else {
-			errorCode, _ := profBody["errorCode"].(string)
-			if errorCode != "TOKEN_REVOKED" && errorCode != "AUTH_FAILED" {
-				t.Errorf("BAC-17 errorCode esperado TOKEN_REVOKED o AUTH_FAILED, recibido: %q", errorCode)
-			}
+		if status, body := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusOK {
+			t.Fatalf("precondición: el access token recién emitido debe funcionar, recibido %d: %#v", status, body)
+		}
+		auditBefore := auditCount(t, user.ID, "LOGOUT")
+
+		payload, cookies := refreshCredential(session)
+		if status := requestRaw(t, http.MethodPost, "/auth/logout", "", payload, cookies...).Status; status != http.StatusUnauthorized {
+			t.Errorf("POST /auth/logout sin Authorization debe exigir el access token (401), recibido %d", status)
 		}
 
-		// 4. Verificar en PostgreSQL que las sesiones activas asociadas quedaron inactivas (activa = false)
-		if accessJTI != "" {
-			accessActiva := queryDatabase(t, fmt.Sprintf("SELECT activa FROM sesiones_activas WHERE jti_token = '%s';", accessJTI))
-			if accessActiva == "t" {
-				t.Errorf("BAC-17 el accessToken (jti: %s) sigue con activa=true en sesiones_activas tras logout", accessJTI)
-			}
-		}
-		refreshActiva := queryDatabase(t, fmt.Sprintf("SELECT activa FROM sesiones_activas WHERE jti_token = '%s';", refreshJTI))
-		if refreshActiva == "t" {
-			t.Errorf("BAC-17 el refreshToken (jti: %s) sigue con activa=true en sesiones_activas tras logout", refreshJTI)
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", session.AccessToken, payload, cookies...)
+		if logout.Status != http.StatusNoContent {
+			t.Fatalf("POST /auth/logout esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
 		}
 
-		// 5. Verificar que la tabla de auditoría registró formalmente la acción LOGOUT
-		auditRows := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM auditoria WHERE usuario_id = '%s' AND accion = 'LOGOUT';", adminID))
-		if auditRows == "0" {
-			t.Errorf("BAC-17 no se encontró registro de auditoría con accion 'LOGOUT' para el usuario %s", adminID)
+		status, body := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil)
+		if status != http.StatusUnauthorized || body["errorCode"] != "TOKEN_REVOKED" {
+			t.Errorf("access token tras logout: esperado 401 TOKEN_REVOKED, recibido %d: %#v", status, body)
+		}
+
+		refreshAfter := requestRaw(t, http.MethodPost, "/auth/refresh", "", payload, cookies...)
+		if refreshAfter.Status != http.StatusUnauthorized {
+			t.Errorf("refresh token tras logout: esperado 401, recibido %d: %s", refreshAfter.Status, refreshAfter.RawBody)
+		}
+
+		inactive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND jti_token = '%s' AND activa = false;", user.ID, accessJTI))
+		if inactive != "1" {
+			t.Errorf("la sesión del access token (jti %s) no quedó con activa=false", accessJTI)
+		}
+		stillActive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND activa = true AND fecha_creacion >= (SELECT fecha_creacion FROM sesiones_activas WHERE jti_token = '%s');", user.ID, accessJTI))
+		if stillActive != "0" {
+			t.Errorf("tras el logout quedaron %s sesiones activas de este login (se esperaba revocar access y refresh)", stillActive)
+		}
+
+		if after := auditCount(t, user.ID, "LOGOUT"); after != auditBefore+1 {
+			t.Errorf("auditoría LOGOUT esperada %d, encontrada %d", auditBefore+1, after)
 		}
 	})
 
-	t.Run("SEC-01 emision de refreshToken en cookie HttpOnly y soporte de rotacion", func(t *testing.T) {
-		// 1. Simular petición de verificación 2FA para comprobar si Set-Cookie emite HttpOnly
-		verifyPayload, _ := json.Marshal(map[string]any{
-			"codigo": "123456",
-		})
-		req, err := http.NewRequest(http.MethodPost, apiURL+"/auth/2fa/verify", bytes.NewReader(verifyPayload))
-		if err != nil {
-			t.Fatalf("no se pudo construir petición 2fa verify: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer dummy-pre-auth-token")
+	t.Run("SEC-01 refresh token solo en cookie HttpOnly", func(t *testing.T) {
+		session := loginWithTOTP(t, user.Email, user.Password, user.Secret)
 
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("falló llamada a 2fa/verify: %v", err)
+		if _, exposed := session.Verify.Body["refreshToken"]; exposed {
+			t.Errorf("POST /auth/2fa/verify todavía devuelve refreshToken en el JSON (entregable 3)")
 		}
-		defer resp.Body.Close()
-
-		// Inspeccionar cookies emitidas
-		var foundHttpOnlyRefreshCookie bool
-		for _, cookie := range resp.Cookies() {
-			if strings.Contains(strings.ToLower(cookie.Name), "refresh") {
-				if cookie.HttpOnly {
-					foundHttpOnlyRefreshCookie = true
-				}
-			}
+		cookie := session.RefreshCookie
+		if cookie == nil {
+			t.Fatalf("SEC-01 no implementada: POST /auth/2fa/verify no emite Set-Cookie con el refresh token (cabeceras: %v)", session.Verify.Header.Values("Set-Cookie"))
+		}
+		if !cookie.HttpOnly {
+			t.Errorf("la cookie %q no tiene HttpOnly", cookie.Name)
+		}
+		if cookie.SameSite == http.SameSiteDefaultMode || cookie.SameSite == http.SameSiteNoneMode && !cookie.Secure {
+			t.Errorf("la cookie %q debe declarar SameSite (Lax/Strict, o None solo con Secure); Set-Cookie: %v", cookie.Name, session.Verify.Header.Values("Set-Cookie"))
+		}
+		if cookie.Path == "" || cookie.Path == "/" {
+			t.Errorf("la cookie %q debe restringir Path a las rutas de auth (p. ej. /api/auth), recibido %q", cookie.Name, cookie.Path)
 		}
 
-		// SEC-01 exige que el refresh token se emita con Set-Cookie HttpOnly
-		if !foundHttpOnlyRefreshCookie {
-			t.Errorf("SEC-01 esperado Set-Cookie HttpOnly para refreshToken en POST /api/auth/2fa/verify, recibido cookies: %v", resp.Cookies())
+		refresh := requestRaw(t, http.MethodPost, "/auth/refresh", "", nil, cookie)
+		if refresh.Status != http.StatusOK {
+			t.Fatalf("POST /auth/refresh solo con la cookie: esperado 200, recibido %d: %s", refresh.Status, refresh.RawBody)
+		}
+		newAccess := requiredString(t, refresh.Body, "accessToken")
+		if _, exposed := refresh.Body["refreshToken"]; exposed {
+			t.Errorf("POST /auth/refresh devuelve refreshToken en el JSON")
+		}
+		if next := refresh.cookie("refresh"); next != nil && next.Value != "" {
+			cookie = next
 		}
 
-		// 2. Probar si POST /api/auth/refresh acepta cookie sin requerir body JSON
-		refreshReq, err := http.NewRequest(http.MethodPost, apiURL+"/auth/refresh", nil)
-		if err != nil {
-			t.Fatalf("no se pudo construir petición /auth/refresh: %v", err)
-		}
-		refreshReq.AddCookie(&http.Cookie{
-			Name:     "refreshToken",
-			Value:    "dummy-cookie-value",
-			HttpOnly: true,
-		})
-		refreshResp, err := client.Do(refreshReq)
-		if err != nil {
-			t.Fatalf("falló llamada /auth/refresh con cookie: %v", err)
-		}
-		defer refreshResp.Body.Close()
-
-		// Si responde 400 INVALID_REQUEST es porque exige body y no soporta lectura por cookie
-		if refreshResp.StatusCode == http.StatusBadRequest {
-			t.Errorf("SEC-01 POST /api/auth/refresh devolvió 400: no lee refreshToken desde cookie HttpOnly")
+		invalid := requestRaw(t, http.MethodPost, "/auth/refresh", "", nil, &http.Cookie{Name: cookie.Name, Value: "cookie-invalida"})
+		if invalid.Status != http.StatusUnauthorized || invalid.Body["errorCode"] == nil {
+			t.Errorf("cookie inválida: esperado 401 con errorCode, recibido %d: %s", invalid.Status, invalid.RawBody)
 		}
 
-		// 3. Probar si POST /api/auth/logout invalida la cookie enviando Max-Age=0 o fecha expirada
-		logoutReq, err := http.NewRequest(http.MethodPost, apiURL+"/auth/logout", nil)
-		if err != nil {
-			t.Fatalf("no se pudo construir petición /auth/logout: %v", err)
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", newAccess, nil, cookie)
+		if logout.Status != http.StatusNoContent {
+			t.Fatalf("POST /auth/logout solo con cookie + Bearer: esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
 		}
-		logoutReq.AddCookie(&http.Cookie{
-			Name:     "refreshToken",
-			Value:    "dummy-cookie-value",
-			HttpOnly: true,
-		})
-		logoutResp, err := client.Do(logoutReq)
-		if err != nil {
-			t.Fatalf("falló llamada /auth/logout con cookie: %v", err)
+		cleared := logout.cookie("refresh")
+		if cleared == nil || (cleared.MaxAge >= 0 && cleared.Value != "") {
+			t.Errorf("el logout debe eliminar la cookie (Max-Age=0 o valor vacío); Set-Cookie: %v", logout.Header.Values("Set-Cookie"))
 		}
-		defer logoutResp.Body.Close()
+		if again := requestRaw(t, http.MethodPost, "/auth/refresh", "", nil, cookie); again.Status != http.StatusUnauthorized {
+			t.Errorf("la cookie revocada no debe renovar la sesión: esperado 401, recibido %d", again.Status)
+		}
 
-		var cookieExpired bool
-		for _, c := range logoutResp.Cookies() {
-			if strings.Contains(strings.ToLower(c.Name), "refresh") {
-				if c.MaxAge <= 0 {
-					cookieExpired = true
-				}
-			}
+		logs, _ := runCompose("logs", "--no-color", "backend")
+		if strings.Contains(logs, cookie.Value) {
+			t.Errorf("el valor del refresh token aparece en los logs del backend")
 		}
-		if !cookieExpired {
-			t.Errorf("SEC-01 POST /api/auth/logout esperado Set-Cookie con Max-Age <= 0 para revocar cookie de refresh")
+	})
+
+	// Integración front <-> back: el frontend en origin/main (SEC-02, commits cb208f5 / f0f7218)
+	// ya envía POST /auth/logout y POST /auth/refresh con body {} y credentials: 'include',
+	// confiando en la cookie de SEC-01. Esta prueba reproduce exactamente esas peticiones.
+	t.Run("SEC-01 SEC-02 integracion el backend acepta logout y refresh tal como los envia el frontend", func(t *testing.T) {
+		session := loginWithTOTP(t, user.Email, user.Password, user.Secret)
+		var cookies []*http.Cookie
+		if session.RefreshCookie != nil {
+			cookies = append(cookies, session.RefreshCookie)
+		}
+
+		refresh := requestRaw(t, http.MethodPost, "/auth/refresh", "", map[string]any{}, cookies...)
+		if refresh.Status != http.StatusOK {
+			t.Errorf("POST /auth/refresh con body {} (petición real del frontend): esperado 200, recibido %d: %s", refresh.Status, refresh.RawBody)
+		}
+
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", session.AccessToken, map[string]any{}, cookies...)
+		if logout.Status != http.StatusNoContent {
+			t.Errorf("POST /auth/logout con Bearer y body {} (petición real del frontend): esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
+		}
+		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusUnauthorized {
+			t.Errorf("tras el logout iniciado desde el frontend el access token debe quedar revocado: esperado 401, recibido %d", status)
 		}
 	})
 
@@ -188,52 +160,25 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 			nombre       string
 			metodo       string
 			path         string
-			token        string
 			payload      any
 			statusEsper  int
 			codeEsperado string
 		}{
-			{
-				nombre:       "payload incompleto en login",
-				metodo:       http.MethodPost,
-				path:         "/auth/login",
-				token:        "",
-				payload:      map[string]any{"email": "solo-email@elcentinela.com"},
-				statusEsper:  http.StatusBadRequest,
-				codeEsperado: "INVALID_REQUEST",
-			},
-			{
-				nombre:       "credenciales inválidas en login",
-				metodo:       http.MethodPost,
-				path:         "/auth/login",
-				token:        "",
-				payload:      map[string]any{"email": "admin@elcentinela.com", "password": "PasswordInvalida123!"},
-				statusEsper:  http.StatusUnauthorized,
-				codeEsperado: "AUTH_FAILED",
-			},
-			{
-				nombre:       "ruta inexistente devuelve NOT_FOUND",
-				metodo:       http.MethodGet,
-				path:         "/ruta-completamente-inexistente-xyz",
-				token:        "",
-				payload:      nil,
-				statusEsper:  http.StatusNotFound,
-				codeEsperado: "NOT_FOUND",
-			},
+			{"payload incompleto en login", http.MethodPost, "/auth/login", map[string]any{"email": "solo-email@elcentinela.com"}, http.StatusBadRequest, "INVALID_REQUEST"},
+			{"credenciales inválidas en login", http.MethodPost, "/auth/login", map[string]any{"email": "admin@elcentinela.com", "password": "PasswordInvalida123!"}, http.StatusUnauthorized, "AUTH_FAILED"},
+			{"ruta inexistente devuelve NOT_FOUND", http.MethodGet, "/ruta-completamente-inexistente-xyz", nil, http.StatusNotFound, "NOT_FOUND"},
+			{"ruta protegida sin token devuelve MISSING_TOKEN", http.MethodGet, "/account/profile", nil, http.StatusUnauthorized, "MISSING_TOKEN"},
 		}
-
 		for _, tc := range casos {
 			t.Run(tc.nombre, func(t *testing.T) {
-				status, resp := requestJSON(t, tc.metodo, tc.path, tc.token, tc.payload)
+				status, resp := requestJSON(t, tc.metodo, tc.path, "", tc.payload)
 				if status != tc.statusEsper {
 					t.Errorf("status esperado %d, recibido %d", tc.statusEsper, status)
 				}
-				errorCode, ok := resp["errorCode"].(string)
-				if !ok || errorCode != tc.codeEsperado {
-					t.Errorf("errorCode esperado %q, recibido %#v en respuesta: %#v", tc.codeEsperado, resp["errorCode"], resp)
+				if resp["errorCode"] != tc.codeEsperado {
+					t.Errorf("errorCode esperado %q, recibido %#v", tc.codeEsperado, resp["errorCode"])
 				}
-				message, ok := resp["message"].(string)
-				if !ok || strings.TrimSpace(message) == "" {
+				if message, ok := resp["message"].(string); !ok || strings.TrimSpace(message) == "" {
 					t.Errorf("message esperado no vacío en respuesta: %#v", resp)
 				}
 			})

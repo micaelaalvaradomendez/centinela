@@ -1,12 +1,15 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createMemoryRouter } from 'react-router';
+import { createMemoryRouter, MemoryRouter, Route, Routes } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applicationRoutes } from '@/routes/applicationRoutes';
+import { Toaster } from '@/components/ui/toast';
+import { ApiResponseNotifier } from '@/components/common/ApiResponseNotifier';
+import { apiClient } from '@/services/apiClient';
 import Users from '@/pages/Users';
 import CrearUsuarios from '@/pages/CrearUsuarios';
-import UserDetail from '@/pages/UserDetail';
+import UserDetail from '@/pages/detailsUserPage';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -15,7 +18,61 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-// Siembra una sesión válida antes de navegar.
+type FetchCall = [string, RequestInit];
+const callsOf = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls as FetchCall[];
+const bodyOf = (call: FetchCall) => JSON.parse(String(call[1].body ?? '{}'));
+
+// Contrato real de GET /api/admin/users/:id (UsuarioDetalleDTO).
+function defaultUserDetails(userId = 'u2') {
+  return {
+    id: userId,
+    nombreCompleto: 'Ada Lovelace',
+    nombreUsuario: 'alovelace',
+    emailUsuario: 'ada@example.com',
+    organizacionId: 'org-1',
+    rol: 'OPERATOR',
+    activo: true,
+    totpVinculado: true,
+    cambioContrasenaRequerido: false,
+    fechaCreacion: '2026-09-01T00:00:00Z',
+    fechaUltimoAcceso: null,
+    instanciasPermitidas: [101],
+  };
+}
+
+// Contrato real de GET /api/instances (BAC-14): { id, name, type: vm|lxc, node, status }.
+const inventory = [
+  { id: 101, name: 'Ubuntu Server', type: 'vm', node: 'pve', status: 'running' },
+  { id: 102, name: 'Debian 12', type: 'lxc', node: 'pve', status: 'stopped' },
+];
+
+// Backend simulado para la vista de detalle. Las mutaciones responden como el backend real.
+function detailBackend() {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/permissions')) {
+      return Promise.resolve(method === 'PUT' ? new Response(null, { status: 204 }) : jsonResponse({ vmids: [101] }));
+    }
+    if (url.includes('/instances')) return Promise.resolve(jsonResponse(inventory));
+    if (method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
+    if (method === 'PUT') return Promise.resolve(jsonResponse({ ...defaultUserDetails('u2'), ...bodyOf([url, init!]) }));
+    return Promise.resolve(jsonResponse(defaultUserDetails('u2')));
+  });
+}
+
+function renderUserDetail(userId = 'u2') {
+  window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+  return render(
+    <Toaster>
+      <MemoryRouter initialEntries={[`/users/${userId}`]}>
+        <Routes>
+          <Route path="/users/:userId" element={<UserDetail />} />
+        </Routes>
+      </MemoryRouter>
+    </Toaster>,
+  );
+}
+
 function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
   window.sessionStorage.setItem('centinela_access', 'access-token');
   window.localStorage.setItem('centinela_user', JSON.stringify({
@@ -28,48 +85,50 @@ function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
     tiene2FA: true,
   }));
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
-  render(<RouterProvider router={router} />);
+  render(<Toaster><RouterProvider router={router} /></Toaster>);
   return router;
+}
+
+// Si la acción abre un diálogo de confirmación, lo confirma; si no, no hace nada.
+async function confirmIfAsked(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('alertdialog', {}, { timeout: 500 }).catch(() => screen.queryByRole('dialog'));
+  if (!dialog) return;
+  const buttons = within(dialog).getAllByRole('button');
+  const confirm = buttons.find((button) => !/cancelar|cerrar|volver/i.test(button.textContent ?? '')) ?? buttons[buttons.length - 1];
+  await user.click(confirm);
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Estos tests corren contra el código real: documentan qué falta
-// para dar por cumplidos los criterios de éxito de actual.md.
 describe('FRN-05 - panel de gestión de usuarios', () => {
-  it('un usuario con rol OPERATOR no debe poder ver el panel de administración', async () => {
+  it('un usuario con rol OPERATOR no puede ver el panel de administración', async () => {
     const router = renderAppAs('OPERATOR', '/users');
 
-    // El guard administrativo debe sacar al OPERATOR de /users y devolverlo al dashboard.
-    await waitFor(() => expect(router.state.location.pathname).not.toBe('/users'));
-    expect(router.state.location.pathname).toBe('/dashboard');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/dashboard'));
     expect(screen.queryByRole('heading', { name: 'Gestión de usuarios' })).not.toBeInTheDocument();
   });
 
-  it('consulta GET /api/users con Authorization Bearer al entrar a /users', async () => {
+  it('consulta GET /api/admin/users con Authorization Bearer al entrar a /users', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAppAs('ADMIN', '/users');
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/users');
-    expect((init.headers as Record<string, string>).Authorization).toMatch(/^Bearer /);
+    await waitFor(() => expect(callsOf(fetchMock).some(([url]) => url.includes('/admin/users'))).toBe(true));
+    const [, init] = callsOf(fetchMock).find(([url]) => url.includes('/admin/users'))!;
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer access-token');
   });
 
-  it('renderiza los usuarios reales devueltos por el backend en vez de la tabla vacía fija', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+  it('renderiza los usuarios reales devueltos por el backend', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    }));
-    vi.stubGlobal('fetch', fetchMock);
+    })));
 
     renderAppAs('ADMIN', '/users');
 
-    // El panel de detalle lateral muestra el mismo usuario; se verifica la fila de la tabla.
     const table = await screen.findByRole('table');
     expect(await within(table).findByText('Ada Lovelace')).toBeVisible();
   });
@@ -77,189 +136,149 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
 
 describe('FRN-06 - alta y desactivación de usuarios', () => {
   it('incluye un selector de rol ADMIN u OPERATOR en el alta', () => {
-    render(<CrearUsuarios />);
-    expect(screen.getByRole('combobox', { name: /rol/i })).toBeInTheDocument();
+    render(<MemoryRouter><CrearUsuarios /></MemoryRouter>);
+    const roleSelect = screen.getByRole('combobox', { name: /rol/i });
+    const options = within(roleSelect).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+    expect(options).toEqual(expect.arrayContaining(['ADMIN', 'OPERATOR']));
   });
 
-  it('envía POST /api/users al confirmar el alta', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true, contrasenaTemp: 'Temp123!' }, 201));
+  it('envía POST /api/admin/users con el contrato del backend al confirmar el alta', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true }, 201));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
-    render(<CrearUsuarios />);
+    render(<Toaster><MemoryRouter><CrearUsuarios /></MemoryRouter></Toaster>);
 
     await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
     await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
     await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
     await user.click(screen.getByRole('button', { name: /crear usuario/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/users');
-    expect(init.method).toBe('POST');
+    await waitFor(() => expect(callsOf(fetchMock).some(([url, init]) => url.includes('/admin/users') && init.method === 'POST')).toBe(true));
+    const call = callsOf(fetchMock).find(([url, init]) => url.includes('/admin/users') && init.method === 'POST')!;
+    expect(bodyOf(call)).toMatchObject({ nombreCompleto: 'Ada Lovelace', nombreUsuario: 'ada', emailUsuario: 'ada@centinela.local', rol: expect.stringMatching(/^(ADMIN|OPERATOR)$/) });
   });
 
-  it('muestra la contraseña temporal que devuelve el backend tras crear el usuario', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true, contrasenaTemp: 'Temp123!' }, 201));
-    vi.stubGlobal('fetch', fetchMock);
+  it('tras el alta informa el resultado y que la clave temporal se envió por correo (BAC-16), sin mostrar ninguna contraseña', async () => {
+    // BAC-16 (terminado.md): el backend ya NO devuelve contrasenaTemp; la entrega por correo.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true }, 201)));
     const user = userEvent.setup();
-    render(<CrearUsuarios />);
+    render(<Toaster><MemoryRouter><CrearUsuarios /></MemoryRouter></Toaster>);
 
     await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
     await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
     await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
     await user.click(screen.getByRole('button', { name: /crear usuario/i }));
 
-    expect(await screen.findByText('Temp123!')).toBeVisible();
+    expect(await screen.findByText(/usuario creado|creado correctamente|se envi[óo].*correo|correo.*enviad/i, {}, { timeout: 2000 })).toBeVisible();
+    expect(screen.queryByText(/contraseña temporal generada/i)).not.toBeInTheDocument();
   });
 
-  it('permite solicitar la desactivación o baja de un usuario mediante DELETE a la API', async () => {
-    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      if (init?.method === 'DELETE') {
-        return Promise.resolve(new Response(null, { status: 204 }));
-      }
-      return Promise.resolve(jsonResponse({
-        id: 'u1',
-        nombreCompleto: 'Ada Lovelace',
-        nombreUsuario: 'alovelace',
-        emailUsuario: 'ada@example.com',
-        rol: 'ADMIN',
-        activo: true,
-      }));
-    });
+  it('el botón "Eliminar usuario" solicita DELETE /api/admin/users/:id', async () => {
+    const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<UserDetail />);
-    const deleteButton = await screen.findByRole('button', { name: /eliminar usuario|desactivar/i });
-    expect(deleteButton).toBeInTheDocument();
-    await user.click(deleteButton);
+    renderUserDetail('u2');
+    await user.click(await screen.findByRole('button', { name: /eliminar usuario|desactivar/i }));
+    await confirmIfAsked(user);
+
     await waitFor(() => {
-      const calls = fetchMock.mock.calls as [string, RequestInit][];
-      const deleteCall = calls.find(([_, init]) => init?.method === 'DELETE');
-      expect(deleteCall).toBeDefined();
-      expect(deleteCall?.[0]).toContain('/users');
+      const deleteCall = callsOf(fetchMock).find(([, init]) => init?.method === 'DELETE');
+      expect(deleteCall, 'la acción no envió DELETE a la API').toBeDefined();
+      expect(deleteCall![0]).toMatch(/\/admin\/users\/u2$/);
     });
   });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {
   it('ofrece una acción de edición por usuario en la tabla', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    }));
-    vi.stubGlobal('fetch', fetchMock);
+    })));
+    const user = userEvent.setup();
 
-    render(<Users />);
+    render(<MemoryRouter><Users /></MemoryRouter>);
 
-    expect(await screen.findByRole('button', { name: /editar/i })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /acciones para/i }));
+    expect(await screen.findByRole('button', { name: /editar usuario/i })).toBeInTheDocument();
   });
 
-  it('permite modificar información básica y rol enviando PUT /api/admin/users/:id', async () => {
-    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      if (init?.method === 'PUT') {
-        return Promise.resolve(jsonResponse({
-          id: 'u2',
-          nombreCompleto: 'Usuario Dos Editado',
-          rol: 'ADMIN',
-          activo: true,
-        }));
-      }
-      return Promise.resolve(jsonResponse({
-        id: 'u2',
-        nombreCompleto: 'Usuario Dos',
-        nombreUsuario: 'user2',
-        emailUsuario: 'user2@example.com',
-        rol: 'ADMIN',
-        activo: true,
-      }));
-    });
+  it('editar el nombre y guardar envía PUT /api/admin/users/:id con los datos modificados', async () => {
+    const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<UserDetail />);
-
-    const saveButton = await screen.findByRole('button', { name: /guardar cambios/i });
-    expect(saveButton).toBeInTheDocument();
-
-    await user.click(saveButton);
+    renderUserDetail('u2');
+    const nameInput = await screen.findByLabelText(/nombre completo/i);
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Ada Byron');
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
 
     await waitFor(() => {
-      const calls = fetchMock.mock.calls as [string, RequestInit][];
-      const putCall = calls.find(([_, init]) => init?.method === 'PUT');
-      expect(putCall).toBeDefined();
-      expect(putCall?.[0]).toContain('/users');
+      const putCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && /\/admin\/users\/u2$/.test(url));
+      expect(putCall, 'guardar no envió PUT /admin/users/u2').toBeDefined();
+      expect(bodyOf(putCall!)).toMatchObject({ nombreCompleto: 'Ada Byron' });
     });
   });
 });
 
-describe('FRN-07 - selector de asignación de instancias', () => {
-  it('consulta GET /api/instances con Authorization Bearer para listar instancias', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([
-      { id: '101', name: 'Ubuntu Server', type: 'qemu', node: 'pve01', status: 'running' },
-    ]));
+describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
+  it('consulta GET /api/instances con Authorization Bearer', async () => {
+    const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<UserDetail />);
+    renderUserDetail('u2');
 
     await waitFor(() => {
-      const calls = fetchMock.mock.calls as [string, RequestInit][];
-      const instanceCall = calls.find(([url]) => url.includes('/instances'));
+      const instanceCall = callsOf(fetchMock).find(([url]) => /\/instances$/.test(url));
       expect(instanceCall).toBeDefined();
-      if (instanceCall) {
-        expect((instanceCall[1].headers as Record<string, string>)?.Authorization).toMatch(/^Bearer /);
-      }
+      expect((instanceCall![1].headers as Record<string, string>).Authorization).toBe('Bearer access-token-admin');
     });
   });
 
-  it('permite seleccionar VMIDs y enviarlos al endpoint de permisos', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true }));
+  it('muestra marcadas las instancias ya asignadas (GET /permissions) y sin marcar las demás', async () => {
+    vi.stubGlobal('fetch', detailBackend());
+    const user = userEvent.setup();
+
+    renderUserDetail('u2');
+    await user.click(await screen.findByRole('tab', { name: /roles y permisos/i }));
+
+    expect(await screen.findByRole('checkbox', { name: /ubuntu server/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /debian 12/i })).not.toBeChecked();
+  });
+
+  it('seleccionar una instancia y guardar envía PUT /api/admin/users/:id/permissions con { vmids }', async () => {
+    const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<UserDetail />);
-
-    const permTab = screen.queryByRole('button', { name: /roles y permisos/i });
-    if (permTab) {
-      await user.click(permTab);
-    }
-
-    const saveButton = screen.getByRole('button', { name: /guardar cambios/i });
-    await user.click(saveButton);
+    renderUserDetail('u2');
+    await user.click(await screen.findByRole('tab', { name: /roles y permisos/i }));
+    await user.click(await screen.findByRole('checkbox', { name: /debian 12/i }));
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
 
     await waitFor(() => {
-      const calls = fetchMock.mock.calls as [string, RequestInit][];
-      const permCall = calls.find(([url, init]) => (url.includes('/permissions') || url.includes('/instances')) && init.method === 'PUT');
-      expect(permCall).toBeDefined();
+      const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
+      expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
+      expect([...bodyOf(permCall!).vmids].sort()).toEqual([101, 102]);
     });
   });
 });
 
 describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
-  it('envía el JWT Bearer en las peticiones y no borra la sesión ante un 403', async () => {
+  it('el interceptor envía el Bearer y ante un 403 muestra un aviso sin cerrar la sesión', async () => {
     window.sessionStorage.setItem('centinela_access', 'bearer-token-123');
     window.localStorage.setItem('centinela_user', JSON.stringify({ id: 'u1', rol: 'OPERATOR' }));
-
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ errorCode: 'FORBIDDEN', message: 'Acceso denegado' }),
-      { status: 403, headers: { 'Content-Type': 'application/json' } }
-    ));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ errorCode: 'INSTANCE_ACCESS_DENIED', message: 'No tenés acceso a esta instancia.' }, 403));
     vi.stubGlobal('fetch', fetchMock);
+    render(<Toaster><ApiResponseNotifier /></Toaster>);
 
-    renderAppAs('OPERATOR', '/dashboard');
+    await expect(apiClient.get('/instances/103')).rejects.toMatchObject({ status: 403 });
 
-    expect(window.sessionStorage.getItem('centinela_access')).toBe('access-token');
-  });
-
-  it('mantiene al usuario en la vista protegida sin forzar logout ante un 403', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ errorCode: 'FORBIDDEN', message: 'No tenés permisos' }),
-      { status: 403, headers: { 'Content-Type': 'application/json' } }
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const router = renderAppAs('OPERATOR', '/dashboard');
-
-    expect(router.state.location.pathname).not.toBe('/login');
+    expect((callsOf(fetchMock)[0][1].headers as Record<string, string>).Authorization).toBe('Bearer bearer-token-123');
+    expect((await screen.findAllByText('No tenés acceso a esta instancia.')).length).toBeGreaterThan(0);
+    expect(window.sessionStorage.getItem('centinela_access')).toBe('bearer-token-123');
+    expect(window.localStorage.getItem('centinela_user')).not.toBeNull();
   });
 });

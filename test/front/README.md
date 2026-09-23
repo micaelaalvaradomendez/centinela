@@ -1,45 +1,51 @@
 # Pruebas de aceptación del frontend
 
-Esta suite contrasta las tareas frontend de `documentacion/actual.md` con el código actual de `frontend/centinela`, sin agregar dependencias ni archivos al submódulo.
+Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los criterios de éxito de `documentacion/actual.md` y funcionan como prueba de regresión de `documentacion/terminado.md`. Usan Vitest, React Testing Library y jsdom, sin agregar dependencias ni archivos al submódulo.
+
+## Principios
+
+- **Una prueba que pasa verifica el criterio de éxito.** Se exige la llamada HTTP real (método, ruta, cabeceras, payload) y su efecto en la interfaz. No se usan patrones del tipo `if (llamada) … else expect(boton).toBeVisible()`.
+- **Los mocks de `fetch` reproducen el contrato real del backend**, tomado de `backend/internal/adapters/primary/http`. Ejemplos: `/auth/password/forgot`, `{ vmids }` en permisos, `GET /instances` con `{ id, name, type: vm|lxc }` y la ausencia de `contrasenaTemp` por BAC-16. Si el frontend espera otro contrato, la prueba falla: es un problema de integración.
+- **La sesión se siembra donde la guarda la app.** `centinela_access` y `centinela_pending_login` van en sessionStorage; `centinela_user` va en localStorage.
 
 ## Cobertura
 
-| Tarea | Archivo | Comportamiento validado |
-|---|---|---|
-| `FRN-01` | `login-form.test.tsx` | Campos, controles y estado de carga del login |
-| `FRN-02` | `login-form.test.tsx` | Validación previa al envío y errores por campo |
-| `FRN-03` | `navigation.test.tsx` | Protección de rutas y navegación Dashboard/Instancias |
-| `FRN-04` | `authentication-contract.test.ts` | Payload y respuesta del login según la API Go |
-| `LOGIN-02` | `two-factor-form.test.tsx`, `authentication-contract.test.ts` | Código de seis dígitos, errores y contrato 2FA |
-| `LOGIN-03` | `authentication-contract.test.ts` | Continuidad desde login válido hacia enrolamiento 2FA |
-| `FRN-09` | `two-factor-enrollment.test.tsx` | Render real del QR, clave manual y formulario OTP para una cuenta sin 2FA |
-| `FRN-05` | `admin-users.test.tsx` | Guard de rol, consumo de `GET /api/users` y datos reales en la tabla (actualmente en rojo) |
-| `FRN-06` | `admin-users.test.tsx` | Selector de rol, `POST /api/users` y contraseña temporal visible (actualmente en rojo) |
-| `FRN-06B` | `admin-users.test.tsx` | Acción de edición por usuario (actualmente en rojo) |
-| `FRN-07` | `admin-users.test.tsx` | Criterios preparados para cargar instancias, seleccionar VMIDs y guardar permisos (`todo`: no hay componente aún) |
-| `FRN-08` | `admin-users.test.tsx` | Criterios preparados para Bearer, respuesta visual `403` y conservación de sesión (`todo`: no hay componente aún) |
+| Archivo | Tareas |
+|---|---|
+| `login-form.test.tsx` | FRN-01, FRN-02 |
+| `authentication-contract.test.ts` | FRN-04, LOGIN-02, LOGIN-03 |
+| `two-factor-form.test.tsx` | LOGIN-02 |
+| `two-factor-enrollment.test.tsx` | FRN-09 |
+| `api-client.test.ts` | FIX-07 |
+| `navigation.test.tsx` | FRN-03, **SEC-03** |
+| `admin-users.test.tsx` | FRN-05, FRN-06, FRN-06B, **FIX-14/FRN-07**, FRN-08 |
+| `admin-recovery.test.tsx` | **FRN-11** |
+| `recover-password.test.tsx` | **FRN-12** |
+| `password-change.test.tsx` | **FRN-10** |
+| `session-security.test.ts` | **FRN-13**, **SEC-02**, FIX-08 |
+| `audit.test.tsx` | **FRN-14** |
 
 ## Ejecutar
 
-Desde la raíz del repositorio:
-
 ```bash
-corepack pnpm --dir test/front install
-corepack pnpm --dir test/front test
+pnpm --dir test/front install
+pnpm --dir test/front test                 # contra el submódulo tal como está checkouteado
 ```
 
-Para desarrollo interactivo:
+**Probar la última versión del equipo sin tocar el submódulo.** `vitest.config.mjs` acepta `CENTINELA_FRONTEND_DIR`, que es la carpeta `centinela` de cualquier copia del frontend:
 
 ```bash
-corepack pnpm --dir test/front test:watch
+mkdir -p /tmp/front-main
+git -C frontend fetch
+git -C frontend archive origin/main centinela | tar -x -C /tmp/front-main
+ln -s "$PWD/frontend/centinela/node_modules" /tmp/front-main/centinela/node_modules
+CENTINELA_FRONTEND_DIR=/tmp/front-main/centinela pnpm --dir test/front test
 ```
 
-## Interpretación
+Si cambian las dependencias del frontend, primero hay que correr `pnpm install` en `frontend/centinela`.
 
-Una prueba fallida indica que el criterio de la tarea no está satisfecho por el frontend actual. En particular, las pruebas de contrato usan los nombres, rutas, métodos y respuestas expuestos por el backend Go auditado en `main`; no adaptan ni simulan el contrato alternativo que actualmente espera el frontend.
+## Entorno
 
-Los criterios de `FRN-05`, `FRN-06` y `FRN-06B` ya son pruebas reales (no `it.todo`) que renderizan [Users.jsx](../../frontend/centinela/src/pages/Users.jsx) y [CrearUsuarios.tsx](../../frontend/centinela/src/pages/CrearUsuarios.tsx). Actualmente **fallan las 7**, porque esas páginas son maquetas estáticas sin guard de rol, sin llamadas a la API y sin selector de rol ni envío de formulario. No se deben volver a declarar como `todo`: son la señal confiable de que `FRN-05`/`FRN-06`/`FRN-06B` de `documentacion/actual.md` todavía no están completas.
+`setup.ts` agrega los polyfills que jsdom no trae: `document.elementFromPoint` y `window.matchMedia` (este último lo usa `hooks/use-mobile.ts` del sidebar). Después de cada prueba limpia sessionStorage y localStorage.
 
-Los criterios de `FRN-07` y `FRN-08` sí siguen como `it.todo`: a diferencia de los anteriores, no existe ningún componente, ruta ni servicio en el frontend contra el cual escribir una aserción real (ni selector de instancias ni interceptor de errores). El hito asociado queda agrupado en el mismo archivo para probar el recorrido administrador -> asignación -> operador -> rechazo en cuanto exista una primera versión.
-
-El resultado de referencia de la primera ejecución está documentado en [`RESULTADOS.md`](RESULTADOS.md).
+Resultado vigente: [`RESULTADOS.md`](RESULTADOS.md). Informe consolidado: [`../informe.md`](../informe.md).

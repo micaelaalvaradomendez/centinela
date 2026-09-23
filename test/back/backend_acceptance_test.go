@@ -176,12 +176,15 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		if err != nil {
 			t.Fatalf("no se pudo generar un TOTP válido: %v", err)
 		}
-		status, tokenBody := requestJSON(t, http.MethodPost, "/auth/2fa/verify", temporaryJWT, map[string]any{"codigo": code})
-		if status != http.StatusOK {
-			t.Fatalf("TOTP válido esperado 200, recibido %d: %#v", status, tokenBody)
+		verify := requestRaw(t, http.MethodPost, "/auth/2fa/verify", temporaryJWT, map[string]any{"codigo": code})
+		if verify.Status != http.StatusOK {
+			t.Fatalf("TOTP válido esperado 200, recibido %d: %s", verify.Status, verify.RawBody)
 		}
-		accessToken = requiredString(t, tokenBody, "accessToken")
-		_ = requiredString(t, tokenBody, "refreshToken")
+		accessToken = requiredString(t, verify.Body, "accessToken")
+		// El refresh token puede viajar en el body (contrato previo) o en cookie HttpOnly (SEC-01).
+		if refresh, _ := verify.Body["refreshToken"].(string); refresh == "" && verify.cookie("refresh") == nil {
+			t.Fatalf("2fa/verify no entregó refresh token ni en JSON ni en cookie: %s", verify.RawBody)
+		}
 		linkedSecret = secret
 		if linked := queryDatabase(t, `SELECT totp_vinculado::text FROM usuarios WHERE email_usuario = 'admin@elcentinela.com';`); linked != "true" {
 			t.Fatalf("TOTP no quedó vinculado después de validarlo: %q", linked)
@@ -305,10 +308,9 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("crear usuario esperado 201, recibido %d: %#v", createdStatus, created)
 		}
 		createdID := requiredString(t, created, "id")
-		// BAC-16 / Zero-Trust: la contraseña temporal se entrega vía EmailService (MockEmailService / SMTP)
-		// y no debe exponerse de manera obligatoria en el payload JSON público.
-		if temp, ok := created["contrasenaTemp"].(string); ok && temp != "" {
-			t.Logf("Aviso BAC-16: el endpoint devolvió contrasenaTemp en JSON por compatibilidad legacy")
+		// BAC-16: la contraseña temporal se entrega solo por EmailService, nunca en el JSON público.
+		if _, exposed := created["contrasenaTemp"]; exposed {
+			t.Errorf("BAC-16: POST /api/admin/users expone contrasenaTemp en el JSON")
 		}
 		if created["rol"] != "OPERATOR" || created["activo"] != true {
 			t.Fatalf("respuesta de creación inesperada: %#v", created)
@@ -330,12 +332,6 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
 			"vmids": []int{101, 102},
 		})
-		if permissionsStatus == http.StatusNotFound {
-			permEndpoint = "/admin/users/" + createdID + "/instances"
-			permissionsStatus, _ = requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
-				"vmids": []int{101, 102},
-			})
-		}
 		if permissionsStatus != http.StatusNoContent {
 			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
 		}
@@ -447,12 +443,13 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 	})
 
 	t.Run("BAC-06 BAC-06B exigen el prefijo /api/admin/users documentado en actual.md", func(t *testing.T) {
-		// actual.md describe GET/POST/DELETE /api/admin/users y PUT /api/admin/users/{id}.
-		// En cmd/api/main.go el grupo se llama "admin" pero se monta con Group("/") en vez
-		// de Group("/admin"), por lo que el CRUD queda expuesto en /api/users, sin el prefijo.
+		// Regresión: el CRUD debe seguir bajo /api/admin/users y no reaparecer sin prefijo en /api/users.
 		status, _ := requestJSON(t, http.MethodGet, "/admin/users", accessToken, nil)
 		if status != http.StatusOK {
-			t.Errorf("GET /api/admin/users documentado por BAC-06: esperado 200, recibido %d (el grupo \"admin\" de cmd/api/main.go está montado en \"/\", no en \"/admin\")", status)
+			t.Errorf("GET /api/admin/users documentado por BAC-06: esperado 200, recibido %d", status)
+		}
+		if legacy, _ := requestJSON(t, http.MethodGet, "/users", accessToken, nil); legacy != http.StatusNotFound {
+			t.Errorf("GET /api/users (ruta sin prefijo admin) debe responder 404, recibido %d", legacy)
 		}
 	})
 

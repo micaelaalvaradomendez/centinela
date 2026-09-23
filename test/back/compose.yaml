@@ -27,16 +27,29 @@ services:
       JWT_REFRESH_TTL_DAYS: "1"
       TOTP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       APP_NAME: Centinela Test
+      # Proxmox VE simulado (proxmox-stub/nginx.conf) para verificar BAC-14, FIX-16 y SEC-04
+      # con respuestas 200 reales, sin depender de un hipervisor físico.
+      PROXMOX_BASE_URL: http://proxmox:80
+      PROXMOX_NODE: pve
+      PROXMOX_USERNAME: stub@pve
+      PROXMOX_PASSWORD: stub
     ports:
       - "127.0.0.1:${BACKEND_TEST_API_PORT:-18080}:8080"
     depends_on:
       db:
         condition: service_healthy
+      proxmox:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
       interval: 2s
       timeout: 3s
       retries: 30
+
+  proxmox:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./proxmox-stub/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   backend_test_postgres:

@@ -1,144 +1,172 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
+import { createMemoryRouter } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 import { ApiResponseNotifier } from '@/components/common/ApiResponseNotifier';
-import { logoutSession } from '@/components/features/auth/services/authService';
+import { useLogout } from '@/components/features/auth/hooks/useAuth';
+import { logoutSession, persistSessionFromTokens } from '@/components/features/auth/services/authService';
 import { mapAuthenticationError } from '@/components/features/auth/utils/mapAuthenticationError';
-import {
-  API_UNAUTHORIZED_EVENT,
-  ApiRequestError,
-  apiClient,
-} from '@/services/apiClient';
-import {
-  clearAuthTokens,
-  getAccessToken,
-  getRefreshToken,
-  storeAuthTokens,
-} from '@/storage/tokenStorage';
+import { isTokenResponse } from '@/components/features/auth/utils/validateAuthenticationResponses';
+import { API_UNAUTHORIZED_EVENT, ApiRequestError, apiClient } from '@/services/apiClient';
+import * as tokenStorage from '@/storage/tokenStorage';
 
-function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
+function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
+const sessionKeys = ['centinela_access', 'centinela_refresh', 'centinela_user', 'centinela_pending_login'];
+
+// Siembra la sesión tal como la deja el login real: access token y login pendiente en
+// sessionStorage (storage/tokenStorage.ts) y perfil en localStorage (services/api.js).
+// Tras SEC-02 la app ya no escribe centinela_refresh; igual se verifica que no quede.
+function seedFullSession() {
+  window.sessionStorage.setItem('centinela_access', 'access-123');
+  window.sessionStorage.setItem('centinela_pending_login', JSON.stringify({ jwtTemporal: 'x', totpVinculado: true, cambioContrasenaRequerido: false }));
+  window.localStorage.setItem('centinela_user', JSON.stringify({ id: 'u1', rol: 'ADMIN' }));
+}
+
+function remainingSessionKeys() {
+  return sessionKeys.filter((key) => window.sessionStorage.getItem(key) !== null || window.localStorage.getItem(key) !== null);
+}
+
+function allStoredValues() {
+  const values: string[] = [];
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index)!;
+      values.push(`${key}=${storage.getItem(key)}`);
+    }
+  }
+  return values.join('\n');
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('FRN-13 - Flujo integral de logout y limpieza de sesión en cliente', () => {
-  beforeEach(() => {
-    window.sessionStorage.clear();
-    storeAuthTokens({ accessToken: 'access-123', refreshToken: 'refresh-abc' });
-    window.sessionStorage.setItem('centinela_user', JSON.stringify({ id: 'u1', email: 'test@example.com' }));
-    window.sessionStorage.setItem('centinela_pending_login', 'pending-state');
-  });
+  beforeEach(seedFullSession);
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    window.sessionStorage.clear();
-  });
-
-  it('logoutSession envía la cabecera Authorization: Bearer <accessToken> junto con { refreshToken } para revocación atómica', async () => {
+  it('logoutSession envía POST /auth/logout con Authorization: Bearer <accessToken> y credentials: include', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await logoutSession();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/auth/logout');
+    const logoutCall = (fetchMock.mock.calls as [string, RequestInit][]).find(([url]) => url.includes('/auth/logout'));
+    expect(logoutCall, 'no se llamó a /auth/logout').toBeDefined();
+    const [, init] = logoutCall!;
     expect(init.method).toBe('POST');
-
-    // Debe enviar el accessToken en la cabecera Authorization para que el backend pueda revocar ambos tokens
-    const headers = init.headers as Record<string, string>;
-    expect(headers?.Authorization).toBe('Bearer access-123');
-
-    // Y el refreshToken en el body
-    const body = init.body ? JSON.parse(String(init.body)) : {};
-    expect(body.refreshToken).toBe('refresh-abc');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer access-123');
+    expect(init.credentials).toBe('include');
   });
 
-  it('logoutSession limpia exhaustivamente sessionStorage ante fallos de red o errores HTTP', async () => {
-    // Simular falla de red (rejected promise)
-    const fetchMock = vi.fn().mockRejectedValue(new Error('Network error'));
-    vi.stubGlobal('fetch', fetchMock);
+  it.each([
+    ['caída de red', () => Promise.reject(new TypeError('Network error'))],
+    ['error HTTP 500', () => Promise.resolve(jsonResponse({ errorCode: 'INTERNAL_ERROR', message: 'x' }, 500))],
+    ['sesión ya vencida (401)', () => Promise.resolve(jsonResponse({ errorCode: 'TOKEN_REVOKED', message: 'x' }, 401))],
+  ])('logoutSession limpia todas las claves de sesión ante %s', async (_case, response) => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(response));
 
     await logoutSession().catch(() => undefined);
 
-    // Debe limpiar exhaustivamente las claves de sesión local
-    expect(getAccessToken()).toBeNull();
-    expect(getRefreshToken()).toBeNull();
-    expect(window.sessionStorage.getItem('centinela_user')).toBeNull();
-    expect(window.sessionStorage.getItem('centinela_pending_login')).toBeNull();
+    expect(remainingSessionKeys()).toEqual([]);
   });
 
-  it('evento centinela:api-unauthorized con TOKEN_REVOKED limpia la sesión local y redirige a /login', async () => {
+  it('el botón de logout (useLogout) redirige a /login con replace para impedir volver con el historial', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    function LogoutButton() {
+      const { logout } = useLogout();
+      return React.createElement('button', { type: 'button', onClick: () => void logout() }, 'Cerrar sesión');
+    }
+    const router = createMemoryRouter([
+      { path: '/dashboard', Component: LogoutButton },
+      { path: '/login', element: React.createElement('h1', null, 'Login') },
+    ], { initialEntries: ['/dashboard'] });
+    render(React.createElement(RouterProvider, { router }));
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(remainingSessionKeys()).toEqual([]);
+  });
+
+  it('un 401 TOKEN_REVOKED global limpia la sesión local y redirige a /login', () => {
     const replaceMock = vi.fn();
-    delete (window as unknown as { location: unknown }).location;
-    window.location = { pathname: '/dashboard', replace: replaceMock } as unknown as Location;
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, pathname: '/dashboard', replace: replaceMock } });
+    try {
+      render(React.createElement(ApiResponseNotifier));
+      window.dispatchEvent(new CustomEvent(API_UNAUTHORIZED_EVENT, {
+        detail: { errorCode: 'TOKEN_REVOKED', message: 'Token revocado.', status: 401 },
+      }));
 
-    render(React.createElement(ApiResponseNotifier));
-
-    window.dispatchEvent(new CustomEvent(API_UNAUTHORIZED_EVENT, {
-      detail: { errorCode: 'TOKEN_REVOKED', message: 'Token revocado.', status: 401 },
-    }));
-
-    expect(getAccessToken()).toBeNull();
-    expect(getRefreshToken()).toBeNull();
-    expect(replaceMock).toHaveBeenCalledWith('/login');
+      expect(remainingSessionKeys()).toEqual([]);
+      expect(replaceMock).toHaveBeenCalledWith('/login');
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
   });
 });
 
 describe('SEC-02 - Cliente frontend compatible con refresh token HttpOnly', () => {
-  beforeEach(() => {
-    window.sessionStorage.clear();
+  it('tokenStorage ya no expone lectura ni escritura del refresh token', () => {
+    expect(Object.keys(tokenStorage)).not.toContain('getRefreshToken');
+    tokenStorage.storeAuthTokens({ accessToken: 'solo-access', refreshToken: 'rt-no-debe-guardarse' } as never);
+    expect(tokenStorage.getAccessToken()).toBe('solo-access');
+    expect(allStoredValues()).not.toContain('rt-no-debe-guardarse');
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    window.sessionStorage.clear();
+  it('acepta la respuesta de 2FA/refresh sin refreshToken y no persiste el que llegue en el body', async () => {
+    expect(isTokenResponse({ accessToken: 'a', expiresIn: 3600 })).toBe(true);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      id: 'u1', organizacionId: 'org-1', nombreCompleto: 'Ada Lovelace', nombreUsuario: 'ada',
+      emailUsuario: 'ada@centinela.local', rol: 'ADMIN', totpVinculado: true, instanciasPermitidas: [],
+    })));
+    await persistSessionFromTokens({ accessToken: 'access-nuevo', refreshToken: 'rt-legacy-body', expiresIn: 3600 } as never);
+
+    expect(tokenStorage.getAccessToken()).toBe('access-nuevo');
+    expect(allStoredValues()).not.toContain('rt-legacy-body');
   });
 
-  it('apiClient envía credentials: include en todas las peticiones a la API para soportar cookies HttpOnly', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await apiClient.get('/test-secure');
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.credentials).toBe('include');
-  });
-
-  it('renovación de sesión es compatible con respuestas del backend que no incluyen refreshToken en el cuerpo JSON', async () => {
-    // En modo cookie HttpOnly, el backend responde solo { accessToken: 'nuevo-access' } y el refreshToken viene en Set-Cookie
-    storeAuthTokens({ accessToken: 'expired-access', refreshToken: 'http-only-cookie-managed' });
-
+  it('el interceptor renueva la sesión con la cookie: POST /auth/refresh sin refreshToken en el body y reintenta', async () => {
+    window.sessionStorage.setItem('centinela_access', 'expired-access');
+    let protectedCalls = 0;
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('/auth/refresh')) {
-        return Promise.resolve(jsonResponse({ accessToken: 'nuevo-access-token' }));
-      }
-      if (url.includes('/recurso-protegido')) {
-        const calls = fetchMock.mock.calls as [string, RequestInit][];
-        // Primera llamada falla con 401 para disparar la renovación
-        if (calls.filter(([u]) => u.includes('/recurso-protegido')).length === 1) {
-          return Promise.resolve(jsonResponse({ errorCode: 'TOKEN_EXPIRED', message: 'Expirado' }, 401));
-        }
-        return Promise.resolve(jsonResponse({ data: 'exito' }));
-      }
-      return Promise.resolve(jsonResponse({}));
+      if (url.includes('/auth/refresh')) return Promise.resolve(jsonResponse({ accessToken: 'nuevo-access', expiresIn: 3600 }));
+      protectedCalls += 1;
+      return Promise.resolve(protectedCalls === 1
+        ? jsonResponse({ errorCode: 'INVALID_TOKEN', message: 'Expirado' }, 401)
+        : jsonResponse({ data: 'exito' }));
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await apiClient.get<{ data: string }>('/recurso-protegido');
+
     expect(result.data).toBe('exito');
-    expect(getAccessToken()).toBe('nuevo-access-token');
+    expect(tokenStorage.getAccessToken()).toBe('nuevo-access');
+    const refreshCall = (fetchMock.mock.calls as [string, RequestInit][]).find(([url]) => url.includes('/auth/refresh'));
+    expect(refreshCall, 'no se intentó renovar la sesión').toBeDefined();
+    expect(refreshCall![1].credentials).toBe('include');
+    expect(String(refreshCall![1].body ?? '')).not.toMatch(/refresh/i);
   });
 
-  it('el cliente permite operar conservando únicamente accessToken en sessionStorage cuando se usan cookies seguras', () => {
-    clearAuthTokens();
-    storeAuthTokens({ accessToken: 'access-cookie-only', refreshToken: '' });
+  it('logout no envía el refresh token en el body', async () => {
+    seedFullSession();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
 
-    expect(getAccessToken()).toBe('access-cookie-only');
-    expect(getRefreshToken()).toBeFalsy();
+    await logoutSession();
+
+    const [, init] = (fetchMock.mock.calls as [string, RequestInit][]).find(([url]) => url.includes('/auth/logout'))!;
+    expect(String(init.body ?? '')).not.toMatch(/refresh/i);
   });
 });
 
@@ -161,7 +189,6 @@ describe('FIX-08 - Auditoría del contrato de códigos de error en cliente', () 
       const mapped = mapAuthenticationError(error, 'login');
 
       expect(mapped.errorCode).toBe(errorCode);
-      expect(mapped.message).toBeDefined();
       expect(mapped.message.length).toBeGreaterThan(5);
       expect(mapped.message).not.toContain('undefined');
     }
