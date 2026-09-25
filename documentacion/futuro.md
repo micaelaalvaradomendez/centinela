@@ -23,15 +23,7 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 
 
 
-### `INF-05` - CORS y TLS en el borde
 
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir (junto con `INF-04`).
-- **Depende de:** `INF-04`.
-- **Entregable:** whitelist de orígenes permitidos en CORS y certificados TLS configurados en Nginx para todo el tráfico hacia el frontend y la API.
-- **Criterio de éxito:** una petición desde un origen no autorizado es rechazada por CORS y el tráfico hacia el sistema se sirve únicamente sobre HTTPS.
 
 ### `LOGIN-04` - Prueba integral de autenticación y autorización
 
@@ -58,26 +50,6 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 ## Fase 3. Despliegue de persistencia y red
 
 
-### `FIX-20` - Sincronización de políticas de complejidad y distinción UX entre Cambio y Restablecimiento (`FRN-10` / `FRN-12`) (Frontend / UX)
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
-- **Depende de:** `FRN-10`, `FRN-12` y `BAC-02`.
-- **Problema:**
-  1. *Disparidad en reglas de validación:* `ChangePassword.tsx` (`validateChangePasswordFields`, líneas 22-34) valida únicamente que la longitud esté entre 8 y 12 caracteres. Omite las reglas que exige el backend en `crypto.ValidarComplejidadContrasena` (`backend/internal/infrastructure/crypto/password.go:89`): al menos una mayúscula, un número y un carácter especial `!@#$%^&*-_=+`. Si el usuario ingresa una clave que no cumple estas reglas, el cliente la envía y el backend responde 400 `PASSWORD_CHANGE_FAILED`.
-     - **Evidencia (23/09/2026):** en `test/front/password-change.test.tsx`, los casos *"no llama a la API si la contraseña nueva no cumple la complejidad del backend (sin mayúscula / sin dígito / sin carácter especial)"* fallan, porque el cliente envía `PUT /api/account/password` con `nueva1234!`, `NuevaClave!` y `Nueva12345`.
-  2. *Ambigüedad visual:* Falta claridad en los textos de ayuda de los formularios para distinguir que en el **Cambio** se requiere la clave temporal previa, mientras que en el **Restablecimiento** solo se define una nueva contraseña.
-- **Entregable:**
-  1. Implementar un validador unificado de contraseñas (`validatePasswordComplexity`) en el archivo existente `frontend/centinela/src/utils/validators.js`, que replique exactamente los criterios del backend:
-     - Longitud: 8 a 12 caracteres.
-     - Al menos una letra mayúscula.
-     - Al menos un dígito numérico.
-     - Al menos un símbolo permitido (`[!@#$%^&*-_=+]`).
-  2. Integrar el validador unificado en `ChangePassword.tsx` y `RecoverPassword.tsx` (paso 3), mostrando el error junto al campo y textos de ayuda explicativos debajo. `CrearUsuarios.tsx` no lo necesita: desde `BAC-16` la clave temporal la genera el backend y se envía por correo, y los campos de contraseña de esa vista se eliminan en `FIX-24`.
-- **Criterio de éxito:** Las validaciones de cliente previenen el envío de contraseñas no conformes; el usuario recibe retroalimentación inmediata; se eliminan los errores 400 por rechazo de complejidad en el backend. Los 3 casos de complejidad de `test/front/password-change.test.tsx` pasan.
-- **Nota:** la corrección de la referencia de `FRN-10` a `PUT /api/account/password` en la documentación ya se hizo el 23/09/2026, en `terminado.md`, y no forma parte de este FIX.
 
 ## Relación y orden de ejecución
 
@@ -290,103 +262,13 @@ FIX DEL 21 AL 25 (en actual.md)
 
 *(Todas las tareas están separadas estrictamente por equipo —**Infraestructura**, **Backend** o **Frontend**— para su asignación directa en ClickUp).*
 
-### `INF-08` - Configuración de servidor/cuenta SMTP y variables de entorno para correo saliente
 
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `INF-03`, `INF-04`.
-- **Problema y contexto:** Para habilitar el envío real de correos (`RF-09` y `RF-13`) desde el backend, la infraestructura debe proveer las credenciales del relay/servidor SMTP y habilitar la salida de red en los puertos correspondientes (`587` STARTTLS / `465` TLS).
-- **Entregable:**
-  1. Configurar la cuenta de servicio o relay SMTP e inyectar en el entorno del servidor y en `.env.example` / `docker-compose.yml` las variables: `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
-  2. Verificar conectividad de red saliente desde el contenedor del backend hacia el host SMTP.
-- **Criterio de éxito:** Variables documentadas y conectividad validada desde el contenedor del backend hacia el puerto SMTP sin bloqueos de firewall.
 
-### `BAC-16B` - Adaptador Go `SmtpEmailService` para envío real de credenciales y códigos OTP (`RF-09` / `RF-13`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `BAC-16`, `BAC-19`, `INF-08`.
-- **Problema y contexto:** `BAC-16` dejó creado el puerto hexagonal `ports.EmailService`, pero solo implementó `MockEmailService` por consola. El backend necesita el adaptador SMTP real para enviar las contraseñas temporales y los códigos de recuperación de 6 dígitos.
-- **Entregable:**
-  1. Implementar `SmtpEmailService` en `backend/internal/adapters/secondary/email/smtp_service.go` cumpliendo la interfaz `ports.EmailService` (`EnviarCredencialesTemporales` y `EnviarCodigoRecuperacion`) con soporte `STARTTLS`/`TLS`.
-  2. En `cmd/api/main.go`, instanciar `SmtpEmailService` cuando `EMAIL_PROVIDER=smtp` y mantener `MockEmailService` cuando `EMAIL_PROVIDER=mock` (usado por los tests automatizados).
-  3. Estructurar los cuerpos de correo para alta de cuenta (`RF-09`), reset administrativo (`BAC-15`) y código OTP de 6 dígitos (`RF-13`).
-- **Criterio de éxito:** Con `EMAIL_PROVIDER=smtp`, el backend envía correos reales; ante un fallo de entrega aborta la operación y devuelve `502 EMAIL_DELIVERY_FAILED`; la suite de tests sigue pasando en modo `mock`.
-
-### `INF-06` - Despliegue de servicio Redis en Docker Compose y red `vmbr1`
-
-- **Área:** Infraestructura
-- **Asignados:** Nico y Lucas
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base, previo a `BAC-17B`).
-- **Depende de:** `INF-03` e `INF-04`.
-- **Problema y contexto:** Se adelanta el despliegue de Redis al cierre de la fase base para alojar las sesiones activas con expiración automática (`TTL`), los tickets efímeros de WebSockets/SSE y la caché de Proxmox.
-- **Entregable:**
-  1. Agregar el contenedor `redis:7-alpine` en `docker-compose.yml` y en la red interna `vmbr1`, configurado con contraseña (`REDIS_PASSWORD`), límite de memoria (`maxmemory 256mb`, política `volatile-lru`) y variables `REDIS_ADDR` / `REDIS_PASSWORD` expuestas al contenedor del backend.
-- **Criterio de éxito:** Servicio Redis operativo y accesible desde la red interna `vmbr1`, respondiendo `PONG` a `redis-cli PING` con autenticación.
-
-### `BAC-17B` - Corrección de lógica de inserción en `sesiones_activas` (1 sesión = 1 registro) y almacenamiento en Redis con TTL
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2,5 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `INF-06`, `BAC-17`.
-- **Problema y diagnóstico en código (`backend/internal/core/services/auth_service.go`):**
-  Actualmente el código de `auth_service.go` tiene un diseño ilógico que multiplica las filas en `sesiones_activas` por cada usuario:
-  1. En `Login()` (líneas 76-84) inserta la **Fila 1** para el `jwtTemporal` (pre-2FA) con `activa = true`.
-  2. En `VerificarTotp()` (líneas 249-313), en vez de transformar esa sesión o eliminar la temporal, deja la **Fila 1** con `activa = true`, inserta la **Fila 2** para el `refreshToken` y encima inserta la **Fila 3** para el `accessToken`. **Un solo inicio de sesión genera 3 filas en la base de datos.**
-  3. En `RefrescarToken()` (líneas 388-399), cada vez que el frontend renueva el `accessToken`, el backend hace **otro `INSERT`** (`Fila 4, Fila 5, Fila 6...`) dejando todas las filas de `accessToken` anteriores con `activa = true`.
-  4. En `CerrarSesion()` (líneas 433-438), solo pasa a `activa = false` el último `access` y `refresh`, dejando huérfanas la fila pre-2FA y todas las filas de renovaciones intermedias.
-- **Entregable (Solución arquitectónica):**
-  1. **Regla de oro (1 Sesión de Usuario = 1 único registro activo):**
-     - **Paso Pre-2FA (`Login`):** Guardar el `jtiTemporal` exclusivamente en Redis (`SET auth:pre2fa:<jti> <usuario_id> EX 300`) con expiración automática de 5 minutos (o si se usa PostgreSQL, que sea la única fila creada que luego se actualiza en el paso 2FA). **Nunca dejar filas pre-2FA sueltas.**
-     - **Paso Post-2FA (`VerificarTotp`):** Consumir y eliminar (`DEL`) el `jtiTemporal` pre-2FA. Crear **1 única sesión** para el navegador del usuario (en Redis `SET auth:session:<session_id> ... EX <ttl>` y **1 sola fila** en `sesiones_activas` que represente la sesión activa, no 2 filas separadas). Actualizar en ese mismo acto `fecha_ultimo_acceso = NOW()` en la tabla `usuarios`.
-     - **Paso Renovación (`RefrescarToken`):** **Prohibido hacer `INSERT` en `RefrescarToken`**. Al renovar el token, hacer `UPDATE` sobre el **mismo registro existente** de esa sesión (actualizando el `jti_token` vigente y su `fecha_expiracion` en la fila única y en Redis). Así, aunque un usuario renueve su token 100 veces en el día, sigue ocupando **1 sola fila**.
-     - **Paso Cierre (`CerrarSesion` / Expiración):** Eliminar la clave de Redis (`DEL`) y eliminar (`DELETE`) o desactivar esa única fila en `sesiones_activas`.
-- **Criterio de éxito:** Un usuario que inicia sesión, verifica 2FA y refresca su token 10 veces genera **exactamente 1 sesión activa** (no 12 filas); al cerrar sesión o vencer el TTL, no quedan filas residuales activas y `fecha_ultimo_acceso` se persiste correctamente en `usuarios`.
-
-### `BAC-18B` - Índice parcial y purga en `sesiones_activas`, y particionamiento trimestral en `auditoria` (PostgreSQL)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `BAC-17B`, `FIX-23`.
-- **Problema y contexto:**
-  1. Las filas históricas o con `activa = false` en `sesiones_activas` penalizan las lecturas en PostgreSQL si no existe un índice parcial ni una purga de registros vencidos.
-  2. La tabla `auditoria` es *append-only* (`FIX-23`, no admite `DELETE` bajo ningún concepto) y en la Etapa 1 registrará múltiples eventos por cada operación de Proxmox VE (`PENDING` y `SUCCESS`/`FAILED`). Sin particionamiento por fechas e índices compuestos, las consultas de `GET /api/admin/audit` y la exportación CSV se degradarán progresivamente.
-- **Entregable:**
-  1. Crear en PostgreSQL (`init.sql` / migración) el índice parcial para `sesiones_activas`:
-     ```sql
-     CREATE INDEX IF NOT EXISTS idx_sesiones_activas_vigentes
-       ON sesiones_activas (jti_token, usuario_id)
-       WHERE activa = true;
-     ```
-  2. Agregar una rutina de limpieza en el backend (ticker cada 1 hora) que ejecute `DELETE FROM sesiones_activas WHERE activa = false OR fecha_expiracion < NOW();`.
-  3. Configurar en PostgreSQL el **particionamiento declarativo trimestral por rango de fechas** sobre la tabla `auditoria` (`PARTITION BY RANGE (fecha_hora)`), creando las particiones trimestrales (`auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1` y `auditoria_default`) junto con los índices compuestos `(fecha_hora DESC, accion, resultado)` y `(usuario_id, fecha_hora DESC)`.
-- **Criterio de éxito:** Las sesiones muertas se purgan automáticamente de PostgreSQL; la tabla `auditoria` opera sobre particiones trimestrales manteniendo tiempos de consulta constantes (< 20 ms) e inmutabilidad append-only.
 
 ---
 
 ## 🔐 Bloque 5: Cierre de Huecos de la Fase Base (`cierre-fase-base.md`)
 
-### `FRN-18` (`SEC-04B`) - Integración en Frontend de niveles de acceso por instancia (`READ_ONLY` / `FULL_ACCESS`)
-
-- **Área:** Frontend
-- **Asignados:** Cristian y Belinda
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (inmediatamente posterior a `SEC-03` y `SEC-04`).
-- **Depende de:** `SEC-03`, `SEC-04` y `FIX-14`.
-- **Problema y evidencia (`cierre-fase-base.md`):** `SEC-04` implementa `nivel_acceso` (`FULL_ACCESS` y `READ_ONLY`) en el backend, pero ninguna tarea de Frontend tenía asignado enviar ese nivel en `PUT /api/admin/users/:id/permissions`, leerlo al abrir la ficha del usuario ni exponerlo en `usePermissions()` (`SEC-03`) para distinguir quién puede solo ver una máquina de quién puede apagarla o reiniciarla.
-- **Entregable:**
-  1. En `detailsUserPage.tsx` y `rolesAndPermissions.tsx`, leer el `nivelAcceso` de cada instancia desde `GET /api/admin/users/:id/permissions` y enviar `{ vmid, nivelAcceso: 'FULL_ACCESS' | 'READ_ONLY' }` en `PUT /api/admin/users/:id/permissions`.
-  2. En el contexto `SEC-03` (`usePermissions()`), agregar el helper `canOperateInstance(vmid: number): boolean` (devuelve `true` solo si es `ADMIN` o si tiene `FULL_ACCESS` sobre ese `vmid`), diferenciándolo de `canAccessInstance(vmid)` (que devuelve `true` tanto para `READ_ONLY` como `FULL_ACCESS`).
-- **Criterio de éxito:** El administrador puede asignar y guardar el nivel "Solo lectura" o "Control total" por instancia desde la UI; `canOperateInstance` retorna `false` para instancias en modo `READ_ONLY`.
 
 ---
 
