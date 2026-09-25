@@ -126,11 +126,13 @@ describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
     }
   });
 
-  it('un ADMIN ve los accesos administrativos en el menú, incluida Auditoría', async () => {
+  // "Crear usuario" dejó de ser un enlace del menú (commit a387e10): el alta se inicia
+  // desde el botón de /users. El menú administrativo queda en Usuarios y Auditoría.
+  it('un ADMIN ve los accesos administrativos en el menú: Usuarios y Auditoría', async () => {
     renderApplication('/dashboard', true);
 
     expect(await screen.findByRole('heading', { name: /Hola, Admin/ })).toBeVisible();
-    for (const name of ['Usuarios', 'Crear usuario', 'Auditoría']) {
+    for (const name of ['Usuarios', 'Auditoría']) {
       expect(screen.getByRole('link', { name })).toBeVisible();
     }
   });

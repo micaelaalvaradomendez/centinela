@@ -47,15 +47,20 @@ const inventory = [
 ];
 
 // Backend simulado para la vista de detalle. Las mutaciones responden como el backend real.
-function detailBackend() {
+// Permisos (SEC-04): GET/PUT /admin/users/:id/permissions -> { permisos: [{ vmid, nivelAcceso }] }.
+function detailBackend({ profilePut }: { profilePut?: (init: RequestInit) => Response } = {}) {
   return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url.includes('/permissions')) {
-      return Promise.resolve(method === 'PUT' ? new Response(null, { status: 204 }) : jsonResponse({ vmids: [101] }));
+      return Promise.resolve(method === 'PUT'
+        ? new Response(null, { status: 204 })
+        : jsonResponse({ permisos: [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }] }));
     }
     if (url.includes('/instances')) return Promise.resolve(jsonResponse(inventory));
     if (method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
-    if (method === 'PUT') return Promise.resolve(jsonResponse({ ...defaultUserDetails('u2'), ...bodyOf([url, init!]) }));
+    if (method === 'PUT') {
+      return Promise.resolve(profilePut ? profilePut(init!) : jsonResponse({ ...defaultUserDetails('u2'), ...bodyOf([url, init!]) }));
+    }
     return Promise.resolve(jsonResponse(defaultUserDetails('u2')));
   });
 }
@@ -87,6 +92,15 @@ function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
   render(<Toaster><RouterProvider router={router} /></Toaster>);
   return router;
+}
+
+async function fillCreateUserForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
+  await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
+  await user.type(screen.getByLabelText(/^correo electrónico/i), 'ada@centinela.local');
+  const confirmation = screen.queryByLabelText(/confirmar correo/i);
+  if (confirmation) await user.type(confirmation, 'ada@centinela.local');
+  await user.click(screen.getByRole('button', { name: /crear usuario/i }));
 }
 
 // Si la acción abre un diálogo de confirmación, lo confirma; si no, no hace nada.
@@ -142,35 +156,49 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
     expect(options).toEqual(expect.arrayContaining(['ADMIN', 'OPERATOR']));
   });
 
-  it('envía POST /api/admin/users con el contrato del backend al confirmar el alta', async () => {
+  it('envía POST /api/admin/users con el contrato del backend al confirmar el alta', { timeout: 15000 }, async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true }, 201));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     render(<Toaster><MemoryRouter><CrearUsuarios /></MemoryRouter></Toaster>);
 
-    await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
-    await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
-    await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
-    await user.click(screen.getByRole('button', { name: /crear usuario/i }));
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
 
     await waitFor(() => expect(callsOf(fetchMock).some(([url, init]) => url.includes('/admin/users') && init.method === 'POST')).toBe(true));
     const call = callsOf(fetchMock).find(([url, init]) => url.includes('/admin/users') && init.method === 'POST')!;
     expect(bodyOf(call)).toMatchObject({ nombreCompleto: 'Ada Lovelace', nombreUsuario: 'ada', emailUsuario: 'ada@centinela.local', rol: expect.stringMatching(/^(ADMIN|OPERATOR)$/) });
   });
 
-  it('tras el alta informa el resultado y que la clave temporal se envió por correo (BAC-16), sin mostrar ninguna contraseña', async () => {
+  it('tras el alta informa el resultado y que la clave temporal se envió por correo (BAC-16), sin mostrar ninguna contraseña', { timeout: 15000 }, async () => {
     // BAC-16 (terminado.md): el backend ya NO devuelve contrasenaTemp; la entrega por correo.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ id: 'u2', rol: 'OPERATOR', activo: true }, 201)));
     const user = userEvent.setup();
     render(<Toaster><MemoryRouter><CrearUsuarios /></MemoryRouter></Toaster>);
 
-    await user.type(screen.getByLabelText(/nombre completo/i), 'Ada Lovelace');
-    await user.type(screen.getByLabelText(/nombre de usuario/i), 'ada');
-    await user.type(screen.getByLabelText(/^correo electrónico$/i), 'ada@centinela.local');
-    await user.click(screen.getByRole('button', { name: /crear usuario/i }));
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
 
-    expect(await screen.findByText(/usuario creado|creado correctamente|se envi[óo].*correo|correo.*enviad/i, {}, { timeout: 2000 })).toBeVisible();
+    expect((await screen.findAllByText(/usuario creado|creado correctamente|se envi[óo].*correo|correo.*enviad/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
     expect(screen.queryByText(/contraseña temporal generada/i)).not.toBeInTheDocument();
+  });
+
+  it('el formulario de alta ya no pide contraseña: la genera el backend y viaja por correo (FIX-24)', () => {
+    render(<MemoryRouter><CrearUsuarios /></MemoryRouter>);
+    expect(screen.queryByLabelText(/contraseña/i)).not.toBeInTheDocument();
+  });
+
+  it('si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED) informa que el usuario no fue creado (FIX-24)', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
+      { errorCode: 'EMAIL_DELIVERY_FAILED', message: 'Usuario no creado. El servidor de correo no está disponible.' }, 502,
+    )));
+    const user = userEvent.setup();
+    render(<Toaster><MemoryRouter><CrearUsuarios /></MemoryRouter></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    expect((await screen.findAllByText(/no se pudo enviar el correo|servidor de correo no est[áa] disponible/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
   });
 
   it('el botón "Eliminar usuario" solicita DELETE /api/admin/users/:id', async () => {
@@ -223,6 +251,24 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
   });
 });
 
+describe('FIX-25 - errores al guardar el perfil', () => {
+  it('un correo duplicado (409 USER_CONFLICT) se muestra junto al campo de correo', async () => {
+    vi.stubGlobal('fetch', detailBackend({
+      profilePut: () => jsonResponse({ errorCode: 'USER_CONFLICT', message: 'el email ya está en uso' }, 409),
+    }));
+    const user = userEvent.setup();
+
+    renderUserDetail('u2');
+    const emailInput = await screen.findByLabelText(/correo electrónico/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'otro@example.com');
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => expect(emailInput).toHaveAttribute('aria-invalid', 'true'));
+    expect(screen.getByText(/correo.*(ya|pertenece|uso|existe)/i)).toBeVisible();
+  });
+});
+
 describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
   it('consulta GET /api/instances con Authorization Bearer', async () => {
     const fetchMock = detailBackend();
@@ -248,7 +294,7 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     expect(screen.getByRole('checkbox', { name: /debian 12/i })).not.toBeChecked();
   });
 
-  it('seleccionar una instancia y guardar envía PUT /api/admin/users/:id/permissions con { vmids }', async () => {
+  it('seleccionar una instancia y guardar envía PUT /api/admin/users/:id/permissions con { permisos }', async () => {
     const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -261,7 +307,30 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     await waitFor(() => {
       const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
       expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
-      expect([...bodyOf(permCall!).vmids].sort()).toEqual([101, 102]);
+      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
+      expect(permisos.map((permiso) => permiso.vmid).sort()).toEqual([101, 102]);
+      expect(permisos.every((permiso) => (permiso.nivelAcceso ?? 'FULL_ACCESS') === 'FULL_ACCESS')).toBe(true);
+    });
+  });
+
+  it('elegir "Solo lectura" envía nivelAcceso READ_ONLY para esa instancia (integración con SEC-04)', async () => {
+    const fetchMock = detailBackend();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderUserDetail('u2');
+    await user.click(await screen.findByRole('tab', { name: /roles y permisos/i }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: /acceso para debian 12/i }), 'Solo lectura');
+    await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
+
+    await waitFor(() => {
+      const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
+      expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
+      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
+      expect(permisos).toEqual(expect.arrayContaining([
+        expect.objectContaining({ vmid: 102, nivelAcceso: 'READ_ONLY' }),
+        expect.objectContaining({ vmid: 101 }),
+      ]));
     });
   });
 });

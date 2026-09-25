@@ -329,9 +329,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		}
 
 		permEndpoint := "/admin/users/" + createdID + "/permissions"
-		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
-			"vmids": []int{101, 102},
-		})
+		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(101, 102))
 		if permissionsStatus != http.StatusNoContent {
 			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
 		}
@@ -343,9 +341,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("permisos iniciales inesperados: %#v", detail["instanciasPermitidas"])
 		}
 
-		replaceStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
-			"vmids": []int{102},
-		})
+		replaceStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(102))
 		if replaceStatus != http.StatusNoContent {
 			t.Fatalf("reemplazar permisos esperado 204, recibido %d", replaceStatus)
 		}
@@ -360,9 +356,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// Prueba funcional (no solo de esquema): si el cliente manda un VMID repetido,
 		// ¿el sistema lo deduplica o persiste dos filas idénticas?
-		duplicateStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, map[string]any{
-			"vmids": []int{201, 201},
-		})
+		duplicateStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(201, 201))
 		if duplicateStatus != http.StatusNoContent {
 			t.Fatalf("asignar vmids duplicados esperado 204, recibido %d", duplicateStatus)
 		}
@@ -387,9 +381,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 				t.Fatalf("%s para OPERATOR: esperado 403, recibido %d", method, status)
 			}
 		}
-		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, map[string]any{
-			"vmids": []int{103},
-		})
+		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, permissionsPayload(103))
 		if operatorPermissionStatus != http.StatusForbidden {
 			t.Fatalf("asignar permisos para OPERATOR: esperado 403, recibido %d", operatorPermissionStatus)
 		}

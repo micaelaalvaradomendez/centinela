@@ -1,162 +1,141 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 23/09/2026
-**Fuentes:** [documentacion/actual.md](../documentacion/actual.md) (tareas en curso), [documentacion/terminado.md](../documentacion/terminado.md) (regresión) y las suites de [test/back](back) y [test/front](front).
+**Fecha de ejecución:** 25/09/2026
+**Alcance:** tareas en desarrollo de [documentacion/actual.md](../documentacion/actual.md) (SEC-01, SEC-04, FRN-11, FRN-12, SEC-03 y FIX-17 a FIX-25) y regresión de [documentacion/terminado.md](../documentacion/terminado.md).
 
-| Componente | Revisión probada | Cómo |
+| Componente | Revisión probada | Cambios desde el informe anterior (23/09) |
 |---|---|---|
-| Backend | `15032da` = `origin/main` (*fix: asegurar logout y revocación atómica de sesiones*) | `go test -v -count=1 ./...` en `test/back`, con PostgreSQL 16 y un stub de Proxmox VE en Docker Compose |
-| Frontend | `3192cf4` = `origin/main` (*Merge PR #56 rama-Beli*) | `CENTINELA_FRONTEND_DIR=<export de origin/main> pnpm test` en `test/front`, sin modificar el submódulo |
+| Backend | `eb0c9af` = `origin/main` | 5 commits: SEC-01 cookie HttpOnly (`c719c9b`, `47bb8f2`), SEC-04 niveles de acceso (`eb0c9af`), FIX-17 (`5407599`, solo documentación) y fecha de último acceso (`fec42b7`) |
+| Frontend | `7fbf969` = `origin/main` | 28 commits: alta y baja de usuarios con modal de confirmación, guardado del perfil (`PUT /admin/users/:id`), permisos con `nivelAcceso` y revert del rediseño del sidebar (`131ee7d`) |
+
+**Cómo se ejecutó:** los dos `origin/main` se exportaron con `git archive` al directorio temporal, **sin modificar los submódulos**, y se probaron con estas variables:
+- `CENTINELA_ROOT`: el backend se construye con Docker Compose desde esa copia.
+- `CENTINELA_FRONTEND_DIR`: Vitest resuelve `@/` contra esa copia.
+
+Cada suite se ejecutó **dos veces** con el mismo resultado.
 
 > [!IMPORTANT]
-> **El submódulo `frontend` de este repo no refleja el trabajo del equipo.** Está en `5b91e80`, 13 commits atrás de `origin/main`, y tiene **3 archivos modificados sin commitear que no son del equipo**: `applicationRoutes.tsx`, `apiClient.ts` y `tokenStorage.ts`. Esos parches hacían pasar pruebas que el código real no pasa. Por ejemplo, movían `/auditoria` bajo `loadAdminSession` y volvían a guardar el `refreshToken` en contra de SEC-02. Por eso el frontend se probó contra una exportación limpia de `origin/main` (`git archive`). Se recomienda descartar esos parches y actualizar el puntero del submódulo (ver [§7](#7-parches-locales-en-el-submódulo-frontend)).
-
-> [!NOTE]
-> **Reclasificación de la documentación (23/09/2026), según estos resultados:**
->
-> | Situación | Tareas | Dónde quedan |
-> |---|---|---|
-> | Completas | BAC-14, FIX-16, BAC-17, FRN-13, SEC-02, FIX-14 | `terminado.md` |
-> | Implementadas con problemas | FRN-10, FRN-14 | `terminado.md`, con **FIX-21** y **FIX-22** en `futuro.md` |
-> | Retrocesos de tareas que ya estaban terminadas | BAC-18, FRN-06, FRN-06B | **FIX-23**, **FIX-24** y **FIX-25** en `futuro.md` |
-> | No implementadas | SEC-01, SEC-04, FRN-11, FRN-12, SEC-03 | `actual.md` |
->
-> Cada fallo de este informe corresponde a una tarea de `actual.md` o a uno de esos FIX.
+> La copia local de los submódulos sigue atrasada: backend en `15032da` y frontend en `5b91e80`, este último con 3 archivos modificados sin commitear que no son del equipo. Contra esa copia, el frontend da 30 fallos en lugar de 18. **Los resultados de este informe corresponden a `origin/main`**, que es lo que el equipo tiene integrado.
 
 ---
 
 ## 1. Resumen
 
-| Suite | Casos | Aprueban | Fallan | Omitidos |
-|---|---:|---:|---:|---:|
-| Backend (`test/back`, 5 archivos) | 28 | 24 | **4** | 0 |
-| Frontend (`test/front`, 12 archivos) | 72 | 55 | **17** | 0 |
-| **Total** | **100** | **79** | **21** | **0** |
+| Suite | Casos | Aprueban | Fallan |
+|---|---:|---:|---:|
+| Backend (`test/back`) | 30 | 28 | **2** |
+| Frontend (`test/front`) | 79 | 61 | **18** |
+| **Total** | **109** | **89** | **20** |
 
-Las pruebas se ejecutaron **dos veces** con idéntico resultado, así que no hay tests inestables. **Los 21 fallos son brechas del producto, no del test.** Cada fallo se clasifica en [§3](#3-estado-de-las-tareas-de-actualmd) y [§4](#4-regresiones-en-tareas-de-terminadomd).
+**Avance desde el 23/09:**
+- Pasan a estar cumplidas: **SEC-01**, **FIX-17** y **FIX-25**.
+- Quedan casi cumplidas: **SEC-04** y **FIX-24**.
+- El hallazgo crítico de integración front ↔ back quedó **resuelto**: el logout y el refresh que envía el frontend ahora funcionan contra el backend (ver [§4](#4-integración-front--back)).
 
-**El informe anterior (22/09) reportaba 84/84 en verde, pero no era fiable.** Buena parte de ese verde venía de falsos positivos (ver [§2](#2-qué-se-corrigió-en-las-pruebas)) y de los parches locales en el submódulo.
+**Todos los fallos son del producto.** En esta revisión también se corrigieron problemas del test (ver [§5](#5-cambios-en-las-pruebas-en-esta-revisión)), cada uno en su lugar.
 
 ---
 
-## 2. Qué se corrigió en las pruebas
+## 2. Cobertura: cada tarea de `actual.md` tiene pruebas
 
-Estos eran los patrones que daban verde sin verificar el criterio de la tarea:
-
-| Patrón encontrado | Dónde | Corrección |
+| Tarea | Área | Pruebas que la verifican |
 |---|---|---|
-| `t.Logf("PENDIENTE…"); return` en lugar de fallar | SEC-01, SEC-04, pasos 6.4/6.5 de LOGIN-04 | Ahora son aserciones (`t.Errorf`/`t.Fatalf`) sobre los entregables de `actual.md` |
-| Un `502` contado como "verificado" porque no había Proxmox | BAC-14 | Nuevo **stub de Proxmox VE** (`test/back/proxmox-stub/nginx.conf`) con un inventario fijo. Se verifican los campos normalizados, el filtro por operador y el mapeo de errores |
-| `if (llamada) { … } else { expect(boton).toBeVisible() }` | FRN-06, FRN-06B, FRN-07, FRN-11, FRN-12 | Se exige la llamada HTTP real, con su método, ruta y payload |
-| URLs inventadas (`/recover/request`, `/recover/confirm`) | FRN-12 | Se usan los endpoints reales `/auth/password/forgot` y `/auth/password/reset` |
-| Tokens firmados por el test, y `logout` sin Bearer que aceptaba 200 **o** 401 | BAC-17 | Los tokens salen del circuito real login → 2FA. Se verifica la revocación en BD, `TOKEN_REVOKED`, el refresh posterior y la auditoría `LOGOUT` |
-| Clave temporal forzada copiando el hash del admin; el test dependía del orden de ejecución | LOGIN-04 | La clave temporal se lee del **MockEmailService** (logs del contenedor), el mismo canal por el que la recibe el usuario |
-| `t.Log("BAC-21 verificado")` sin ninguna aserción | BAC-21 | Compara los campos y enums del struct Go contra la interfaz TypeScript |
-| BAC-16, BAC-19, BAC-20, BAC-13, BAC-15 solo verificaban códigos HTTP | regresión | Ahora verifican el efecto: el código anterior se invalida, las sesiones se revocan, la clave vieja deja de funcionar y el secreto viejo se rechaza |
-| Tests atados al contrato anterior (`getRefreshToken`, `refreshToken` en el body) | SEC-02, FRN-13 | Se actualizaron al contrato con cookie HttpOnly |
-| Falta de `window.matchMedia` en jsdom | todos los que montan el sidebar | Se agregó un polyfill en `test/front/setup.ts` |
-
-También se agregó una **prueba de integración** que reproduce, contra el backend, las peticiones exactas que envía el frontend de `origin/main` (ver [§5](#5-hallazgo-de-integración-front--back-crítico)).
+| `SEC-01` | Back | `test/back/session_security_acceptance_test.go`: `SEC-01 refresh token solo en cookie HttpOnly` y `SEC-01 SEC-02 integracion…` |
+| `SEC-04` | Back | `test/back/resource_access_acceptance_test.go`: `SEC-04 niveles de acceso…` y `SEC-04 retrocompatibilidad…` |
+| `FRN-11` | Front | `test/front/admin-recovery.test.tsx` (4) |
+| `FRN-12` | Front | `test/front/recover-password.test.tsx` (7) |
+| `SEC-03` | Front | `test/front/navigation.test.tsx`, bloque SEC-03 (4) |
+| `FIX-17` | Back | `test/back/password_recovery_acceptance_test.go`: `FIX-17 contratos canonicos…` |
+| `FIX-18` | Front | `recover-password.test.tsx` (7). Incluye la redirección a `/login` y la validación del código en el paso 2 |
+| `FIX-19` | Front | `admin-recovery.test.tsx` (4), las mismas pruebas que FRN-11 |
+| `FIX-20` | Front | `password-change.test.tsx` (3 casos de complejidad) y `recover-password.test.tsx` (complejidad en el paso 3) |
+| `FIX-21` | Front | `password-change.test.tsx`: `la pantalla de cambio ofrece cerrar sesión…` |
+| `FIX-22` | Front | `audit.test.tsx`: `si un operador intenta entrar a /auditoria…` |
+| `FIX-23` | Back | `password_recovery_acceptance_test.go`: `BAC-18 … append-only`, que verifica UPDATE, DELETE y TRUNCATE |
+| `FIX-24` | Front | `admin-users.test.tsx`, bloque FRN-06: alta, confirmación, formulario sin contraseña, 502 y baja con `DELETE` |
+| `FIX-25` | Front | `admin-users.test.tsx`: bloque FRN-06B (PUT del perfil) y bloque FIX-25 (409 `USER_CONFLICT`) |
 
 ---
 
 ## 3. Estado de las tareas de `actual.md`
 
-**Leyenda:**
-- ✅ Cumplida (todas sus pruebas pasan).
-- 🟡 Parcial.
-- ❌ No implementada.
-- 🔗 El lado propio está cumplido, pero falla la integración.
+**Leyenda:** ✅ cumplida · 🟡 parcial · ❌ no implementada.
 
-| Tarea | Área | Estado | Pruebas | Por qué falla / qué falta | Cómo proceder |
-|---|---|---|---|---|---|
-| `BAC-14` Inventario Proxmox | Back | ✅ | `resource_access…` BAC-14 | — | Nada. El caso `502 PROXMOX_UNAVAILABLE` no se prueba, porque el stub siempre responde. |
-| `FIX-16` Guard en `/instances` | Back | ✅ | `resource_access…` FIX-16 | — | Nada. Se verifica el 403 `INSTANCE_ACCESS_DENIED` en GET/start/stop y que Proxmox no recibe la orden. |
-| `BAC-17` Logout atómico | Back | ✅ 🔗 | `session_security…` BAC-17 | Con el contrato actual (refresh token en el body) revoca ambas sesiones y audita `LOGOUT`. **Pero el frontend ya no manda ese body** ([§5](#5-hallazgo-de-integración-front--back-crítico)). | Se resuelve con SEC-01. |
-| `SEC-01` Refresh en cookie HttpOnly | Back | ❌ | `session_security…` SEC-01 e integración | `POST /auth/2fa/verify` no emite `Set-Cookie` y sigue devolviendo `refreshToken` en el JSON. `/auth/refresh` y `/auth/logout` exigen `refreshToken` en el body (`auth_handler.go:69-71`, `:190-192`). | Implementar los 5 entregables. **Es la tarea que desbloquea el logout y la renovación de sesión reales.** |
-| `SEC-04` Niveles de acceso | Back | ❌ | `resource_access…` SEC-04 | `permisos_instancia` no tiene `nivel_acceso`; `VerificarAcceso` y `RequireInstanceAccess` no reciben el nivel. | Implementar la migración, el puerto y el guard. **El frontend ya ofrece "Solo lectura"** en el selector (`rolesAndPermissions.tsx`), pero el backend lo ignora. |
-| `FRN-10` Cambio obligatorio de contraseña | Front | 🟡 | `password-change` (7/10) | Falta la opción **"Cerrar sesión"** en `/change-password` (FIX-21). Además, la validación del cliente no aplica las reglas de complejidad del backend (mayúscula, dígito y carácter especial) y envía claves que el backend rechaza con 400 (FIX-20). | FIX-21 y FIX-20. |
-| `FRN-11` Acciones de recuperación | Front | ❌ | `admin-recovery` (1/4) | "Restablecer contraseña" no tiene `onClick` (`Users.tsx:354`). No existe una acción de reset de 2FA ni un diálogo de confirmación. | Implementar las dos acciones: confirmación, `POST …/password/reset` y `POST …/2fa/reset`, toast y refresco de la tabla. |
-| `FRN-12` Recuperación de contraseña | Front | ❌ | `recover-password` (1/4) | `RecoverPassword.tsx` solo cambia de paso; no hace ninguna llamada HTTP. | Conectar el paso 1 a `POST /auth/password/forgot` y el paso 3 a `POST /auth/password/reset` con `{ email, codigo, nuevaContrasena }`, y mostrar `RESET_FAILED`. |
-| `FRN-13` Logout en cliente | Front | ✅ 🔗 | `session-security` FRN-13 (6/6) | El lado cliente cumple: envía Bearer, limpia todas las claves aun ante error, usa `replace` y tiene listener de 401. El backend responde 400 a su logout ([§5](#5-hallazgo-de-integración-front--back-crítico)). | Se resuelve con SEC-01. |
-| `SEC-02` Cliente sin refresh token | Front | ✅ 🔗 | `session-security` SEC-02 (4/4) | Cumple: no guarda ni envía el refresh token y renueva con `credentials: 'include'`. El backend todavía no lo soporta. | Se resuelve con SEC-01. |
-| `FIX-14` / `FRN-07` Selector de instancias | Front | ✅ | `admin-users` FIX-14 (3/3) | Se cumple el criterio de éxito: GET con Bearer, asignadas marcadas y PUT `{ vmids }`. El entregable 3 ("atómica junto a la edición del perfil") falla por FRN-06B. | Ver FRN-06B en [§4](#4-regresiones-en-tareas-de-terminadomd). |
-| `SEC-03` Contexto de permisos | Front | ❌ | `navigation` SEC-03 (1/4) | `src/context/AuthContext.js` está vacío. No existen `usePermissions` ni `PermissionGate`, y el menú no tiene acceso a Auditoría para el admin. Solo pasa el test de que el operador no ve los accesos, que hoy resuelve un `isAdmin` ad hoc en `Sidebar.tsx`. | Implementar el contexto, el gate y el enlace a Auditoría para admin. |
-| `FRN-14` Pruebas de Auditoría | Front | 🟡 | `audit` (6/7) | La suite existe y cubre la carga, los filtros (acción, resultado y fechas), la paginación y el CSV. **Falla el guard**: en el código commiteado `/auditoria` está bajo `loadProtectedSession`, no bajo `loadAdminSession` (`applicationRoutes.tsx`), así que **un OPERATOR puede entrar**. | Mover la ruta dentro del grupo `loadAdminSession`. |
+| Tarea | Estado | Resultado | Qué falta / por qué falla | Cómo proceder |
+|---|---|---|---|---|
+| `SEC-01` Refresh token en cookie HttpOnly | ✅ | 2/2 | — | Se verifica lo siguiente (`auth_handler.go`, `setRefreshCookie`):<br>• `centinela_refresh` con `HttpOnly`, `Secure` por defecto, `SameSite=Strict` y `Path=/api/auth`.<br>• El token no sale en el JSON (`TokenResult.RefreshToken` con `json:"-"`).<br>• Refresh con rotación y 401 ante cookie inválida.<br>• Logout que borra la cookie y el token no aparece en logs.<br>**Se puede pasar a `terminado.md`.** |
+| `SEC-04` Niveles de acceso | 🟡 | 1/2 | Funcionan la columna `nivel_acceso` con default y CHECK, el contrato `{ permisos: [{ vmid, nivelAcceso }] }` en PUT y GET, y el guard: READ_ONLY puede hacer GET pero recibe 403 en start/stop, y FULL_ACCESS puede hacer start.<br>**Falla el entregable 4 (retrocompatibilidad):** `PUT /permissions` con el payload anterior `{ "vmids": [103] }` responde `400 INVALID_REQUEST`. Motivo: `asignarPermisosRequest` (`user_handler.go`) solo acepta `permisos`. | **Backend:** aceptar también `vmids` y convertirlo a `permisos` con `FULL_ACCESS`, **o** redefinir el entregable 4 si el equipo decide romper el contrato. El frontend ya usa el contrato nuevo. |
+| `FRN-11` Acciones de recuperación | ❌ | 1/4 | "Restablecer contraseña" sigue sin `onClick` (`Users.tsx:347`). No existe la acción "Restablecer 2FA". | Implementar según `FIX-19`. Ya existe un modal reutilizable, `ConfirmUserAction`. |
+| `FIX-19` | ❌ | 1/4 | Ídem FRN-11: son las mismas pruebas. | Ídem. Conviene cerrar FRN-11 y FIX-19 juntos. |
+| `FRN-12` Recuperación de contraseña | ❌ | 1/7 | `RecoverPassword.tsx` no cambió: solo hace `setCurrentStep`, sin llamadas HTTP, sin validar el código y sin redirigir. | Implementar según `FIX-18`. |
+| `FIX-18` | ❌ | 1/7 | Ídem FRN-12. Además falla la redirección a `/login` (la vista se queda en `/recover-password`) y el paso 2 avanza sin código. | Ídem. |
+| `SEC-03` Contexto de permisos | ❌ | 1/4 | `src/context/AuthContext.js` sigue vacío. No existen `usePermissions` ni `PermissionGate`, y el menú no tiene un enlace a Auditoría para el ADMIN. | Implementar los 3 entregables. |
+| `FIX-17` Contratos de contraseñas | ✅ | 1/1 | — | El commit `5407599` solo actualizó la documentación, pero el comportamiento ya cumple:<br>• Swagger documenta las 4 rutas canónicas y ninguna histórica.<br>• `/auth/change-password` y `/admin/users/:id/reset-password` responden 404.<br>• Códigos de error `PASSWORD_CHANGE_FAILED`, `INVALID_REQUEST` y `RESET_FAILED`.<br>• La recuperación pública deja `cambio_contrasena=false` y revoca las sesiones.<br>**Se puede pasar a `terminado.md`.** |
+| `FIX-20` Complejidad de contraseñas | ❌ | 0/4 | `ChangePassword.tsx` sigue validando solo el largo y envía `nueva1234!`, `NuevaClave!` y `Nueva12345`. En `RecoverPassword.tsx` no hay validación porque no hay formulario conectado. | Implementar `validatePasswordComplexity` según el FIX. |
+| `FIX-21` Cerrar sesión en cambio de clave | ❌ | 0/1 | `ChangePassword.tsx` sigue sin botón "Cerrar sesión". | Según el FIX. |
+| `FIX-22` Guard de `/auditoria` | ❌ | 0/1 | `/auditoria` sigue bajo `loadProtectedSession` (`applicationRoutes.tsx:50`): **un OPERATOR puede entrar a la vista**. | Moverla al grupo `loadAdminSession`. Es un cambio de 1 línea con prioridad alta, porque es un control de acceso. |
+| `FIX-23` Auditoría append-only | ❌ | 0/1 | La base sigue permitiendo `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria`: no hay ningún trigger ni `REVOKE` en el backend. | Aplicar el trigger del FIX. |
+| `FIX-24` Alta sin contraseña y baja | 🟡 | 5/6 | **Implementado:**<br>• Alta con confirmación de correo y modal (`ConfirmUserAction`).<br>• Toast "Usuario creado exitosamente… enviada por correo".<br>• Formulario sin campos de contraseña.<br>• "Eliminar usuario" con modal que envía `DELETE /admin/users/:id`.<br>**Falla el entregable 2:** ante `502 EMAIL_DELIVERY_FAILED`, `createUserService.ts` arma el mensaje correcto, pero `useCreateUser.ts` lo descarta y muestra el genérico *"No se pudo completar la creación del usuario"*. | En el `catch` de `useCreateUser`, usar `error.message` en la descripción del toast cuando `errorCode === 'EMAIL_DELIVERY_FAILED'`. |
+| `FIX-25` Persistir edición del perfil | ✅ | 3/3 | — | Se verifican el `PUT /admin/users/:id` con los campos modificados (`userDetailsService.updateUserDetails`) y el 409 mostrado junto al campo de correo. Los 4 casos de FIX-14 siguen en verde, incluido "Solo lectura", que envía `READ_ONLY`. **Se puede pasar a `terminado.md`.** |
 
----
-
-## 4. Regresiones en tareas de `terminado.md`
-
-Estas tareas figuran como terminadas, pero las pruebas muestran que su criterio de éxito no se cumple:
-
-| Tarea | Prueba | Problema | Cómo proceder |
-|---|---|---|---|
-| `BAC-18` Auditoría append-only | `password_recovery…` BAC-18 | El registro, la consulta, el filtro, el CSV y el 403 al operador funcionan. **Pero la base permite `UPDATE` y `DELETE` sobre `auditoria`** con las credenciales de la aplicación: no hay trigger, `REVOKE` ni regla. El criterio exige que fallen "a nivel de base de datos". | Crear un fix de backend: trigger `BEFORE UPDATE OR DELETE` que lance una excepción, o un rol de aplicación sin esos privilegios. |
-| `FRN-06` Alta de usuarios | `admin-users` FRN-06 | Hay dos fallas. **(a)** Por BAC-16, el backend ya no devuelve `contrasenaTemp`, pero `CrearUsuarios.tsx` sigue esperándola: tras un alta exitosa la pantalla **no muestra ninguna confirmación**. **(b)** "Eliminar usuario" (`detailsUserPage.tsx:110`) no tiene `onClick` y no envía `DELETE`. | Crear un fix de frontend: toast "Usuario creado, la clave se envió por correo", quitar la caja de contraseña temporal y conectar el `DELETE` con confirmación. |
-| `FRN-06B` Edición de usuario | `admin-users` FRN-06B | Editar el nombre o el correo no se guarda: "Guardar cambios" solo se habilita si cambió algún permiso de instancia, y **no existe ningún `PUT /admin/users/:id`** en el frontend. | Crear un fix de frontend: persistir `useEditableUser` con `PUT /admin/users/:id`. |
-
-Las demás tareas de `terminado.md` pasan con pruebas reforzadas: BAC-01 a BAC-13, BAC-15, BAC-16, BAC-19 a BAC-21, LOGIN-01 a LOGIN-04, FRN-01 a FRN-05, FRN-08, FRN-09, FIX-07 y FIX-08.
+**Hito "Gestión Administrativa de Usuarios":** el recorrido completo ya funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al operador. Solo queda el mensaje del 502 de `FIX-24`.
 
 ---
 
-## 5. Hallazgo de integración front ↔ back (crítico)
+## 4. Integración front ↔ back
 
-El frontend de `origin/main` ya implementó **SEC-02** (commits `cb208f5`, `f0f7218`, `390b4b8`): envía `POST /auth/logout` y `POST /auth/refresh` con body `{}`, confiando en la cookie. El backend todavía **no implementó SEC-01** y rechaza esas peticiones.
-
-La prueba `SEC-01 SEC-02 integracion…` (`session_security_acceptance_test.go`) reproduce las peticiones reales del frontend:
-
-```
-POST /auth/refresh  {}          -> 400 {"errorCode":"INVALID_REQUEST","message":"Se requiere el campo refreshToken."}
-POST /auth/logout   Bearer + {} -> 400 {"errorCode":"INVALID_REQUEST","message":"...Se requiere refreshToken."}
-GET  /account/profile (mismo access token, tras el "logout") -> 200
-```
-
-**Impacto con ambos `main` desplegados juntos:**
-1. **El logout desde la interfaz no revoca nada en el servidor.** El cliente borra su almacenamiento y redirige, pero el access token sigue siendo válido hasta que expira. Esto incumple el criterio de BAC-17 y FRN-13.
-2. **La renovación silenciosa de sesión está rota.** Cuando el access token vence, el refresh falla y el usuario es expulsado al login.
-
-**Cómo proceder:** priorizar SEC-01. Otra opción, mientras tanto, es que el backend acepte el refresh token por cookie **o** por body.
-
----
-
-## 6. Documentación desactualizada detectada
-
-- `actual.md` / FRN-10 cita `POST /api/auth/change-password`. El endpoint real (backend y frontend) es **`PUT /api/account/password`**.
-- `actual.md` / BAC-17 y FIX-16: el bloque "Estado de implementación actual" describe problemas que ya se corrigieron (logout sin middleware, rutas `/instances` comentadas).
-- `actual.md` / FIX-14: cita `UserDetail.tsx` con una lista estática; el componente ahora es `detailsUserPage.tsx` con `rolesAndPermissions.tsx`, conectado a la API.
-- `terminado.md` / BAC-08 y FRN-07: siguen con el aviso "Implementado con fallo en pruebas", pero ya pasan (FIX-16 y FIX-14).
-
----
-
-## 7. Parches locales en el submódulo frontend
-
-`git -C frontend status` muestra estas modificaciones sin commitear, que **no son del equipo** y se hicieron durante una evaluación anterior:
-
-| Archivo | Cambio | Efecto |
+| Flujo | 23/09 | 25/09 |
 |---|---|---|
-| `centinela/src/routes/applicationRoutes.tsx` | Mueve `/auditoria` bajo `loadAdminSession` | Ocultaba el fallo de FRN-14 |
-| `centinela/src/services/apiClient.ts` | Acepta respuestas de refresh sin `refreshToken` y conserva el anterior | Contradice SEC-02 y entra en conflicto con `origin/main` |
-| `centinela/src/storage/tokenStorage.ts` | Borra `centinela_user` de sessionStorage y localStorage | Ocultaba un test mal sembrado de FRN-13 |
-
-Además, el puntero de los submódulos en el repo padre está sin commitear (`backend` 7cadbce → 15032da y `frontend` d088df2 → 5b91e80). **Recomendación:** que quien administre el repo descarte esos 3 cambios (`git -C frontend checkout -- centinela/src`) y actualice el submódulo a `origin/main`. La suite está preparada para ese estado.
+| Logout desde la interfaz (`POST /auth/logout`, Bearer + body `{}`) | ❌ 400 `INVALID_REQUEST`, la sesión seguía activa | ✅ 204, revoca access y refresh (cookie `centinela_refresh`) |
+| Renovación silenciosa (`POST /auth/refresh` con body `{}`) | ❌ 400 | ✅ 200, con rotación de la cookie |
+| Permisos por instancia (`{ permisos: [{ vmid, nivelAcceso }] }`) | — | ✅ El frontend (`userInstanceService.ts`) y el backend usan el mismo contrato; "Solo lectura" llega como `READ_ONLY` y el guard lo aplica |
+| Complejidad de contraseña | ❌ | ❌ El frontend sigue enviando claves que el backend rechaza con 400 (FIX-20) |
 
 ---
 
-## 8. Cómo reproducir
+## 5. Cambios en las pruebas en esta revisión
+
+| Cambio | Motivo |
+|---|---|
+| Permisos: `{ vmids }` → `{ permisos: [{ vmid, nivelAcceso }] }` en BAC-05/06, BAC-07, LOGIN-04, SEC-04 y FIX-14 | El contrato canónico cambió con SEC-04. La retrocompatibilidad con `{ vmids }` se verifica aparte, como entregable 4 de SEC-04 |
+| SEC-04 asigna los niveles por API en lugar de por SQL, y verifica el `nivelAcceso` en el GET | Ahora existe el contrato |
+| SEC-01: se agregó la verificación de `Secure` por defecto | Entregable 4 |
+| Tests nuevos: FIX-17 y el `TRUNCATE` de FIX-23 | Tareas nuevas en `actual.md` sin cobertura |
+| Tests nuevos: FIX-18 (redirección y código vacío), FIX-20 (paso 3), FIX-24 (502 y formulario sin contraseña), FIX-25 (409) y FIX-14 (Solo lectura) | Entregables sin cobertura |
+| El alta de FRN-06 completa "Confirmar correo" y confirma el modal | Flujo nuevo del frontend |
+| El menú del ADMIN ya no exige el enlace "Crear usuario" | Se quitó a propósito (`a387e10`); el alta se inicia desde `/users` |
+| El test de FIX-20 en el paso 3 incluye una contraprueba (una clave válida sí se envía) | Sin ella daba verde con una vista que nunca llama a la API |
+| Timeouts de 15 s en los flujos de varios pasos (alta y recuperación) | Tipear 5 campos superaba los 5 s por defecto: era un fallo del test |
+| `setup.ts`: polyfill de `HTMLDialogElement.showModal/close` | jsdom no lo implementa y los modales nuevos lo usan |
+| `compose.yaml` y `sourcePath()` aceptan `CENTINELA_ROOT` | Para construir el backend de `origin/main` sin tocar el submódulo |
+
+---
+
+## 6. Recomendaciones para la documentación
+
+- **Pasar a `terminado.md`:** `SEC-01`, `FIX-17` y `FIX-25`.
+- **`SEC-04`:** decidir si se mantiene el entregable 4 (retrocompatibilidad con `{ vmids }`). Si se mantiene, es un fix chico de backend.
+- **`FIX-21` y `FIX-22`:** sus criterios citan "7/7", pero hoy esos archivos tienen 10 y 7 casos. Conviene decir "los casos de FIX-21/FIX-22 pasan" en lugar de un número fijo.
+- **Duplicados:** `FRN-11`/`FIX-19` y `FRN-12`/`FIX-18` describen el mismo trabajo con las mismas pruebas. Conviene dejar una sola tarea de cada par.
+
+---
+
+## 7. Cómo reproducir
 
 ```bash
-# Backend (requiere Docker; levanta PostgreSQL + backend + stub de Proxmox y los elimina al terminar)
-cd test/back && go test -v -count=1 ./...
+S=/tmp/centinela-main && rm -rf $S && mkdir -p $S/stack/backend $S/front
+git -C backend fetch && git -C backend archive origin/main | tar -x -C $S/stack/backend
+cp -r docker $S/stack/docker
+git -C frontend fetch && git -C frontend archive origin/main centinela | tar -x -C $S/front
+ln -s "$PWD/frontend/centinela/node_modules" $S/front/centinela/node_modules
 
-# Frontend contra el submódulo tal como está
-pnpm --dir test/front test
+# Backend (Docker): PostgreSQL + backend + stub de Proxmox
+(cd test/back && CENTINELA_ROOT=$S/stack CENTINELA_FRONTEND_DIR=$S/front/centinela go test -v -count=1 ./... | tee /tmp/back.log)
 
-# Frontend contra origin/main sin tocar el submódulo
-mkdir -p /tmp/front-main
-git -C frontend fetch && git -C frontend archive origin/main centinela | tar -x -C /tmp/front-main
-ln -s "$PWD/frontend/centinela/node_modules" /tmp/front-main/centinela/node_modules
-CENTINELA_FRONTEND_DIR=/tmp/front-main/centinela pnpm --dir test/front test
+# Frontend
+CENTINELA_FRONTEND_DIR=$S/front/centinela pnpm --dir test/front test
 ```
+
+Usar `| tee` y no `> archivo` para capturar la salida del backend: en este entorno, redirigir con `>` cortó la corrida y dejó contenedores huérfanos. El comando de limpieza está en `test/back/README.md`.
 
 Detalle por suite: [test/back/RESULTADOS.md](back/RESULTADOS.md) y [test/front/RESULTADOS.md](front/RESULTADOS.md).

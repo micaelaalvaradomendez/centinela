@@ -30,12 +30,10 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 	operatorToken := signedAccessToken(t, operatorID, "OPERATOR", orgID)
 	permEndpoint := "/admin/users/" + operatorID + "/permissions"
 
+	// Contrato canónico desde SEC-04: { permisos: [{ vmid, nivelAcceso? }] }.
 	assign := func(t *testing.T, vmids ...int) {
 		t.Helper()
-		if vmids == nil {
-			vmids = []int{}
-		}
-		status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"vmids": vmids})
+		status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, permissionsPayload(vmids...))
 		if status != http.StatusNoContent && status != http.StatusOK {
 			t.Fatalf("PUT %s esperado 204, recibido %d: %#v", permEndpoint, status, body)
 		}
@@ -46,13 +44,10 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 		if status != http.StatusOK {
 			t.Fatalf("GET %s esperado 200, recibido %d: %#v", permEndpoint, status, body)
 		}
-		raw, ok := body["vmids"].([]any)
-		if !ok {
-			t.Fatalf("GET %s debe devolver { vmids: number[] }, recibido %#v", permEndpoint, body)
-		}
-		vmids := make([]int, 0, len(raw))
-		for _, v := range raw {
-			vmids = append(vmids, int(v.(float64)))
+		levels := permissionLevels(t, body)
+		vmids := make([]int, 0, len(levels))
+		for vmid := range levels {
+			vmids = append(vmids, vmid)
 		}
 		sort.Ints(vmids)
 		return vmids
@@ -77,7 +72,7 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 		}
 
 		for _, method := range []string{http.MethodGet, http.MethodPut} {
-			status, _ := requestValue(t, method, permEndpoint, operatorToken, map[string]any{"vmids": []int{101}})
+			status, _ := requestValue(t, method, permEndpoint, operatorToken, permissionsPayload(101))
 			if status != http.StatusForbidden {
 				t.Errorf("%s %s con OPERATOR: esperado 403, recibido %d", method, permEndpoint, status)
 			}
@@ -187,25 +182,83 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 			t.Errorf("nivel_acceso debe tener default 'FULL_ACCESS', tiene %q", column)
 		}
 
-		assign(t, 101, 102)
+		// Sin nivel explícito se asume FULL_ACCESS.
+		assign(t, 101)
 		if levels := queryDatabase(t, "SELECT string_agg(DISTINCT nivel_acceso, ',') FROM permisos_instancia WHERE usuario_id = '"+operatorID+"';"); levels != "FULL_ACCESS" {
-			t.Errorf("PUT { vmids } sin nivel debe asignar FULL_ACCESS por defecto; niveles persistidos: %q", levels)
+			t.Errorf("un permiso sin nivelAcceso debe persistirse como FULL_ACCESS; niveles persistidos: %q", levels)
 		}
 		if _, err := execDatabase(t, "UPDATE permisos_instancia SET nivel_acceso = 'SUPERUSER' WHERE usuario_id = '"+operatorID+"';"); err == nil {
 			t.Errorf("la base aceptó nivel_acceso = 'SUPERUSER'; se esperaba CHECK/enum con FULL_ACCESS y READ_ONLY")
 		}
 
-		queryDatabase(t, "UPDATE permisos_instancia SET nivel_acceso = 'READ_ONLY' WHERE usuario_id = '"+operatorID+"' AND vmid_proxmox = 102;")
+		// Nivel explícito por API y lectura del nivel en GET.
+		status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"permisos": []map[string]any{
+			{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
+			{"vmid": 102, "nivelAcceso": "READ_ONLY"},
+		}})
+		if status != http.StatusNoContent {
+			t.Fatalf("PUT permisos con niveles explícitos: esperado 204, recibido %d: %#v", status, body)
+		}
+		_, got := requestJSON(t, http.MethodGet, permEndpoint, adminToken, nil)
+		if levels := permissionLevels(t, got); levels[101] != "FULL_ACCESS" || levels[102] != "READ_ONLY" {
+			t.Errorf("GET permissions debe devolver el nivel de cada vmid; recibido %#v", got)
+		}
+
+		// El guard aplica el nivel: READ_ONLY consulta pero no opera; FULL_ACCESS opera.
 		if status, body := requestJSON(t, http.MethodGet, "/instances/102", operatorToken, nil); status != http.StatusOK {
 			t.Errorf("READ_ONLY sobre la 102 debe permitir GET /instances/102: esperado 200, recibido %d: %#v", status, body)
 		}
 		for _, action := range []string{"start", "stop"} {
-			if status, body := requestJSON(t, http.MethodPost, "/instances/102/"+action, operatorToken, nil); status != http.StatusForbidden {
-				t.Errorf("READ_ONLY sobre la 102 no debe permitir %s: esperado 403, recibido %d: %#v", action, status, body)
+			if status, body := requestJSON(t, http.MethodPost, "/instances/102/"+action, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
+				t.Errorf("READ_ONLY sobre la 102 no debe permitir %s: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", action, status, body)
 			}
 		}
 		if status, body := requestJSON(t, http.MethodPost, "/instances/101/start", operatorToken, nil); status != http.StatusAccepted {
 			t.Errorf("FULL_ACCESS sobre la 101 debe permitir start: esperado 202, recibido %d: %#v", status, body)
 		}
+		// El inventario del operador incluye también las instancias de solo lectura.
+		_, list := requestJSONArray(t, http.MethodGet, "/instances", operatorToken)
+		if len(list) != 2 {
+			t.Errorf("el OPERATOR con permisos sobre 101 (FULL) y 102 (READ_ONLY) debe ver ambas en el inventario; recibió %#v", list)
+		}
 	})
+
+	t.Run("SEC-04 retrocompatibilidad PUT permissions con vmids asigna FULL_ACCESS", func(t *testing.T) {
+		// Entregable 4 de SEC-04: "si el payload de PUT /permissions solo envía vmids: [101],
+		// asignar FULL_ACCESS por defecto".
+		status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"vmids": []int{103}})
+		if status != http.StatusNoContent {
+			t.Fatalf("PUT permissions con el payload anterior { vmids: [103] }: esperado 204, recibido %d: %#v", status, body)
+		}
+		if level := queryDatabase(t, "SELECT nivel_acceso FROM permisos_instancia WHERE usuario_id = '"+operatorID+"' AND vmid_proxmox = 103;"); level != "FULL_ACCESS" {
+			t.Errorf("el payload { vmids } debe asignar FULL_ACCESS, quedó %q", level)
+		}
+	})
+}
+
+// permissionsPayload arma el body canónico de PUT /admin/users/:id/permissions sin nivel
+// explícito (el backend asume FULL_ACCESS).
+func permissionsPayload(vmids ...int) map[string]any {
+	permisos := make([]map[string]any, 0, len(vmids))
+	for _, vmid := range vmids {
+		permisos = append(permisos, map[string]any{"vmid": vmid})
+	}
+	return map[string]any{"permisos": permisos}
+}
+
+// permissionLevels interpreta GET /admin/users/:id/permissions -> { permisos: [{ vmid, nivelAcceso }] }.
+func permissionLevels(t *testing.T, body map[string]any) map[int]string {
+	t.Helper()
+	raw, ok := body["permisos"].([]any)
+	if !ok {
+		t.Fatalf("GET permissions debe devolver { permisos: [{ vmid, nivelAcceso }] }, recibido %#v", body)
+	}
+	levels := map[int]string{}
+	for _, item := range raw {
+		permission, _ := item.(map[string]any)
+		vmid, _ := permission["vmid"].(float64)
+		level, _ := permission["nivelAcceso"].(string)
+		levels[int(vmid)] = level
+	}
+	return levels
 }

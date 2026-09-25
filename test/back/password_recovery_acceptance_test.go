@@ -147,11 +147,11 @@ func TestHitoRecuperacionDeContrasenasYNotificaciones(t *testing.T) {
 	})
 
 	t.Run("BAC-21 contrato RealtimeEvent sincronizado entre Go y TypeScript", func(t *testing.T) {
-		goSource, err := os.ReadFile("../../backend/internal/core/ports/event_port.go")
+		goSource, err := os.ReadFile(sourcePath("backend", "internal/core/ports/event_port.go"))
 		if err != nil {
 			t.Fatalf("no se encontró el contrato Go: %v", err)
 		}
-		tsSource, err := os.ReadFile("../../frontend/centinela/src/types/notifications.ts")
+		tsSource, err := os.ReadFile(sourcePath("frontend", "src/types/notifications.ts"))
 		if err != nil {
 			t.Fatalf("no se encontró el contrato TypeScript: %v", err)
 		}
@@ -228,6 +228,81 @@ func TestHitoRecuperacionDeContrasenasYNotificaciones(t *testing.T) {
 		}
 		if _, err := execDatabase(t, "DELETE FROM auditoria WHERE id = (SELECT id FROM auditoria LIMIT 1);"); err == nil {
 			t.Errorf("la base permitió DELETE sobre auditoria con el usuario de la aplicación; la tabla no es append-only")
+		}
+		// FIX-23 también pide bloquear TRUNCATE. Se ejecuta dentro de una transacción que se
+		// revierte para no vaciar la auditoría si el motor lo permite.
+		if _, err := execDatabase(t, "BEGIN; TRUNCATE auditoria; ROLLBACK;"); err == nil {
+			t.Errorf("la base permitió TRUNCATE sobre auditoria con el usuario de la aplicación (FIX-23)")
+		}
+	})
+
+	t.Run("FIX-17 contratos canonicos de cambio y restablecimiento de contrasena", func(t *testing.T) {
+		// 1. Swagger documenta las rutas canónicas y no las históricas.
+		swagger, err := os.ReadFile(sourcePath("backend", "docs/swagger.json"))
+		if err != nil {
+			t.Fatalf("no se encontró docs/swagger.json: %v", err)
+		}
+		canonical := map[string]string{
+			`"/account/password"`:               `"put"`,
+			`"/auth/password/forgot"`:           `"post"`,
+			`"/auth/password/reset"`:            `"post"`,
+			`"/admin/users/{id}/password/reset"`: `"post"`,
+		}
+		for path, method := range canonical {
+			index := strings.Index(string(swagger), path+": {")
+			if index < 0 {
+				t.Errorf("Swagger no documenta la ruta canónica %s", path)
+				continue
+			}
+			block := string(swagger)[index : index+min(len(swagger)-index, 400)]
+			if !strings.Contains(block, method) {
+				t.Errorf("Swagger documenta %s sin el método %s", path, method)
+			}
+		}
+		for _, legacy := range []string{`"/auth/change-password"`, `"/admin/users/{id}/reset-password"`, `"/users/{id}/password/reset"`} {
+			if strings.Contains(string(swagger), legacy) {
+				t.Errorf("Swagger todavía documenta la ruta histórica %s", legacy)
+			}
+		}
+
+		// 2. Las rutas históricas no existen en el router.
+		user := createActiveUser(t, adminToken, "fix17", "OPERATOR")
+		session := loginWithTOTP(t, user.Email, user.Password, user.Secret)
+		if status, _ := requestJSON(t, http.MethodPost, "/auth/change-password", session.AccessToken, map[string]any{}); status != http.StatusNotFound {
+			t.Errorf("POST /api/auth/change-password (histórica) debe responder 404, recibido %d", status)
+		}
+		if status, _ := requestJSON(t, http.MethodPost, "/admin/users/"+user.ID+"/reset-password", adminToken, nil); status != http.StatusNotFound {
+			t.Errorf("POST /api/admin/users/:id/reset-password (histórica) debe responder 404, recibido %d", status)
+		}
+
+		// 3. Códigos de error estructurados del contrato.
+		if status, body := requestJSON(t, http.MethodPut, "/account/password", session.AccessToken, map[string]any{"contrasenaActual": user.Password, "contrasenaNueva": "debil1234"}); status != http.StatusBadRequest || body["errorCode"] != "PASSWORD_CHANGE_FAILED" {
+			t.Errorf("PUT /account/password con clave débil: esperado 400 PASSWORD_CHANGE_FAILED, recibido %d %#v", status, body)
+		}
+		if status, body := requestJSON(t, http.MethodPut, "/account/password", session.AccessToken, map[string]any{}); status != http.StatusBadRequest || body["errorCode"] != "INVALID_REQUEST" {
+			t.Errorf("PUT /account/password sin payload: esperado 400 INVALID_REQUEST, recibido %d %#v", status, body)
+		}
+		requestRecovery(t, user.Email)
+		code := mailedSecret(t, user.Email, mailRecoveryCode)
+		wrong := "000000"
+		if code == wrong {
+			wrong = "111111"
+		}
+		if status, body := confirmRecovery(t, user.Email, wrong, "Fix17Ok!"); status != http.StatusBadRequest || body["errorCode"] != "RESET_FAILED" {
+			t.Errorf("POST /auth/password/reset con código incorrecto: esperado 400 RESET_FAILED, recibido %d %#v", status, body)
+		}
+
+		// 4. La recuperación pública deja la cuenta sin cambio obligatorio y con sesiones revocadas,
+		//    aunque la cuenta tuviera una clave temporal pendiente.
+		queryDatabase(t, "UPDATE usuarios SET cambio_contrasena = true WHERE id = '"+user.ID+"';")
+		if status, body := confirmRecovery(t, user.Email, code, "Fix17Ok!"); status != http.StatusOK {
+			t.Fatalf("POST /auth/password/reset con código válido: esperado 200, recibido %d %#v", status, body)
+		}
+		if flag := queryDatabase(t, "SELECT cambio_contrasena FROM usuarios WHERE id = '"+user.ID+"';"); flag != "f" {
+			t.Errorf("tras la recuperación pública cambio_contrasena debe quedar en false, quedó %q", flag)
+		}
+		if active := queryDatabase(t, "SELECT count(*) FROM sesiones_activas WHERE usuario_id = '"+user.ID+"' AND activa = true;"); active != "0" {
+			t.Errorf("tras la recuperación pública quedaron %s sesiones activas", active)
 		}
 	})
 

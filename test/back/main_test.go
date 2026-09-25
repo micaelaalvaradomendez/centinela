@@ -398,6 +398,18 @@ func auditCount(t *testing.T, userID, accion string) int {
 	return count
 }
 
+// sourcePath resuelve un archivo del código bajo prueba. CENTINELA_ROOT apunta a una copia
+// con backend/ (la misma que usa compose.yaml) y CENTINELA_FRONTEND_DIR a la carpeta
+// centinela/ del frontend (la misma que usa test/front); por defecto, los submódulos.
+func sourcePath(component, relative string) string {
+	switch component {
+	case "backend":
+		return envOrDefault("CENTINELA_ROOT", "../..") + "/backend/" + relative
+	default:
+		return envOrDefault("CENTINELA_FRONTEND_DIR", "../../frontend/centinela") + "/" + relative
+	}
+}
+
 func envOrDefault(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value

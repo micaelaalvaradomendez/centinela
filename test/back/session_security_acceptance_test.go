@@ -89,6 +89,11 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 		if !cookie.HttpOnly {
 			t.Errorf("la cookie %q no tiene HttpOnly", cookie.Name)
 		}
+		// compose.yaml no define ninguna variable de cookies: la configuración por defecto
+		// debe ser la segura (Secure), y relajarla solo por configuración explícita.
+		if !cookie.Secure {
+			t.Errorf("con la configuración por defecto la cookie %q debe ser Secure", cookie.Name)
+		}
 		if cookie.SameSite == http.SameSiteDefaultMode || cookie.SameSite == http.SameSiteNoneMode && !cookie.Secure {
 			t.Errorf("la cookie %q debe declarar SameSite (Lax/Strict, o None solo con Secure); Set-Cookie: %v", cookie.Name, session.Verify.Header.Values("Set-Cookie"))
 		}

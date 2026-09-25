@@ -78,7 +78,7 @@ func TestHitoLOGIN04CircuitoCompletoSeguridadYAutenticacion(t *testing.T) {
 		t.Errorf("Paso 6.1: OPERATOR en /admin/users esperado 403, recibido %d", status)
 	}
 
-	if status, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, map[string]any{"vmids": []int{101}}); status != http.StatusNoContent {
+	if status, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, permissionsPayload(101)); status != http.StatusNoContent {
 		t.Fatalf("Paso 6.2: asignación de permisos esperado 204, recibido %d", status)
 	}
 	if status, body := requestJSON(t, http.MethodGet, "/instances/103", operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {

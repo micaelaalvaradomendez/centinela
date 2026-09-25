@@ -38,6 +38,12 @@ go test -v -count=1 ./...        # levanta el stack, prueba y lo elimina (~75 s)
 go test -short ./...             # solo compila, sin Docker
 ```
 
+Para probar otra revisión del backend sin tocar el submódulo, por ejemplo `origin/main`, exportala a una carpeta que contenga `backend/` y `docker/` y pasala en `CENTINELA_ROOT`. `CENTINELA_FRONTEND_DIR` apunta a la carpeta `centinela/` del frontend que usa BAC-21. Guardá la salida con `| tee archivo`, no con `> archivo`:
+
+```bash
+CENTINELA_ROOT=/tmp/stack CENTINELA_FRONTEND_DIR=/tmp/front/centinela go test -v -count=1 ./... | tee /tmp/back.log
+```
+
 Si una corrida se interrumpe y deja contenedores levantados, los puertos quedan ocupados. Para limpiar:
 
 ```bash

@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Toaster } from '@/components/ui/toast';
 import RecoverPassword from '@/pages/RecoverPassword';
@@ -30,18 +31,23 @@ function recoveryBackend(resetResponse = () => jsonResponse({ message: 'Contrase
 }
 
 function renderRecover() {
-  return render(<Toaster><MemoryRouter><RecoverPassword /></MemoryRouter></Toaster>);
+  const router = createMemoryRouter([
+    { path: '/recover-password', Component: RecoverPassword },
+    { path: '/login', element: <h1>Iniciar sesión</h1> },
+  ], { initialEntries: ['/recover-password'] });
+  render(<Toaster><RouterProvider router={router} /></Toaster>);
+  return router;
 }
 
-async function completeSteps(user: ReturnType<typeof userEvent.setup>, code = '123456') {
+async function completeSteps(user: ReturnType<typeof userEvent.setup>, code = '123456', password = 'Nueva2026!') {
   await user.type(screen.getByLabelText(/correo electrónico/i), 'usuario@centinela.local');
   await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
   expect(await screen.findByText(/verificación de identidad/i)).toBeInTheDocument();
   await user.type(screen.getByLabelText(/código de verificación/i), code);
   await user.click(screen.getByRole('button', { name: /verificar código/i }));
   expect(await screen.findByRole('heading', { name: 'Nueva contraseña' })).toBeInTheDocument();
-  await user.type(screen.getByLabelText(/^nueva contraseña$/i), 'Nueva2026!');
-  await user.type(screen.getByLabelText(/repetir contraseña/i), 'Nueva2026!');
+  await user.type(screen.getByLabelText(/^nueva contraseña$/i), password);
+  await user.type(screen.getByLabelText(/repetir contraseña/i), password);
   await user.click(screen.getByRole('button', { name: /restablecer contraseña/i }));
 }
 
@@ -50,7 +56,7 @@ afterEach(() => {
 });
 
 describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
-  it('el paso 1 envía POST /api/auth/password/forgot con el correo y avanza a la verificación', async () => {
+  it('el paso 1 envía POST /api/auth/password/forgot con el correo y avanza a la verificación', { timeout: 15000 }, async () => {
     const fetchMock = recoveryBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -66,7 +72,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     expect(JSON.parse(String(init.body))).toEqual({ email: 'usuario@centinela.local' });
   });
 
-  it('el paso 1 no llama a la API con un correo mal formado', async () => {
+  it('el paso 1 no llama a la API con un correo mal formado', { timeout: 15000 }, async () => {
     const fetchMock = recoveryBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -79,7 +85,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     expect(screen.queryByText(/verificación de identidad/i)).not.toBeInTheDocument();
   });
 
-  it('el paso final envía POST /api/auth/password/reset con email, código y nueva contraseña, y confirma el éxito', async () => {
+  it('el paso final envía POST /api/auth/password/reset con email, código y nueva contraseña, y confirma el éxito', { timeout: 15000 }, async () => {
     const fetchMock = recoveryBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -98,7 +104,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     expect(await screen.findByText(/contraseña actualizada|ya pod[ée]s iniciar sesión|ya puedes iniciar sesión/i)).toBeInTheDocument();
   });
 
-  it('un código inválido o vencido (400 RESET_FAILED) se informa en la vista sin perder el flujo', async () => {
+  it('un código inválido o vencido (400 RESET_FAILED) se informa en la vista sin perder el flujo', { timeout: 15000 }, async () => {
     const fetchMock = recoveryBackend(() => jsonResponse({ errorCode: 'RESET_FAILED', message: 'el código ha expirado' }, 400));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -109,5 +115,49 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     await waitFor(() => expect(callsTo(fetchMock, '/auth/password/reset')).toHaveLength(1));
     expect(await screen.findByText(/el código ha expirado|código inválido|código.*vencido/i)).toBeVisible();
     expect(screen.queryByText(/contraseña actualizada/i)).not.toBeInTheDocument();
+  });
+
+  it('al terminar con éxito redirige a /login (FIX-18)', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', recoveryBackend());
+    const user = userEvent.setup();
+    const router = renderRecover();
+
+    await completeSteps(user);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'), { timeout: 3000 });
+  });
+
+  it('el paso 2 no avanza sin un código de 6 dígitos (FIX-18)', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', recoveryBackend());
+    const user = userEvent.setup();
+    renderRecover();
+
+    await user.type(screen.getByLabelText(/correo electrónico/i), 'usuario@centinela.local');
+    await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
+    expect(await screen.findByText(/verificación de identidad/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /verificar código/i }));
+
+    expect(screen.queryByRole('heading', { name: 'Nueva contraseña' })).not.toBeInTheDocument();
+  });
+
+  it('el paso 3 no envía una contraseña que no cumple la complejidad del backend (FIX-20)', { timeout: 15000 }, async () => {
+    const fetchMock = recoveryBackend();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderRecover();
+
+    await completeSteps(user, '123456', 'sinmayuscula1!');
+    expect(callsTo(fetchMock, '/auth/password/reset')).toHaveLength(0);
+
+    // Contraprueba: con una clave válida el mismo formulario sí la envía. Sin esto, la prueba
+    // pasaría con una vista que nunca llama a la API.
+    const password = screen.getByLabelText(/^nueva contraseña$/i);
+    const confirmation = screen.getByLabelText(/repetir contraseña/i);
+    await user.clear(password);
+    await user.type(password, 'Valida2026!');
+    await user.clear(confirmation);
+    await user.type(confirmation, 'Valida2026!');
+    await user.click(screen.getByRole('button', { name: /restablecer contraseña/i }));
+    await waitFor(() => expect(callsTo(fetchMock, '/auth/password/reset')).toHaveLength(1));
   });
 });

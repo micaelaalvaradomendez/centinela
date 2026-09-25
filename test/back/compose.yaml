@@ -9,7 +9,7 @@ services:
       - "127.0.0.1:${BACKEND_TEST_DB_PORT:-15433}:5432"
     volumes:
       - backend_test_postgres:/var/lib/postgresql/data
-      - ../../backend/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ${CENTINELA_ROOT:-../..}/backend/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U centinela_test -d centinela_test"]
       interval: 2s
@@ -18,7 +18,9 @@ services:
 
   backend:
     build:
-      context: ../..
+      # CENTINELA_ROOT permite construir otra revisión (p. ej. origin/main exportado con
+      # git archive, con backend/ y docker/) sin modificar el submódulo.
+      context: ${CENTINELA_ROOT:-../..}
       dockerfile: docker/backend.Dockerfile
     environment:
       DB_DSN: host=db user=centinela_test password=centinela_test dbname=centinela_test port=5432 sslmode=disable TimeZone=UTC
