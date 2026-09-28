@@ -9,7 +9,9 @@ import { useLogout } from '@/components/features/auth/hooks/useAuth';
 import { logoutSession, persistSessionFromTokens } from '@/components/features/auth/services/authService';
 import { mapAuthenticationError } from '@/components/features/auth/utils/mapAuthenticationError';
 import { isTokenResponse } from '@/components/features/auth/utils/validateAuthenticationResponses';
-import { API_UNAUTHORIZED_EVENT, ApiRequestError, apiClient } from '@/services/apiClient';
+import { ApiRequestError, apiClient } from '@/services/apiClient';
+import { AuthProvider } from '@/context/AuthContext';
+import { applicationRouter } from '@/routes/router';
 import * as tokenStorage from '@/storage/tokenStorage';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -52,7 +54,7 @@ afterEach(() => {
 describe('FRN-13 - Flujo integral de logout y limpieza de sesión en cliente', () => {
   beforeEach(seedFullSession);
 
-  it('logoutSession envía POST /auth/logout con Authorization: Bearer <accessToken> y credentials: include', async () => {
+  it('FIX-28 logoutSession envía POST /auth/logout con Authorization: Bearer <accessToken> y credentials: include', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -66,20 +68,9 @@ describe('FRN-13 - Flujo integral de logout y limpieza de sesión en cliente', (
     expect(init.credentials).toBe('include');
   });
 
-  it.each([
-    ['caída de red', () => Promise.reject(new TypeError('Network error'))],
-    ['error HTTP 500', () => Promise.resolve(jsonResponse({ errorCode: 'INTERNAL_ERROR', message: 'x' }, 500))],
-    ['sesión ya vencida (401)', () => Promise.resolve(jsonResponse({ errorCode: 'TOKEN_REVOKED', message: 'x' }, 401))],
-  ])('logoutSession limpia todas las claves de sesión ante %s', async (_case, response) => {
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(response));
-
-    await logoutSession().catch(() => undefined);
-
-    expect(remainingSessionKeys()).toEqual([]);
-  });
-
-  it('el botón de logout (useLogout) redirige a /login con replace para impedir volver con el historial', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+  // La limpieza local la garantiza el flujo de logout de la interfaz (useLogout), no el
+  // servicio HTTP: se prueba el botón real ante cada tipo de fallo del backend.
+  function renderLogoutButton() {
     function LogoutButton() {
       const { logout } = useLogout();
       return React.createElement('button', { type: 'button', onClick: () => void logout() }, 'Cerrar sesión');
@@ -89,6 +80,17 @@ describe('FRN-13 - Flujo integral de logout y limpieza de sesión en cliente', (
       { path: '/login', element: React.createElement('h1', null, 'Login') },
     ], { initialEntries: ['/dashboard'] });
     render(React.createElement(RouterProvider, { router }));
+    return router;
+  }
+
+  it.each([
+    ['éxito (204)', () => Promise.resolve(new Response(null, { status: 204 }))],
+    ['caída de red', () => Promise.reject(new TypeError('Network error'))],
+    ['error HTTP 500', () => Promise.resolve(jsonResponse({ errorCode: 'INTERNAL_ERROR', message: 'x' }, 500))],
+    ['sesión ya vencida (401)', () => Promise.resolve(jsonResponse({ errorCode: 'TOKEN_REVOKED', message: 'x' }, 401))],
+  ])('"Cerrar sesión" limpia todas las claves y redirige a /login con replace ante %s', async (_case, response) => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(response));
+    const router = renderLogoutButton();
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar sesión' }));
 
@@ -97,21 +99,15 @@ describe('FRN-13 - Flujo integral de logout y limpieza de sesión en cliente', (
     expect(remainingSessionKeys()).toEqual([]);
   });
 
-  it('un 401 TOKEN_REVOKED global limpia la sesión local y redirige a /login', () => {
-    const replaceMock = vi.fn();
-    const originalLocation = window.location;
-    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, pathname: '/dashboard', replace: replaceMock } });
-    try {
-      render(React.createElement(ApiResponseNotifier));
-      window.dispatchEvent(new CustomEvent(API_UNAUTHORIZED_EVENT, {
-        detail: { errorCode: 'TOKEN_REVOKED', message: 'Token revocado.', status: 401 },
-      }));
+  it('un 401 TOKEN_REVOKED recibido por cualquier petición limpia la sesión local y lleva a /login', async () => {
+    const navigate = vi.spyOn(applicationRouter, 'navigate').mockResolvedValue(undefined);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ errorCode: 'TOKEN_REVOKED', message: 'Token revocado.' }, 401)));
+    render(React.createElement(AuthProvider, null, React.createElement(ApiResponseNotifier)));
 
-      expect(remainingSessionKeys()).toEqual([]);
-      expect(replaceMock).toHaveBeenCalledWith('/login');
-    } finally {
-      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
-    }
+    await apiClient.get('/admin/users').catch(() => undefined);
+
+    await waitFor(() => expect(remainingSessionKeys()).toEqual([]));
+    expect(navigate).toHaveBeenCalledWith('/login', expect.objectContaining({ replace: true }));
   });
 });
 

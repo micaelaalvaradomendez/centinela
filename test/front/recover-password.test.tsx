@@ -140,13 +140,13 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     expect(screen.queryByRole('heading', { name: /nueva contraseña/i })).not.toBeInTheDocument();
   });
 
-  it('el paso 3 no envía una contraseña que no cumple la complejidad del backend (FIX-20)', { timeout: 15000 }, async () => {
+  it('FIX-29 el paso 3 no envía una contraseña que no cumple la complejidad del backend', { timeout: 15000 }, async () => {
     const fetchMock = recoveryBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderRecover();
 
-    await completeSteps(user, '123456', 'sinmayuscula1!');
+    await completeSteps(user, '123456', 'sinmayus1!'); // 10 caracteres, con dígito y símbolo, sin mayúscula
     expect(callsTo(fetchMock, '/auth/password/reset')).toHaveLength(0);
 
     // Contraprueba: con una clave válida el mismo formulario sí la envía. Sin esto, la prueba

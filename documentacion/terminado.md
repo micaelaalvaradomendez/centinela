@@ -191,11 +191,11 @@
 ### `FRN-06` - Modal de creación y desactivación de usuarios
 
 > [!WARNING]
-> **Estado: Implementado con retroceso detectado (23/09/2026).** El alta envía `POST /api/admin/users` correctamente, pero hay dos problemas:
-> - Desde `BAC-16` el backend ya no devuelve `contrasenaTemp`, y `CrearUsuarios.tsx` depende de ese campo para mostrar el resultado. Un alta exitosa **no muestra ninguna confirmación**.
-> - "Eliminar usuario" (`detailsUserPage.tsx:110`) no tiene acción y no envía `DELETE`.
+> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`).** El retroceso del 23/09 se resolvió con `FIX-24`. `test/front/admin-users.test.tsx`, bloque FRN-06 (6/7):
+> - **Funciona:** selector de rol, `POST /api/admin/users` con el contrato real, toast de alta con la clave enviada por correo (sin mostrar contraseña), formulario sin campos de contraseña y "Eliminar usuario" con confirmación y `DELETE`.
+> - **Falla** el mensaje ante `502 EMAIL_DELIVERY_FAILED`: se muestra uno genérico. Corrección registrada en [`futuro.md`](futuro.md) como `FIX-27`.
 >
-> Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-24`.
+> **Nota:** el entregable original pedía una "visualización controlada de la contraseña temporal". Desde `BAC-16` la clave solo se envía por correo, y así lo verifica la prueba.
 
 - **Área:** Frontend
 - **Asignado:** Luz
@@ -249,6 +249,9 @@
 
 
 ### `FIX-06` - Modal de alta y edición de usuarios sin funcionalidad real (`FRN-06` / `FRN-06B`)
+
+> [!NOTE]
+> **Estado: Completada según el contrato vigente (verificado el 28/09/2026).** El selector de rol, el `POST` de alta y la edición con `PUT /api/admin/users/{id}` funcionan (`admin-users.test.tsx`, bloques FRN-06 y FRN-06B). El criterio original pedía *"ver su contraseña temporal"*, pero desde `BAC-16` la clave solo se envía por correo y no se muestra.
 
 - **Área:** Frontend
 - **Asignada:** Luz
@@ -366,7 +369,7 @@
 ### `BAC-18` - Base transversal de auditoría (append-only)
 
 > [!WARNING]
-> **Estado: Implementado con retroceso detectado (23/09/2026).** El registro, la consulta, los filtros, la exportación CSV y el 403 al operador funcionan. Pero la base de datos **permite `UPDATE` y `DELETE` sobre `auditoria`** con las credenciales de la aplicación: no hay trigger, `REVOKE` ni regla, así que no se cumple el criterio "falla a nivel de base de datos". Prueba: `test/back/password_recovery_acceptance_test.go`, caso `BAC-18…`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-23`.
+> **Estado: Implementado con problema (verificado el 28/09/2026, backend `d36bc50`).** El registro, la consulta, los filtros, la exportación CSV y el 403 al operador funcionan. Pero la base de datos **permite `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria`** con las credenciales de la aplicación: no hay trigger, `REVOKE` ni regla, así que no se cumple el criterio "falla a nivel de base de datos". Prueba: `test/back/password_recovery_acceptance_test.go`, caso `BAC-18 … append-only`. La corrección es `FIX-23`, que **está en desarrollo en [`actual.md`](actual.md)**.
 
 - **Área:** Backend
 - **Asignado:** Tayra
@@ -539,6 +542,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `FRN-13` - Flujo integral de logout y limpieza de sesión en cliente (Frontend)
 
+> [!WARNING]
+> **Regresión detectada (28/09/2026, frontend `8d7ecab`).** El commit `deb59cb` quitó el `Authorization: Bearer` del logout (`skipAuthorization: true`). El backend responde `401 MISSING_TOKEN` y la sesión queda activa en el servidor, aunque el cliente limpia su almacenamiento y redirige. La corrección está registrada en [`futuro.md`](futuro.md) como `FIX-28`.
+
 - **Área:** Frontend
 - **Asignados:** Cristian y Belinda
 - **Estimación:** 2 h
@@ -591,7 +597,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 ### `FRN-10` - Cambio obligatorio de contraseña temporal
 
 > [!WARNING]
-> **Estado: Implementado con problema (23/09/2026).** La vista `/change-password` funciona: se deriva ante `403 PASSWORD_CHANGE_REQUIRED`, se bloquea la navegación, se envía `PUT /api/account/password`, se muestran los errores del backend y se valida la longitud. Pero **no ofrece la opción de cerrar sesión**, y el criterio exige que la cuenta "solo pueda cerrar sesión o cambiarla". Prueba: `test/front/password-change.test.tsx` (6/7). Defecto registrado en [`futuro.md`](futuro.md) como `FIX-21`. La validación de complejidad ya figura en `FIX-20`.
+> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`).** `test/front/password-change.test.tsx` (9/10):
+> - **Funciona:** se deriva ante `403 PASSWORD_CHANGE_REQUIRED`, se bloquea la navegación, se envía `PUT /api/account/password`, se muestran los errores del backend, se valida el largo, el dígito y el símbolo, y la opción "Cerrar sesión" (`FIX-21`, terminada) está disponible.
+> - **Falla:** la validación de mayúscula del cliente (`validatePasswordComplexity` no la verifica). Corrección registrada en [`futuro.md`](futuro.md) como `FIX-29`.
 
 - **Área:** Frontend
 - **Asignada:** Belinda
@@ -603,14 +611,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 ### `FRN-14` - Suite de pruebas unitarias y de integración para la vista de Auditoría (`Auditoria.tsx`)
 
 > [!WARNING]
-> **Estado: Implementado con problema (23/09/2026).** La suite `test/front/audit.test.tsx` existe y verifica:
-> - la carga paginada con Bearer;
-> - los registros reales;
-> - los filtros de acción, resultado y fechas;
-> - la paginación;
-> - la exportación CSV con Bearer.
+> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`).** La suite `test/front/audit.test.tsx` existe y verifica la carga paginada con Bearer, los registros reales, los filtros de acción, resultado y fechas, la paginación y la exportación CSV con Bearer (6/7).
 >
-> **Falla el caso 5:** en el código commiteado, `/auditoria` está bajo `loadProtectedSession` y no bajo `loadAdminSession` (`applicationRoutes.tsx`), así que **un OPERATOR puede entrar a la vista**. Resultado: 6/7. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-22`.
+> **Falla el caso del guard:** `/auditoria` está bajo `loadProtectedSession` y no bajo `loadAdminSession` (`applicationRoutes.tsx:50`), así que **un OPERATOR puede entrar a la vista**. La corrección es `FIX-22`, que **está en desarrollo en [`actual.md`](actual.md)**.
 
 - **Área:** Frontend
 - **Asignada:** Belinda / Luz
@@ -700,17 +703,15 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `SEC-04` - Esquema extensible de niveles de acceso a recursos en Backend y Modelo de Datos
 
-> [!WARNING]
-> **Estado: Implementado con problema (verificado el 25/09/2026, backend `eb0c9af`).**
->
-> **Funciona:**
+> [!NOTE]
+> **Estado: Completada (verificado el 25/09/2026 y confirmado el 28/09/2026, backend `eb0c9af` / `d36bc50`).**
 > - La columna `nivel_acceso` tiene default `FULL_ACCESS` y un CHECK con `FULL_ACCESS` y `READ_ONLY`.
-> - El contrato `{ permisos: [{ vmid, nivelAcceso }] }` funciona en `PUT` y `GET /api/admin/users/:id/permissions`.
+> - El contrato `{ permisos: [{ vmid, nivelAcceso }] }` funciona en `PUT` y `GET /api/admin/users/:id/permissions`; si se omite `nivelAcceso` en un ítem, se asume `FULL_ACCESS`.
 > - `VerificarAcceso` y `RequireInstanceAccess` reciben el nivel requerido: con `READ_ONLY` se puede hacer `GET /instances/:vmid`, pero `start` y `stop` responden 403; con `FULL_ACCESS` se puede hacer `start`.
 >
-> **Falla el entregable 4 (retrocompatibilidad):** `PUT /permissions` con el payload anterior `{ "vmids": [103] }` responde `400 INVALID_REQUEST`, porque `asignarPermisosRequest` solo acepta `permisos`.
+> **Decisión (28/09/2026):** el contrato oficial es el formato nuevo `{ permisos }`, que ya usa el frontend (`userInstanceService.ts`). **No se mantiene la retrocompatibilidad con `{ vmids }`:** el entregable 4 original se reemplazó y `FIX-26` quedó descartado. El payload anterior se rechaza con `400 INVALID_REQUEST`.
 >
-> Pruebas: `test/back/resource_access_acceptance_test.go`. El caso `SEC-04 niveles de acceso…` pasa; el caso `FIX-26 SEC-04 retrocompatibilidad…` falla. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-26`.
+> Pruebas: `test/back/resource_access_acceptance_test.go`, casos `SEC-04 niveles de acceso…` y `SEC-04 el payload anterior { vmids } se rechaza…`.
 
 - **Área:** Backend
 - **Asignado:** Lisandro / Tayra
@@ -723,7 +724,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   1. Agregar en `domain.PermisoInstancia` la columna `nivel_acceso` (VARCHAR(30) default `'FULL_ACCESS'`) con restricción CHECK o enum para los valores `FULL_ACCESS` y `READ_ONLY`.
   2. Actualizar el puerto `InstanceRepository.VerificarAcceso` para aceptar opcionalmente el nivel de acceso requerido (`requiredLevel: string`).
   3. Extender el middleware `RequireInstanceAccess(repo, paramName, requiredLevel)` para permitir guards como `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")` en endpoints mutantes (`POST /instances/:vmid/start`, `POST /instances/:vmid/stop`) y tolerar `READ_ONLY` en consultas (`GET /instances/:vmid`).
-  4. Mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto.
+  4. ~~Mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto.~~ **Reemplazado (28/09/2026):** `PUT /permissions` recibe `{ permisos: [{ vmid, nivelAcceso? }] }`. Si se omite `nivelAcceso` en un ítem, se asume `FULL_ACCESS`, y el formato anterior `{ vmids }` se rechaza con `400 INVALID_REQUEST`.
 - **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
 
 ### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
@@ -757,3 +758,197 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   2. Manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: *"No se pudo enviar el correo; el usuario no fue creado"*.
   3. En `detailsUserPage.tsx`, conectar "Eliminar usuario" a un diálogo de confirmación explícita que envíe `DELETE /api/admin/users/:id` y espere 204. Después, mostrar un toast y volver a `/users`, o reflejar `activo: false`, que es una baja lógica.
 - **Criterio de éxito:** el administrador ve la confirmación de cada alta sin que se muestre ninguna contraseña, y puede dar de baja a un usuario desde el detalle. Los dos casos de FRN-06 de `admin-users.test.tsx` pasan.
+
+---
+
+# Verificación del 28/09/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `d36bc50` y frontend `8d7ecab`, el último commit de `main` en ambos submódulos.
+
+### `FRN-11` - Acciones administrativas de recuperación
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** `test/front/admin-recovery.test.tsx` (4/4, commit `fe158ab`). Se verifica:
+> - "Restablecer contraseña" y "Restablecer 2FA" son acciones separadas en el menú de `Users.tsx`, cada una con su modal de confirmación (`ConfirmUserAction`).
+> - No se llama a la API antes de confirmar.
+> - Se envía `POST /api/admin/users/:id/password/reset` o `…/2fa/reset` con Bearer y se muestra el toast de resultado.
+> - La tabla pasa a "Desactivado".
+> - Nunca se muestran secretos ni hashes.
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2 h
+- **Ventana propuesta:** 18/09/2026, 12:00-14:00
+- **Depende de:** `FRN-05`, `BAC-13` y `BAC-15`.
+
+- **Entregable:** acciones separadas para restablecer contraseña y 2FA desde el panel de usuarios, ambas con confirmación explícita, estado de carga y notificación del resultado.
+- **Criterio de éxito:** un administrador puede iniciar cada recuperación sin confundir sus efectos; la tabla refleja que el 2FA quedó desvinculado y nunca muestra secretos ni hashes.
+
+### `FRN-12` - Vistas de recuperación de contraseña (RF-13)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** `test/front/recover-password.test.tsx` (commit `fe6d784`). Se verifica:
+> - El paso 1 envía `POST /api/auth/password/forgot` con `{ email }` y no avanza con un correo inválido.
+> - El paso 2 exige el código de 6 dígitos.
+> - El paso 3 envía `POST /api/auth/password/reset` con `{ email, codigo, nuevaContrasena }`.
+> - Muestra `RESET_FAILED` como "código incorrecto o expirado" y redirige a `/login`.
+>
+> El único caso que falla del archivo (complejidad en el paso 3) corresponde a `FIX-20`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 3 h
+- **Ventana propuesta:** A definir (posterior a `BAC-20`).
+- **Depende de:** `BAC-19`, `BAC-20` y el maquetado existente de `RecoverPassword.tsx`.
+
+- **Entregable:** conectar `RecoverPassword.tsx` al flujo real: paso de ingreso de correo, paso de ingreso del código de seis dígitos y paso de nueva contraseña, con manejo de errores del backend en cada paso.
+- **Criterio de éxito:** una cuenta puede recuperar el acceso sin intervención de un administrador, y los errores de código inválido o vencido se muestran junto al campo correspondiente.
+
+### `FIX-18` - Conexión de `RecoverPassword.tsx` a la API y alineación de tests (`FRN-12` / RF-13) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** Ídem `FRN-12`: `test/front/recover-password.test.tsx` (6/6 de sus casos, commit `fe6d784`), incluidas la redirección a `/login` y la validación del código en el paso 2.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 3 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
+- **Depende de:** `BAC-19`, `BAC-20` y `FIX-17`.
+- **Problema y evidencia en código y pruebas (`test/front/recover-password.test.tsx`):**
+  1. *Formulario desconectado de la red:* `frontend/centinela/src/pages/RecoverPassword.tsx` es actualmente un cascarón visual que solo maneja estado local mediante `handleNext()`, sin invocar `apiClient` ni interactuar con el backend en ninguno de sus tres pasos.
+  2. *Desalineación de rutas en tests:* `test/front/recover-password.test.tsx` espera que el componente llame a URLs ficticias (`/recover/request`, `/auth/recovery`, `/recover/confirm`, `/recovery/confirm`), las cuales nunca existieron en el backend.
+  3. *Flujo de finalización ausente:* Al finalizar el tercer paso, el formulario no consume `POST /api/auth/password/reset` ni redirige al usuario al login.
+- **Entregable:**
+  1. Conectar el Paso 1 (Solicitud) a `POST /api/auth/password/forgot` enviando `{ email }`, mostrando spinner/estado de carga y avanzando al Paso 2 al recibir HTTP 200.
+  2. En el Paso 2 (Código), vincular `InputOTP` al estado del código de 6 dígitos y validar que no esté vacío antes de avanzar al Paso 3.
+  3. Conectar el Paso 3 (Nueva contraseña) a `POST /api/auth/password/reset` enviando `{ email, codigo, nuevaContrasena }` (sin solicitar contraseña actual).
+  4. Procesar la respuesta HTTP 200 mostrando un toast de éxito («Contraseña restablecida con éxito») y redirigiendo a `/login` con `{ replace: true }`.
+  5. Procesar los errores del backend (`RESET_FAILED`, código expirado o superación de 3 intentos) y mostrarlos junto al campo correspondiente en la interfaz.
+  6. Actualizar la suite `test/front/recover-password.test.tsx` para mockear y validar los llamados reales a `/auth/password/forgot` y `/auth/password/reset`.
+- **Criterio de éxito:** El usuario puede recuperar su cuenta de punta a punta consumiendo la API; la suite `test/front/recover-password.test.tsx` pasa al 100% verificando los endpoints canónicos del backend.
+
+### `FIX-19` - Acciones de Restablecimiento Administrativo de Contraseña y 2FA en `Users.tsx` (`FRN-11`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** Ídem `FRN-11`: `test/front/admin-recovery.test.tsx` (4/4, commit `fe158ab`).
+
+- **Área:** Frontend
+- **Asignada:** Luz / Cristian
+- **Estimación:** 2,5 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
+- **Depende de:** `BAC-13`, `BAC-15`, `FRN-05` y `test/front/admin-recovery.test.tsx`.
+- **Problema y evidencia en código:**
+  1. *Botón sin acción:* En `frontend/centinela/src/pages/Users.tsx` (línea 354), el botón «Restablecer contraseña» carece de manejador `onClick`.
+  2. *Acción de 2FA faltante:* En el menú de acciones no existe la opción para «Restablecer 2FA» / «Desvincular 2FA», requerida por `FRN-11` y verificada en `test/front/admin-recovery.test.tsx`.
+  3. *Falta de reactividad y feedback:* No se ofrece modal de confirmación ni notificación al administrador sobre el envío de la clave temporal, y la tabla no actualiza el estado de 2FA tras un reset.
+- **Entregable:**
+  1. Conectar el botón «Restablecer contraseña» a una función con modal de confirmación explícito que invoque `POST /api/admin/users/:id/password/reset` con token Bearer, cerrando el dropdown y emitiendo un toast que informe el envío por correo.
+  2. Agregar en el dropdown de acciones la opción «Restablecer 2FA» (con icono de seguridad y advertencia de acción crítica) con modal de confirmación, consumiendo `POST /api/admin/users/:id/2fa/reset`.
+  3. Al completar con éxito el restablecimiento de 2FA, mutar reactivamente el estado local (`totpVinculado: false`) para que el badge de la tabla pase inmediatamente de «Activado» a «Desactivado» sin necesidad de recargar la página.
+  4. Garantizar que bajo ninguna circunstancia se muestren secretos ni hashes en la interfaz (política Zero-Trust).
+- **Criterio de éxito:** Un administrador puede resetear la contraseña y el 2FA de cualquier operador desde el panel; la tabla actualiza el estado de 2FA reactivamente; la suite `test/front/admin-recovery.test.tsx` pasa al 100%.
+
+### `FIX-21` - Opción de cerrar sesión en el cambio obligatorio de contraseña (`FRN-10`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** `test/front/password-change.test.tsx` (commit `b87ea1b`): desde `/change-password`, "Cerrar sesión" usa `useLogout()`, llama a `/auth/logout`, borra `centinela_access` y navega a `/login`. **Nota:** la revocación en el servidor está afectada por la regresión de `FRN-13` (logout sin Bearer, ver `FIX-28` en `futuro.md`).
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FRN-10` y `FRN-13`.
+- **Problema y evidencia:** el criterio de `FRN-10` dice que "una cuenta con contraseña temporal solo puede cerrar sesión o cambiarla". `frontend/centinela/src/pages/ChangePassword.tsx` solo ofrece el formulario de cambio; no hay forma de salir sin cambiar la clave. La prueba `test/front/password-change.test.tsx`, caso *"la pantalla de cambio ofrece cerrar sesión como única alternativa"*, falla con `Unable to find role="button" and name /cerrar sesión/i`.
+- **Entregable:**
+  1. Agregar en `ChangePassword.tsx` un botón secundario "Cerrar sesión" que use el hook existente `useLogout()` (`components/features/auth/hooks/useAuth.ts`). Ese hook ya llama a `POST /api/auth/logout`, limpia la sesión y navega a `/login` con `replace`.
+  2. Deshabilitar el botón mientras se envía el formulario o el logout (`isSubmitting` / `isLoggingOut`).
+- **Criterio de éxito:** desde `/change-password` el usuario puede cerrar sesión: se llama a `/auth/logout`, se borra `centinela_access` y se navega a `/login`. `password-change.test.tsx` pasa 7/7.
+
+### `INF-06` - Despliegue de servicio Redis en Docker Compose y red `vmbr1`
+
+> [!NOTE]
+> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** `test/back/cierre_fase_base_acceptance_test.go`, caso `INF-06 …` (commit `2a943cd`). Se levanta el servicio `redis` de `backend/docker-compose.yml` y se verifica:
+> - Responde `PONG` con contraseña y `NOAUTH` sin ella.
+> - `maxmemory` es 268435456 (256 MB) y la política es `volatile-lru`.
+> - `REDIS_ADDR` y `REDIS_PASSWORD` están documentadas en `backend/.env.example`.
+>
+> La pertenencia a la red `vmbr1` del servidor no se puede verificar desde el repo.
+
+- **Área:** Infraestructura
+- **Asignados:** Nico y Lucas
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (Cierre de Fase Base, previo a `BAC-17B`).
+- **Depende de:** `INF-03` e `INF-04`.
+- **Problema y contexto:** Se adelanta el despliegue de Redis al cierre de la fase base para alojar las sesiones activas con expiración automática (`TTL`), los tickets efímeros de WebSockets/SSE y la caché de Proxmox.
+- **Entregable:**
+  1. Agregar el contenedor `redis:7-alpine` en `docker-compose.yml` y en la red interna `vmbr1`, configurado con contraseña (`REDIS_PASSWORD`), límite de memoria (`maxmemory 256mb`, política `volatile-lru`) y variables `REDIS_ADDR` / `REDIS_PASSWORD` expuestas al contenedor del backend.
+- **Criterio de éxito:** Servicio Redis operativo y accesible desde la red interna `vmbr1`, respondiendo `PONG` a `redis-cli PING` con autenticación.
+
+### `FIX-20` - Sincronización de políticas de complejidad y distinción UX entre Cambio y Restablecimiento (`FRN-10` / `FRN-12`) (Frontend / UX)
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`, commit `fe6d784`).**
+>
+> **Funciona:**
+> - Existe `validatePasswordComplexity` en `components/features/auth/utils/validateAuthenticationFields.ts`, integrado en `ChangePassword.tsx` y en el paso 3 de `RecoverPassword.tsx`.
+> - Frena claves fuera de 8-12 caracteres, sin dígito o sin símbolo, y muestra textos de ayuda.
+>
+> **Falla:** no verifica la mayúscula. La segunda condición prueba `/[0-9]/` con el mensaje "al menos una letra mayúscula", así que una clave como `nueva1234!` pasa el cliente y el backend la rechaza con 400. Además, el mensaje de largo dice "Debe tener 8 y 12 caracteres".
+>
+> Pruebas que fallan: `password-change.test.tsx` (caso "sin mayúscula") y `recover-password.test.tsx` (paso 3). Corrección registrada en [`futuro.md`](futuro.md) como `FIX-29`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
+- **Depende de:** `FRN-10`, `FRN-12` y `BAC-02`.
+- **Problema:**
+  1. *Disparidad en reglas de validación:* `ChangePassword.tsx` (`validateChangePasswordFields`, líneas 22-34) valida únicamente que la longitud esté entre 8 y 12 caracteres. Omite las reglas que exige el backend en `crypto.ValidarComplejidadContrasena` (`backend/internal/infrastructure/crypto/password.go:89`): al menos una mayúscula, un número y un carácter especial `!@#$%^&*-_=+`. Si el usuario ingresa una clave que no cumple estas reglas, el cliente la envía y el backend responde 400 `PASSWORD_CHANGE_FAILED`.
+     - **Evidencia (23/09/2026):** en `test/front/password-change.test.tsx`, los casos *"no llama a la API si la contraseña nueva no cumple la complejidad del backend (sin mayúscula / sin dígito / sin carácter especial)"* fallan, porque el cliente envía `PUT /api/account/password` con `nueva1234!`, `NuevaClave!` y `Nueva12345`.
+  2. *Ambigüedad visual:* Falta claridad en los textos de ayuda de los formularios para distinguir que en el **Cambio** se requiere la clave temporal previa, mientras que en el **Restablecimiento** solo se define una nueva contraseña.
+- **Entregable:**
+  1. Implementar un validador unificado de contraseñas (`validatePasswordComplexity`) en el archivo existente `frontend/centinela/src/utils/validators.js`, que replique exactamente los criterios del backend:
+     - Longitud: 8 a 12 caracteres.
+     - Al menos una letra mayúscula.
+     - Al menos un dígito numérico.
+     - Al menos un símbolo permitido (`[!@#$%^&*-_=+]`).
+  2. Integrar el validador unificado en `ChangePassword.tsx` y `RecoverPassword.tsx` (paso 3), mostrando el error junto al campo y textos de ayuda explicativos debajo. `CrearUsuarios.tsx` no lo necesita: desde `BAC-16` la clave temporal la genera el backend y se envía por correo, y los campos de contraseña de esa vista se eliminan en `FIX-24`.
+- **Criterio de éxito:** Las validaciones de cliente previenen el envío de contraseñas no conformes; el usuario recibe retroalimentación inmediata; se eliminan los errores 400 por rechazo de complejidad en el backend. Los 3 casos de complejidad de `test/front/password-change.test.tsx` pasan.
+- **Nota:** la corrección de la referencia de `FRN-10` a `PUT /api/account/password` en la documentación ya se hizo el 23/09/2026, en `terminado.md`, y no forma parte de este FIX.
+
+### `FRN-18` (`SEC-04B`) - Integración en Frontend de niveles de acceso por instancia (`READ_ONLY` / `FULL_ACCESS`)
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`).**
+>
+> **Entregable 1 cumple:** `detailsUserPage.tsx`, `rolesAndPermissions.tsx` y `userInstanceService.ts` leen el `nivelAcceso` desde `GET /permissions` (READ_ONLY se muestra como "Solo lectura") y envían `{ vmid, nivelAcceso }` en el `PUT`. Pruebas: los 2 casos `FRN-18…` de `admin-users.test.tsx` pasan.
+>
+> **Entregable 2 no existe:** no hay `canOperateInstance`, porque el hook `usePermissions()` de `SEC-03` no está implementado. Prueba que falla: `navigation.test.tsx`, caso `FIX-30 canOperateInstance…`. Corrección registrada en [`futuro.md`](futuro.md) como `FIX-30`.
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (inmediatamente posterior a `SEC-03` y `SEC-04`).
+- **Depende de:** `SEC-03`, `SEC-04` y `FIX-14`.
+- **Problema y evidencia (`cierre-fase-base.md`):** `SEC-04` implementa `nivel_acceso` (`FULL_ACCESS` y `READ_ONLY`) en el backend, pero ninguna tarea de Frontend tenía asignado enviar ese nivel en `PUT /api/admin/users/:id/permissions`, leerlo al abrir la ficha del usuario ni exponerlo en `usePermissions()` (`SEC-03`) para distinguir quién puede solo ver una máquina de quién puede apagarla o reiniciarla.
+- **Entregable:**
+  1. En `detailsUserPage.tsx` y `rolesAndPermissions.tsx`, leer el `nivelAcceso` de cada instancia desde `GET /api/admin/users/:id/permissions` y enviar `{ vmid, nivelAcceso: 'FULL_ACCESS' | 'READ_ONLY' }` en `PUT /api/admin/users/:id/permissions`.
+  2. En el contexto `SEC-03` (`usePermissions()`), agregar el helper `canOperateInstance(vmid: number): boolean` (devuelve `true` solo si es `ADMIN` o si tiene `FULL_ACCESS` sobre ese `vmid`), diferenciándolo de `canAccessInstance(vmid)` (que devuelve `true` tanto para `READ_ONLY` como `FULL_ACCESS`).
+- **Criterio de éxito:** El administrador puede asignar y guardar el nivel "Solo lectura" o "Control total" por instancia desde la UI; `canOperateInstance` retorna `false` para instancias en modo `READ_ONLY`.
+
+### `INF-05` - CORS y TLS en el borde
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 28/09/2026, backend `d36bc50`, commit `c624a57`).**
+>
+> **CORS cumple:** `middleware.CORS()` aplica la lista blanca de `ALLOWED_ORIGINS`. El origen permitido recibe `204` con `Access-Control-Allow-Origin` exacto y `Allow-Credentials: true`; uno no autorizado recibe `403` sin cabeceras CORS. Prueba: `cierre_fase_base_acceptance_test.go`, caso `INF-05 CORS…`.
+>
+> **TLS no verificable:** la configuración de Nginx del servidor (CT 103) no está versionada en ningún repositorio, así que no se puede comprobar que el tráfico se sirva solo por HTTPS. Prueba omitida: `FIX-31 INF-05 TLS…`. Corrección registrada en [`futuro.md`](futuro.md) como `FIX-31`.
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir (junto con `INF-04`).
+- **Depende de:** `INF-04`.
+- **Entregable:** whitelist de orígenes permitidos en CORS y certificados TLS configurados en Nginx para todo el tráfico hacia el frontend y la API.
+- **Criterio de éxito:** una petición desde un origen no autorizado es rechazada por CORS y el tráfico hacia el sistema se sirve únicamente sobre HTTPS.

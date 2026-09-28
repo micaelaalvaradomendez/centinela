@@ -48,13 +48,16 @@ const inventory = [
 
 // Backend simulado para la vista de detalle. Las mutaciones responden como el backend real.
 // Permisos (SEC-04): GET/PUT /admin/users/:id/permissions -> { permisos: [{ vmid, nivelAcceso }] }.
-function detailBackend({ profilePut }: { profilePut?: (init: RequestInit) => Response } = {}) {
+function detailBackend({ profilePut, permisos = [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }] }: {
+  profilePut?: (init: RequestInit) => Response;
+  permisos?: { vmid: number; nivelAcceso: string }[];
+} = {}) {
   return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url.includes('/permissions')) {
       return Promise.resolve(method === 'PUT'
         ? new Response(null, { status: 204 })
-        : jsonResponse({ permisos: [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }] }));
+        : jsonResponse({ permisos }));
     }
     if (url.includes('/instances')) return Promise.resolve(jsonResponse(inventory));
     if (method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
@@ -334,7 +337,21 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     });
   });
 
-  it('elegir "Solo lectura" envía nivelAcceso READ_ONLY para esa instancia (integración con SEC-04)', async () => {
+  it('FRN-18 al abrir la ficha muestra el nivel guardado: READ_ONLY como "Solo lectura" y FULL_ACCESS como acceso completo', async () => {
+    vi.stubGlobal('fetch', detailBackend({ permisos: [
+      { vmid: 101, nivelAcceso: 'FULL_ACCESS' },
+      { vmid: 102, nivelAcceso: 'READ_ONLY' },
+    ] }));
+    const user = userEvent.setup();
+
+    renderUserDetail('u2');
+    await user.click(await screen.findByRole('tab', { name: /roles y permisos/i }));
+
+    expect(await screen.findByRole('combobox', { name: /acceso para debian 12/i })).toHaveValue('Solo lectura');
+    expect(screen.getByRole('combobox', { name: /acceso para ubuntu server/i })).toHaveValue('Acceso completo');
+  });
+
+  it('FRN-18 elegir "Solo lectura" envía nivelAcceso READ_ONLY para esa instancia (integración con SEC-04)', async () => {
     const fetchMock = detailBackend();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();

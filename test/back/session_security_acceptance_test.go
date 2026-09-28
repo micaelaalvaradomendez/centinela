@@ -160,6 +160,24 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 		}
 	})
 
+	// Integración front <-> back con el logout que envía hoy el frontend: desde el commit
+	// deb59cb (frontend), authService.logoutSession() llama a POST /auth/logout con
+	// skipAuthorization: true, es decir, solo con la cookie, sin Bearer y sin body.
+	t.Run("FIX-28 FRN-13 integracion el logout tal como lo envia el frontend revoca la sesion en el servidor", func(t *testing.T) {
+		session := loginWithTOTP(t, user.Email, user.Password, user.Secret)
+		if session.RefreshCookie == nil {
+			t.Fatalf("2fa/verify no emitió la cookie de refresh (SEC-01)")
+		}
+
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", "", nil, session.RefreshCookie)
+		if logout.Status != http.StatusNoContent {
+			t.Errorf("POST /auth/logout como lo envía el frontend (cookie, sin Authorization): esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
+		}
+		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusUnauthorized {
+			t.Errorf("tras el logout desde la interfaz el access token debe quedar revocado: esperado 401, recibido %d (la sesión sigue activa en el servidor)", status)
+		}
+	})
+
 	t.Run("FIX-08 backend emite estructura estandar de error con errorCode y message", func(t *testing.T) {
 		casos := []struct {
 			nombre       string

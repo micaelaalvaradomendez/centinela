@@ -392,28 +392,7 @@ FIX DEL 21 AL 25 (en actual.md)
 
 Surgen de la corrida de `test/back` y `test/front` sobre el último commit de `main` (backend `eb0c9af`, frontend `7fbf969`). El detalle está en [test/informe.md](../test/informe.md). Cada FIX corrige una tarea ya movida a `terminado.md` con un entregable incumplido; su prueba de aceptación ya existe, lleva el ID del FIX y hoy falla.
 
-### `FIX-26` - Retrocompatibilidad de `PUT /permissions` con el payload `{ vmids }` (`SEC-04`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `SEC-04`.
-- **Problema y evidencia:** el entregable 4 de `SEC-04` exige *"mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto"*. En `internal/adapters/primary/http/user_handler.go`, `asignarPermisosRequest` solo declara `Permisos []ports.PermisoInstanciaInput` con `binding:"required"`, así que el payload anterior se rechaza. La prueba `test/back/resource_access_acceptance_test.go`, caso *"FIX-26 SEC-04 retrocompatibilidad…"*, falla con:
-  ```
-  PUT permissions con el payload anterior { vmids: [103] }: esperado 204, recibido 400:
-    {"errorCode":"INVALID_REQUEST","message":"Se requiere el campo permisos (array de {vmid, nivelAcceso})."}
-  ```
-- **Entregable:**
-  1. Agregar a `asignarPermisosRequest` el campo opcional `Vmids []int` (`json:"vmids"`) y quitar el `binding:"required"` de `Permisos`.
-  2. En `AsignarPermisos`, validar que llegue exactamente uno de los dos campos. Si llega solo `vmids`, convertirlo a `[]PermisoInstanciaInput{ {Vmid: v, NivelAcceso: FULL_ACCESS} }`. Si no llega ninguno o llegan los dos, responder `400 INVALID_REQUEST`.
-  3. Mantener el resto del flujo igual: deduplicación, reemplazo atómico y auditoría `ASIGNAR_PERMISOS`.
-  4. Documentar ambos formatos en Swagger, con `{ vmids }` marcado como formato heredado.
-- **Criterio de éxito:** el caso `FIX-26 SEC-04 retrocompatibilidad…` pasa y los demás casos de `resource_access_acceptance_test.go` siguen en verde. En concreto:
-  - `PUT { "vmids": [103] }` → 204 con `nivel_acceso = FULL_ACCESS`, y el `GET` lo devuelve como `{ vmid: 103, nivelAcceso: "FULL_ACCESS" }`.
-  - `PUT { "vmids": [] }` → 204 y quita todos los permisos.
-  - `PUT {}` → 400.
-- **Alternativa:** si el equipo decide no mantener el formato heredado, porque el frontend ya usa `{ permisos }`, hay que corregir el entregable 4 de `SEC-04` en `terminado.md` y eliminar el caso de prueba. En ese caso este FIX queda sin efecto.
+> **`FIX-26` descartado (28/09/2026):** se decidió usar el formato nuevo `{ permisos: [{ vmid, nivelAcceso }] }` como contrato oficial. No se mantiene la retrocompatibilidad con `{ vmids }`, y el entregable 4 de `SEC-04` se corrigió en `terminado.md`.
 
 ### `FIX-27` - Mensaje específico cuando falla el envío del correo en el alta (`FIX-24`) (Frontend)
 
@@ -427,3 +406,72 @@ Surgen de la corrida de `test/back` y `test/front` sobre el último commit de `m
   1. En el `catch` de `useCreateUser.submitNewUser`, si `error instanceof ApiRequestError && error.errorCode === 'EMAIL_DELIVERY_FAILED'`, usar `error.message` como descripción del toast de error. Mantener el mensaje genérico para el resto de los errores.
   2. Conservar el comportamiento actual ante el error: no navegar a `/users` y dejar cargados los datos del formulario para reintentar.
 - **Criterio de éxito:** ante un 502 del correo el administrador ve el mensaje específico, sigue en el formulario de alta y los datos se conservan. Los casos `FIX-27…` de `admin-users.test.tsx` pasan y los demás casos de FRN-06 siguen en verde.
+
+---
+
+## 🛠️ Fixes detectados en la verificación del 28/09/2026
+
+### `FIX-28` - Regresión: el logout del frontend no envía el access token y la sesión no se revoca (`FRN-13` / `BAC-17`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir. **Prioridad alta**: la sesión queda abierta en el servidor después de "Cerrar sesión".
+- **Depende de:** `FRN-13`, `BAC-17` y `SEC-01`.
+- **Problema y evidencia:**
+  1. En el commit `deb59cb` (*"Se limpia implementacion vieja de endpoint donde se utiliza body y header"*), `authService.logoutSession()` pasó a llamar a `POST /api/auth/logout` con `skipAuthorization: true`, es decir, **sin `Authorization: Bearer <accessToken>`**.
+  2. El backend no cambió ese contrato: `cmd/api/main.go:157` monta `/auth/logout` con `middleware.RequireAuth`, porque `BAC-17` necesita el JTI del access token para revocar atómicamente el access y el refresh. Sin el Bearer responde `401 MISSING_TOKEN` antes de llegar al handler.
+  3. El usuario no ve el error, porque `useLogout()` limpia la sesión local y redirige a `/login` igual, pero **el access token sigue siendo válido hasta que expira**. Esto incumple el entregable 1 de `FRN-13` y el criterio de `BAC-17`.
+  - Pruebas que lo muestran:
+    - `test/front/session-security.test.ts`, caso *"FIX-28 logoutSession envía POST /auth/logout con Authorization: Bearer…"*: `expected undefined to be 'Bearer access-123'`.
+    - `test/back/session_security_acceptance_test.go`, caso *"FIX-28 FRN-13 integracion el logout tal como lo envia el frontend…"*: `esperado 204, recibido 401: MISSING_TOKEN`, y después del logout `/account/profile` sigue respondiendo 200.
+- **Entregable:**
+  1. En `components/features/auth/services/authService.ts`, quitar `skipAuthorization: true` de `logoutSession()` para que el cliente adjunte el `Bearer` del access token, manteniendo `credentials: 'include'` para la cookie `centinela_refresh`.
+  2. Mantener la limpieza local actual de `useLogout()`: `catch` + `finally` con `clearAuthTokens()` y `navigate('/login', { replace: true })`.
+- **Criterio de éxito:** los dos casos `FIX-28…` pasan. "Cerrar sesión" revoca en el servidor el access y el refresh (el access token revocado responde `401 TOKEN_REVOKED`), y los demás casos de `session-security.test.ts` siguen en verde.
+- **Alternativa descartada:** aceptar en el backend un logout solo con la cookie. Sin el access token, el backend no puede revocar el JTI del access, que es lo que exige `BAC-17`.
+
+### `FIX-29` - Validar la mayúscula en `validatePasswordComplexity` (`FIX-20`) (Frontend)
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FIX-20`.
+- **Problema y evidencia:** en `frontend/centinela/src/components/features/auth/utils/validateAuthenticationFields.ts`, `validatePasswordComplexity` tiene tres condiciones. La segunda prueba `/[0-9]/` pero agrega el mensaje *"Debe contener al menos una letra mayúscula."*, y no hay ninguna condición que pruebe mayúsculas. El dígito se valida una sola vez y la mayúscula nunca, así que el cliente acepta claves como `nueva1234!` o `sinmayus1!`, que el backend rechaza con `400 PASSWORD_CHANGE_FAILED` (`crypto.ValidarComplejidadContrasena`). Además, el mensaje de largo dice *"Debe tener 8 y 12 caracteres."*.
+  - Pruebas que fallan:
+    - `test/front/password-change.test.tsx`: *"FIX-29 no llama a la API si la contraseña nueva no cumple la complejidad del backend (sin mayúscula)"*.
+    - `test/front/recover-password.test.tsx`: *"FIX-29 el paso 3 no envía una contraseña que no cumple la complejidad del backend"*.
+- **Entregable:**
+  1. Separar las condiciones: `/[A-Z]/` con el mensaje de mayúscula y `/[0-9]/` con el mensaje *"Debe contener al menos un número."*.
+  2. Corregir el mensaje de largo: *"Debe tener entre 8 y 12 caracteres."*.
+- **Criterio de éxito:** los casos `FIX-29…` pasan, y siguen en verde los de dígito, símbolo y largo, y los casos de `FRN-12` y `FIX-21`.
+
+### `FIX-30` - Helper `canOperateInstance` en `usePermissions()` (`FRN-18`) (Frontend)
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 0,5 h (una vez que exista `SEC-03`)
+- **Ventana propuesta:** A definir, junto con `SEC-03` o inmediatamente después.
+- **Depende de:** `SEC-03` y `FRN-18`.
+- **Problema y evidencia:** el entregable 2 de `FRN-18` pide agregar a `usePermissions()` el helper `canOperateInstance(vmid)`. Debe devolver `true` solo para `ADMIN` o para instancias con `FULL_ACCESS`, a diferencia de `canAccessInstance(vmid)`, que acepta `READ_ONLY` y `FULL_ACCESS`. No existe, porque `usePermissions()` (`SEC-03`) no está implementado: `context/AuthContext.js` no exporta ningún hook. Prueba que falla: `test/front/navigation.test.tsx`, caso *"FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)"*.
+- **Entregable:**
+  1. Exponer `canOperateInstance(vmid: number): boolean` en `usePermissions()`.
+  2. Tomar el nivel por instancia de la sesión del usuario: por ejemplo `permisos: [{ vmid, nivelAcceso }]` en `centinela_user`, cargado con el mismo contrato de `GET /api/admin/users/:id/permissions`, o con un campo equivalente en `GET /account/profile`. La prueba siembra ese formato. Si se elige otra fuente, hay que avisar para alinear la prueba.
+- **Criterio de éxito:** `canOperateInstance(101)` es `true` con `FULL_ACCESS`, es `false` con `READ_ONLY` y para un VMID no asignado, y siempre es `true` para `ADMIN`. El caso `FIX-30…` pasa.
+
+### `FIX-31` - Versionar y verificar el TLS de Nginx en el borde (`INF-05`) (Infraestructura)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `INF-04` e `INF-05`.
+- **Problema y evidencia:** el criterio de `INF-05` exige que *"el tráfico hacia el sistema se sirva únicamente sobre HTTPS"*. La configuración de Nginx del servidor (CT 103) no está versionada en ningún repositorio. El deploy (`frontend/.github/workflows/deploy-front-test.yml`) solo ejecuta `nginx -t` y `reload` sobre lo que ya existe en el contenedor, y el único `nginx.conf` versionado (`docker/nginx.conf`, el del escenario de integración) escucha solo en `:80`. Por eso no se puede verificar el TLS. Prueba omitida: `test/back/cierre_fase_base_acceptance_test.go`, caso *"FIX-31 INF-05 TLS en el borde con Nginx"*.
+- **Entregable:**
+  1. Versionar la configuración de Nginx del borde, por ejemplo en `frontend/centinela/deploy/nginx.conf` o en `docker/`, con:
+     - `listen 443 ssl` y las rutas de `ssl_certificate` y `ssl_certificate_key` (sin incluir los certificados);
+     - `listen 80` que responda `return 301 https://$host$request_uri`;
+     - `proxy_pass` de `/api/` al backend.
+  2. Hacer que el deploy use ese archivo versionado.
+- **Criterio de éxito:** la configuración versionada sirve solo HTTPS y redirige HTTP → HTTPS. A partir de ahí, el caso `FIX-31…` deja de omitirse y verifica el archivo (443 ssl, redirección 301 y ningún `server` que sirva contenido por `:80`).

@@ -6,6 +6,8 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 |---|---|---|
 | `db` | `postgres:16-alpine` | Base aislada, inicializada con `backend/scripts/init.sql` |
 | `backend` | `docker/backend.Dockerfile` (compila `backend/`) | API real en `127.0.0.1:18080` |
+| `backend-smtp` | misma imagen que `backend`, con `EMAIL_PROVIDER=smtp` | Segundo backend en `127.0.0.1:18081` para BAC-16B |
+| `mailpit` | `axllent/mailpit` | Servidor SMTP de prueba; su API en `127.0.0.1:18025` permite leer los correos recibidos |
 | `proxmox` | `nginx:1.27-alpine` + [`proxmox-stub/nginx.conf`](proxmox-stub/nginx.conf) | Stub de la API de Proxmox VE con un inventario fijo: `101` qemu, `102` lxc, `103` qemu, más un nodo y un storage que el backend debe descartar |
 
 ## Principios
@@ -22,13 +24,14 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `login04_acceptance_test.go` | LOGIN-04: circuito alta → clave por correo → 2FA → cambio obligatorio → rol e instancias → resets |
 | `password_recovery_acceptance_test.go` | BAC-13, BAC-15, BAC-16, BAC-18, BAC-19, BAC-20, BAC-21 |
 | `resource_access_acceptance_test.go` | BAC-07, FIX-16/BAC-08, BAC-14, **SEC-04** |
-| `session_security_acceptance_test.go` | **BAC-17**, **SEC-01**, integración SEC-01/SEC-02, FIX-08 |
+| `session_security_acceptance_test.go` | BAC-17, SEC-01, integración SEC-01/SEC-02, **integración del logout de FRN-13**, FIX-08 |
+| `cierre_fase_base_acceptance_test.go` | **INF-05** (CORS; TLS omitido), **INF-06** (levanta el `redis` de `backend/docker-compose.yml`), **INF-08**, **BAC-16B**, **BAC-17B**, **BAC-18B** |
 
 ## Requisitos
 
 - Docker con `docker compose` (la primera corrida descarga `postgres:16-alpine` y `nginx:1.27-alpine`).
 - Go 1.26 o superior.
-- Puertos locales `15433` y `18080` libres. Se pueden cambiar con `BACKEND_TEST_DB_PORT`, `BACKEND_TEST_API_PORT` y `BACKEND_TEST_API_URL`.
+- Puertos locales `15433`, `18080`, `18081` y `18025` libres. Se pueden cambiar con `BACKEND_TEST_DB_PORT`, `BACKEND_TEST_API_PORT` y `BACKEND_TEST_API_URL`.
 
 ## Ejecutar
 

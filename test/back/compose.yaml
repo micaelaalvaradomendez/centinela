@@ -35,6 +35,11 @@ services:
       PROXMOX_NODE: pve
       PROXMOX_USERNAME: stub@pve
       PROXMOX_PASSWORD: stub
+      # INF-05: lista blanca de orígenes CORS (middleware/cors_middleware.go)
+      ALLOWED_ORIGINS: http://front.centinela.test
+      # BAC-16B: este backend usa el correo simulado por consola (lo leen las pruebas).
+      EMAIL_PROVIDER: mock
+    image: centinela-back-tests-backend:local
     ports:
       - "127.0.0.1:${BACKEND_TEST_API_PORT:-18080}:8080"
     depends_on:
@@ -47,6 +52,50 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # BAC-16B: segundo backend (misma imagen y base) con EMAIL_PROVIDER=smtp contra Mailpit.
+  backend-smtp:
+    image: centinela-back-tests-backend:local
+    pull_policy: never
+    environment:
+      DB_DSN: host=db user=centinela_test password=centinela_test dbname=centinela_test port=5432 sslmode=disable TimeZone=UTC
+      JWT_SECRET: test-only-jwt-secret-at-least-32-characters
+      JWT_ACCESS_TTL_HOURS: "1"
+      JWT_REFRESH_TTL_DAYS: "1"
+      TOTP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      APP_NAME: Centinela Test
+      PROXMOX_BASE_URL: http://proxmox:80
+      PROXMOX_NODE: pve
+      PROXMOX_USERNAME: stub@pve
+      PROXMOX_PASSWORD: stub
+      ALLOWED_ORIGINS: http://front.centinela.test
+      EMAIL_PROVIDER: smtp
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: centinela
+      SMTP_PASS: centinela
+      SMTP_FROM: noreply@centinela.test
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_SMTP_API_PORT:-18081}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Servidor SMTP de prueba con API HTTP para leer los correos recibidos.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_MAILPIT_PORT:-18025}:8025"
 
   proxmox:
     image: nginx:1.27-alpine

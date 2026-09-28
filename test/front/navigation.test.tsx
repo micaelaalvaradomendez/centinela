@@ -36,6 +36,7 @@ type PermissionsModule = {
     isOperator: boolean;
     hasRole: (role: string) => boolean;
     canAccessInstance: (vmid: number) => boolean;
+    canOperateInstance?: (vmid: number) => boolean;
   };
   PermissionGate?: React.ComponentType<{ requiredRole: string; fallback?: React.ReactNode; children?: React.ReactNode }>;
   [key: string]: unknown;
@@ -96,6 +97,29 @@ describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
     expect(permissions!.hasRole('ADMIN')).toBe(false);
     expect(permissions!.canAccessInstance(101)).toBe(true);
     expect(permissions!.canAccessInstance(999)).toBe(false);
+  });
+
+  it('FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)', async () => {
+    const module = await loadPermissionsModule();
+    // La sesión del operador informa el nivel por instancia (contrato de GET /permissions).
+    seedSession({
+      rol: 'OPERATOR',
+      instanciasPermitidas: [101, 102],
+      permisos: [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }, { vmid: 102, nivelAcceso: 'READ_ONLY' }],
+    } as never);
+    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
+    function Probe() {
+      permissions = module.usePermissions();
+      return null;
+    }
+
+    render(<>{withProvider(module, <Probe />)}</>);
+
+    expect(typeof permissions?.canOperateInstance, 'usePermissions no expone canOperateInstance').toBe('function');
+    expect(permissions!.canAccessInstance(102)).toBe(true);
+    expect(permissions!.canOperateInstance!(101)).toBe(true);
+    expect(permissions!.canOperateInstance!(102)).toBe(false);
+    expect(permissions!.canOperateInstance!(999)).toBe(false);
   });
 
   it('PermissionGate muestra el contenido al ADMIN y el fallback al OPERATOR', async () => {

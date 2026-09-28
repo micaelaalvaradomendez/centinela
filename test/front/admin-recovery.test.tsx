@@ -89,7 +89,7 @@ describe('FRN-11 - Acciones administrativas de recuperación', () => {
     await waitFor(() => expect(mutationCalls(fetchMock, '/admin/users/u1/password/reset')).toHaveLength(1));
     const [, init] = mutationCalls(fetchMock, '/admin/users/u1/password/reset')[0];
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer admin-token-123');
-    expect(await screen.findByText(/contraseña restablecida|correo/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/contraseña restablecida|correo/i)).length).toBeGreaterThan(0);
     expect(mutationCalls(fetchMock, '/2fa/reset')).toHaveLength(0);
   });
 

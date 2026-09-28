@@ -148,3 +148,29 @@ flowchart LR
 | Visor de auditoría con filtros, modales destructivos de snapshot.
 | Nginx con TLS/WSS enrutado y ensayo de demo en vivo.
 |
+
+
+---
+
+1. Implementadas y con todos sus tests en verde
+BAC-01 a BAC-04, BAC-05, BAC-06, BAC-06B, BAC-07, BAC-08, BAC-09 a BAC-13, BAC-14, BAC-15, BAC-16, BAC-17 (las dos entradas), BAC-19, BAC-20, BAC-21, LOGIN-01 a LOGIN-03, FRN-01 a FRN-05, FRN-06B, FRN-07, FRN-08, FRN-09, FRN-11, FRN-12, SEC-01, SEC-02, SEC-04, FIX-01, FIX-03, FIX-06, FIX-07, FIX-08 (las dos entradas), FIX-12, FIX-13, FIX-14, FIX-16, FIX-17, FIX-18, FIX-19, FIX-21, FIX-25 e INF-06.
+
+2. Implementadas con tests que fallan: cada una tiene su FIX
+Tarea	Qué falla	FIX	Dónde está
+FRN-06 y FIX-24	Mensaje genérico ante el error 502 del correo	FIX-27	futuro.md
+FRN-10 y FIX-20	El validador no chequea la mayúscula	FIX-29	futuro.md
+FRN-13	Regresión: el logout se envía sin Bearer y la sesión sigue activa en el servidor	FIX-28	futuro.md
+FRN-18	Falta canOperateInstance	FIX-30	futuro.md
+INF-05	El TLS no se puede verificar (el test se omite)	FIX-31	futuro.md
+FRN-14	Un operador puede entrar a /auditoria	FIX-22	actual.md, en desarrollo
+BAC-18	La auditoría no es append-only	FIX-23	actual.md, en desarrollo
+3. Sin test que las demuestre
+INF-03 (PostgreSQL persistente en el servidor) e INF-04 (Nginx y red interna). Son configuración del servidor y no hay nada versionado en los repos que se pueda probar, así que no las puedo confirmar ni descartar. Si querés que queden verificadas, habría que versionar esa configuración (como pide FIX-31) o validarlas a mano.
+
+Correcciones en terminado.md
+Solo arreglé avisos desactualizados; no moví ninguna tarea:
+
+FRN-06: el aviso decía que el alta y "Eliminar" no funcionaban. Ya funcionan (FIX-24); solo falta FIX-27.
+FRN-10: decía que faltaba "Cerrar sesión", que ya está (FIX-21). Lo que queda es FIX-29.
+FRN-14 y BAC-18: decían que su FIX estaba en futuro.md. FIX-22 y FIX-23 están en actual.md, porque se están desarrollando.
+FIX-06: agregué que su criterio original ("ver la contraseña temporal") quedó reemplazado por BAC-16, que manda la clave solo por correo.

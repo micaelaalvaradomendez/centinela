@@ -148,7 +148,7 @@ describe('FRN-10 - Cambio obligatorio de contraseña temporal', () => {
     ['sin mayúscula', 'nueva1234!'],
     ['sin dígito', 'NuevaClave!'],
     ['sin carácter especial', 'Nueva12345'],
-  ])('no llama a la API si la contraseña nueva no cumple la complejidad del backend (%s)', async (_case, password) => {
+  ])('FIX-29 no llama a la API si la contraseña nueva no cumple la complejidad del backend (%s)', async (_case, password) => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ message: 'ok' })));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
