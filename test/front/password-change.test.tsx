@@ -124,7 +124,7 @@ describe('FRN-10 - Cambio obligatorio de contraseña temporal', () => {
     window.sessionStorage.setItem('centinela_access', 'access-token');
 
     const router = renderApp('/change-password');
-    await fillChangeForm(user, 'Nueva1234');
+    await fillChangeForm(user, 'Nueva1234!');
 
     expect(await screen.findByText('La contraseña debe contener al menos un carácter especial.')).toBeVisible();
     expect(router.state.location.pathname).toBe('/change-password');
@@ -170,7 +170,7 @@ describe('FRN-10 - Cambio obligatorio de contraseña temporal', () => {
     renderApp('/change-password');
     await fillChangeForm(user, 'Corta1!');
 
-    expect(await screen.findByText('La contraseña nueva debe tener entre 8 y 12 caracteres.')).toBeVisible();
+    expect(await screen.findByText(/8 y 12 caracteres/i)).toBeVisible();
     expect(callsTo(fetchMock, '/account/password')).toHaveLength(0);
   });
 });

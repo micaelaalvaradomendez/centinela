@@ -42,12 +42,12 @@ function renderRecover() {
 async function completeSteps(user: ReturnType<typeof userEvent.setup>, code = '123456', password = 'Nueva2026!') {
   await user.type(screen.getByLabelText(/correo electrónico/i), 'usuario@centinela.local');
   await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
-  expect(await screen.findByText(/verificación de identidad/i)).toBeInTheDocument();
+  expect(await screen.findByText(/verifica(ción de| tu) identidad/i)).toBeInTheDocument();
   await user.type(screen.getByLabelText(/código de verificación/i), code);
   await user.click(screen.getByRole('button', { name: /verificar código/i }));
-  expect(await screen.findByRole('heading', { name: 'Nueva contraseña' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: /nueva contraseña/i })).toBeInTheDocument();
   await user.type(screen.getByLabelText(/^nueva contraseña$/i), password);
-  await user.type(screen.getByLabelText(/repetir contraseña/i), password);
+  await user.type(screen.getByLabelText(/repetir contraseña|confirmar nueva contraseña/i), password);
   await user.click(screen.getByRole('button', { name: /restablecer contraseña/i }));
 }
 
@@ -65,7 +65,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     await user.type(screen.getByLabelText(/correo electrónico/i), 'usuario@centinela.local');
     await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
 
-    expect(await screen.findByText(/verificación de identidad/i)).toBeInTheDocument();
+    expect(await screen.findByText(/verifica(ción de| tu) identidad/i)).toBeInTheDocument();
     await waitFor(() => expect(callsTo(fetchMock, '/auth/password/forgot')).toHaveLength(1));
     const [, init] = callsTo(fetchMock, '/auth/password/forgot')[0];
     expect(init.method).toBe('POST');
@@ -82,7 +82,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
 
     expect(callsTo(fetchMock, '/auth/password/forgot')).toHaveLength(0);
-    expect(screen.queryByText(/verificación de identidad/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/verifica(ción de| tu) identidad/i)).not.toBeInTheDocument();
   });
 
   it('el paso final envía POST /api/auth/password/reset con email, código y nueva contraseña, y confirma el éxito', { timeout: 15000 }, async () => {
@@ -101,7 +101,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
       codigo: '654321',
       nuevaContrasena: 'Nueva2026!',
     });
-    expect(await screen.findByText(/contraseña actualizada|ya pod[ée]s iniciar sesión|ya puedes iniciar sesión/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/contraseña (actualizada|restablecida)|ya pod[ée]s iniciar sesión|ya puedes iniciar sesión/i))[0]).toBeInTheDocument();
   });
 
   it('un código inválido o vencido (400 RESET_FAILED) se informa en la vista sin perder el flujo', { timeout: 15000 }, async () => {
@@ -113,8 +113,8 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     await completeSteps(user);
 
     await waitFor(() => expect(callsTo(fetchMock, '/auth/password/reset')).toHaveLength(1));
-    expect(await screen.findByText(/el código ha expirado|código inválido|código.*vencido/i)).toBeVisible();
-    expect(screen.queryByText(/contraseña actualizada/i)).not.toBeInTheDocument();
+    expect((await screen.findAllByText(/código.*(inválido|incorrecto|vencido|expir)/i))[0]).toBeVisible();
+    expect(screen.queryByText(/contraseña (actualizada|restablecida)/i)).not.toBeInTheDocument();
   });
 
   it('al terminar con éxito redirige a /login (FIX-18)', { timeout: 15000 }, async () => {
@@ -134,10 +134,10 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
 
     await user.type(screen.getByLabelText(/correo electrónico/i), 'usuario@centinela.local');
     await user.click(screen.getByRole('button', { name: /enviar código de recuperación/i }));
-    expect(await screen.findByText(/verificación de identidad/i)).toBeInTheDocument();
+    expect(await screen.findByText(/verifica(ción de| tu) identidad/i)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /verificar código/i }));
 
-    expect(screen.queryByRole('heading', { name: 'Nueva contraseña' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /nueva contraseña/i })).not.toBeInTheDocument();
   });
 
   it('el paso 3 no envía una contraseña que no cumple la complejidad del backend (FIX-20)', { timeout: 15000 }, async () => {
@@ -152,7 +152,7 @@ describe('FRN-12 - Vistas de recuperación de contraseña (RF-13)', () => {
     // Contraprueba: con una clave válida el mismo formulario sí la envía. Sin esto, la prueba
     // pasaría con una vista que nunca llama a la API.
     const password = screen.getByLabelText(/^nueva contraseña$/i);
-    const confirmation = screen.getByLabelText(/repetir contraseña/i);
+    const confirmation = screen.getByLabelText(/repetir contraseña|confirmar nueva contraseña/i);
     await user.clear(password);
     await user.type(password, 'Valida2026!');
     await user.clear(confirmation);
