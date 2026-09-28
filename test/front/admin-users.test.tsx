@@ -188,7 +188,7 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
     expect(screen.queryByLabelText(/contraseña/i)).not.toBeInTheDocument();
   });
 
-  it('si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED) informa que el usuario no fue creado (FIX-24)', { timeout: 15000 }, async () => {
+  it('FIX-27 si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED) informa que el usuario no fue creado', { timeout: 15000 }, async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
       { errorCode: 'EMAIL_DELIVERY_FAILED', message: 'Usuario no creado. El servidor de correo no está disponible.' }, 502,
     )));
@@ -199,6 +199,27 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
     await confirmIfAsked(user);
 
     expect((await screen.findAllByText(/no se pudo enviar el correo|servidor de correo no est[áa] disponible/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
+  });
+
+  it('FIX-27 ante un 502 del correo permanece en el alta con los datos cargados para reintentar', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
+      { errorCode: 'EMAIL_DELIVERY_FAILED', message: 'Usuario no creado. El servidor de correo no está disponible.' }, 502,
+    )));
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const router = createMemoryRouter([
+      { path: '/users/new', Component: CrearUsuarios },
+      { path: '/users', element: <h1>Gestión de usuarios</h1> },
+    ], { initialEntries: ['/users/new'] });
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(router.state.location.pathname).toBe('/users/new');
+    expect(screen.getByLabelText(/nombre completo/i)).toHaveValue('Ada Lovelace');
+    expect(screen.getByLabelText(/^correo electrónico/i)).toHaveValue('ada@centinela.local');
   });
 
   it('el botón "Eliminar usuario" solicita DELETE /api/admin/users/:id', async () => {

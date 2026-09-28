@@ -223,15 +223,29 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 		}
 	})
 
-	t.Run("SEC-04 retrocompatibilidad PUT permissions con vmids asigna FULL_ACCESS", func(t *testing.T) {
-		// Entregable 4 de SEC-04: "si el payload de PUT /permissions solo envía vmids: [101],
-		// asignar FULL_ACCESS por defecto".
+	t.Run("FIX-26 SEC-04 retrocompatibilidad PUT permissions con vmids asigna FULL_ACCESS", func(t *testing.T) {
+		// Entregable 4 de SEC-04 / FIX-26: "si el payload de PUT /permissions solo envía
+		// vmids: [101], asignar FULL_ACCESS por defecto".
 		status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"vmids": []int{103}})
 		if status != http.StatusNoContent {
 			t.Fatalf("PUT permissions con el payload anterior { vmids: [103] }: esperado 204, recibido %d: %#v", status, body)
 		}
 		if level := queryDatabase(t, "SELECT nivel_acceso FROM permisos_instancia WHERE usuario_id = '"+operatorID+"' AND vmid_proxmox = 103;"); level != "FULL_ACCESS" {
 			t.Errorf("el payload { vmids } debe asignar FULL_ACCESS, quedó %q", level)
+		}
+		_, got := requestJSON(t, http.MethodGet, permEndpoint, adminToken, nil)
+		if levels := permissionLevels(t, got); len(levels) != 1 || levels[103] != "FULL_ACCESS" {
+			t.Errorf("tras PUT { vmids: [103] } el GET debe devolver solo { vmid: 103, nivelAcceso: FULL_ACCESS }; recibido %#v", got)
+		}
+
+		if status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"vmids": []int{}}); status != http.StatusNoContent {
+			t.Errorf("PUT { vmids: [] } debe quitar todos los permisos con 204, recibido %d: %#v", status, body)
+		} else if rows := queryDatabase(t, "SELECT count(*) FROM permisos_instancia WHERE usuario_id = '"+operatorID+"';"); rows != "0" {
+			t.Errorf("PUT { vmids: [] } dejó %s permisos; se esperaba 0", rows)
+		}
+
+		if status, _ := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{}); status != http.StatusBadRequest {
+			t.Errorf("PUT sin permisos ni vmids debe responder 400, recibido %d", status)
 		}
 	})
 }

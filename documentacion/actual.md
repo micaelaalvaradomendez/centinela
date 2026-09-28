@@ -4,7 +4,9 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!NOTE]
-> **Verificación del 23/09/2026** ([test/informe.md](../test/informe.md)): las tareas completas (`BAC-14`, `FIX-16`, `BAC-17`, `FRN-13`, `SEC-02`, `FIX-14`) y las implementadas con problemas (`FRN-10`, `FRN-14`) pasaron a [`terminado.md`](terminado.md). Los problemas se registraron como `FIX-21` a `FIX-25` en [`futuro.md`](futuro.md). En este archivo quedan solo las tareas **no implementadas**.
+> **Verificación del 23/09/2026** ([test/informe.md](../test/informe.md)): las tareas completas (`BAC-14`, `FIX-16`, `BAC-17`, `FRN-13`, `SEC-02`, `FIX-14`) y las implementadas con problemas (`FRN-10`, `FRN-14`) pasaron a [`terminado.md`](terminado.md), y los problemas se registraron como `FIX-21` a `FIX-25`.
+>
+> **Verificación del 25/09/2026:** `SEC-01`, `FIX-17` y `FIX-25` pasaron todas sus pruebas y se movieron a [`terminado.md`](terminado.md). `SEC-04` y `FIX-24` están implementadas con un problema cada una: también pasaron a `terminado.md`, y sus correcciones son `FIX-26` y `FIX-27` en [`futuro.md`](futuro.md).
 
 ---
 
@@ -15,51 +17,9 @@ Crea un usuario desde el modal (POST), el Back genera su clave temporal y must_c
 Modifica su rol o lo desactiva (PUT/DELETE).  
 Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, recibe un 403 Forbidden.  
 
-> **Estado verificado (23/09/2026):** el backend cumple el hito completo. En el frontend, la tabla real y el guard para `OPERATOR` funcionan, pero el hito sigue abierto por dos problemas:
-> - Tras el alta no se muestra ninguna confirmación (`FIX-24`).
-> - No se puede editar el perfil ni desactivar al usuario desde la interfaz (`FIX-24`, `FIX-25`).
+> **Estado verificado (25/09/2026):** el recorrido completo funciona en ambos lados: tabla real, alta con confirmación y aviso de correo, edición del perfil (`FIX-25`, terminada), baja con confirmación y 403 al `OPERATOR`. Solo queda el mensaje ante `502 EMAIL_DELIVERY_FAILED` en el alta (`FIX-27`).
 
 ---
-
-### `SEC-01` - Refresh token en cookie HttpOnly en backend
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 3 h
-- **Ventana propuesta:** A definir. **Prioridad alta.**
-- **Depende de:** `BAC-17`.
-- **Estado actual:** la revocación de sesiones y la renovación de tokens están implementadas, pero el backend todavía recibe el refresh token en JSON y lo devuelve en el body. No existe emisión ni lectura de cookie HttpOnly.
-- **Estado verificado (23/09/2026):** no implementada. `POST /auth/2fa/verify` no emite `Set-Cookie`, y `/auth/refresh` y `/auth/logout` exigen `refreshToken` en el body (`auth_handler.go:69-71`, `:190-192`).
-  - **Bloquea la integración:** el frontend (`SEC-02`, ya terminada) envía `{}` en refresh y logout y el backend responde `400 INVALID_REQUEST`.
-  - Con ambos `main` desplegados, el logout de la interfaz no revoca la sesión en el servidor y la renovación silenciosa falla.
-  - Pruebas: `test/back/session_security_acceptance_test.go`, casos `SEC-01…` y `SEC-01 SEC-02 integracion…`.
-- **Entregable:**
-	1. Emitir el `refreshToken` mediante `Set-Cookie` al completar `POST /api/auth/2fa/verify`.
-	2. Leerlo desde la cookie en `POST /api/auth/refresh` y `POST /api/auth/logout`.
-	3. Dejar de devolver el refresh token en las respuestas JSON públicas.
-	4. Configurar `HttpOnly`, `Secure`, `SameSite` y `Path` de forma segura y configurable para desarrollo y producción.
-	5. Eliminar la cookie al cerrar sesión o cuando la sesión sea inválida.
-- **Criterio de éxito:** el backend renueva y revoca sesiones usando exclusivamente la cookie HttpOnly; el refresh token no aparece en cuerpos JSON ni en logs; una cookie inválida o vencida produce un error controlado.
-
-### `SEC-04` - Esquema extensible de niveles de acceso a recursos en Backend y Modelo de Datos
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (Fase Base / Bloque 2).
-- **Depende de:** `BAC-05`, `BAC-07` y `BAC-08`.
-- **Estado verificado (23/09/2026):** no implementada.
-  - `domain.PermisoInstancia` no tiene `NivelAcceso` (`models.go:79-83`).
-  - `VerificarAcceso` y `RequireInstanceAccess` no reciben el nivel requerido.
-  - El frontend ya ofrece "Solo lectura" en `rolesAndPermissions.tsx`, pero el backend lo ignora.
-  - Prueba: `test/back/resource_access_acceptance_test.go`, caso `SEC-04…`.
-- **Problema:** La tabla `permisos_instancia` solo almacena `(usuario_id, vmid_proxmox)` como una relación binaria (asignado o no asignado). Sin embargo, en el documento de diseño `Diseño de endpoints para front.md` y en las siguientes etapas (Etapa 1 Ciclo de vida y Etapa 3 Snapshots) se proyectan niveles de acceso sobre las instancias (por ejemplo `FULL_ACCESS` para operar energía/snapshots vs `READ_ONLY` para monitoreo de métricas sin emitir órdenes destructivas). Si no se sienta esta base en el esquema y en el guard ahora, agregar niveles de acceso en la Etapa 1 requerirá migrar tablas en producción y alterar contratos.
-- **Entregable:**
-  1. Agregar en `domain.PermisoInstancia` la columna `nivel_acceso` (VARCHAR(30) default `'FULL_ACCESS'`) con restricción CHECK o enum para los valores `FULL_ACCESS` y `READ_ONLY`.
-  2. Actualizar el puerto `InstanceRepository.VerificarAcceso` para aceptar opcionalmente el nivel de acceso requerido (`requiredLevel: string`).
-  3. Extender el middleware `RequireInstanceAccess(repo, paramName, requiredLevel)` para permitir guards como `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")` en endpoints mutantes (`POST /instances/:vmid/start`, `POST /instances/:vmid/stop`) y tolerar `READ_ONLY` en consultas (`GET /instances/:vmid`).
-  4. Mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto.
-- **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
 
 ### `FRN-11` - Acciones administrativas de recuperación
 
@@ -106,28 +66,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Criterio de éxito:** Si un operador inicia sesión, la interfaz no muestra accesos directos ni botones exclusivos de administrador; si intenta interactuar con un componente restringido, el helper `canAccessInstance` evalúa en memoria las instancias permitidas cargadas en la sesión; las pruebas unitarias de componentes verifican el render condicional.
 
 
-
 ---
-
-
-### `FIX-17` - Alinear y formalizar endpoints y contratos de contraseñas (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
-- **Depende de:** `BAC-12`, `BAC-15`, `BAC-19`, `BAC-20`.
-- **Problema y evidencia:**
-  1. *Rutas ambiguas y divergencia con la documentación:* `actual.md` y versiones previas de planificación referenciaban `POST /api/auth/change-password` para el cambio obligatorio, mientras el backend implementó `PUT /api/account/password`.
-  2. *Inconsistencia en reset administrativo:* En `terminado.md` (`BAC-15`) se documentó `POST /api/admin/users/{id}/reset-password`, pero en `cmd/api/main.go` se montó `POST /api/admin/users/:id/password/reset`.
-  3. *Confusión entre reset público y reset administrativo:* Ambos comparten el sufijo `/password/reset` pero con semánticas, autorizaciones y payloads totalmente diferentes.
-- **Entregable:**
-  1. Formalizar como canónico `PUT /api/account/password` para el cambio autenticado de contraseña (payload: `{ contrasenaActual, contrasenaNueva }`), manteniendo bajo `RequireAuth` el bloqueo 403 `PASSWORD_CHANGE_REQUIRED` a otras rutas.
-  2. Mantener `POST /api/auth/password/forgot` (payload: `{ email }`) y `POST /api/auth/password/reset` (payload: `{ email, codigo, nuevaContrasena }`) para la recuperación pública (RF-13), garantizando que tras el reset exitoso la cuenta quede con `cambio_contrasena = false` y todas las sesiones previas revocadas en `sesiones_activas`.
-  3. Confirmar como canónico `POST /api/admin/users/:id/password/reset` (sin body, requiere rol `ADMIN`), el cual genera una contraseña temporal, activa `cambio_contrasena = true`, revoca sesiones y despacha la clave por `EmailService` (`MockEmailService`).
-  4. Actualizar Swagger/OpenAPI y eliminar alias no utilizados o rutas contradictorias.
-  5. Asegurar consistencia de códigos de error estructurados: `PASSWORD_CHANGE_REQUIRED` (403), `PASSWORD_CHANGE_FAILED` (400), `RESET_FAILED` (400) y `INVALID_REQUEST` (400).
-- **Criterio de éxito:** Swagger expone los contratos precisos y unificados; `PUT /api/account/password` valida la contraseña actual y libera la cuenta; `POST /api/auth/password/reset` valida el OTP de 6 dígitos sin requerir contraseña actual; las llamadas a cada endpoint responden con los códigos de estado y payloads esperados.
 
 
 ### `FIX-18` - Conexión de `RecoverPassword.tsx` a la API y alineación de tests (`FRN-12` / RF-13) (Frontend)
@@ -167,7 +106,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   3. Al completar con éxito el restablecimiento de 2FA, mutar reactivamente el estado local (`totpVinculado: false`) para que el badge de la tabla pase inmediatamente de «Activado» a «Desactivado» sin necesidad de recargar la página.
   4. Garantizar que bajo ninguna circunstancia se muestren secretos ni hashes en la interfaz (política Zero-Trust).
 - **Criterio de éxito:** Un administrador puede resetear la contraseña y el 2FA de cualquier operador desde el panel; la tabla actualiza el estado de 2FA reactivamente; la suite `test/front/admin-recovery.test.tsx` pasa al 100%.
-
 
 
 ### `FIX-21` - Opción de cerrar sesión en el cambio obligatorio de contraseña (`FRN-10`) (Frontend)
@@ -225,35 +163,3 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   3. Revisar que ninguna ruta del backend haga `UPDATE`/`DELETE` sobre `auditoria`. Por ejemplo, el `ON DELETE SET NULL` de `usuario_id` al eliminar un usuario: si hace falta, resolverlo con eliminación lógica de usuarios, que es lo que ya hace `DELETE /admin/users/:id`.
 - **Criterio de éxito:** `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria` fallan en PostgreSQL con las credenciales de la aplicación; el registro y la consulta de auditoría siguen funcionando. El caso `BAC-18` de `password_recovery_acceptance_test.go` pasa.
 
-### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `FRN-06`, `BAC-06` y `BAC-16`.
-- **Problema y evidencia:**
-  1. *Alta sin respuesta visible:* desde `BAC-16`, `POST /api/admin/users` responde `201 { id, rol, activo }` **sin `contrasenaTemp`**, porque la clave se envía por correo. `frontend/centinela/src/pages/CrearUsuarios.tsx:56` hace `setTempPassword(created.contrasenaTemp ?? null)`, y solo muestra algo si llega ese campo. Resultado: tras un alta exitosa el administrador no ve ninguna confirmación. Además, la vista conserva campos de "Contraseña temporal" y "Confirmar contraseña temporal" que ya no tienen función. Prueba: `test/front/admin-users.test.tsx`, caso *"tras el alta informa el resultado y que la clave temporal se envió por correo (BAC-16)…"*.
-  2. *Baja sin acción:* el botón "Eliminar usuario" de `frontend/centinela/src/pages/detailsUserPage.tsx:110` no tiene `onClick` y nunca envía `DELETE /api/admin/users/:id`. Prueba: `admin-users.test.tsx`, caso *"el botón 'Eliminar usuario' solicita DELETE /api/admin/users/:id"*.
-- **Entregable:**
-  1. En `CrearUsuarios.tsx`, al recibir 201:
-     - mostrar un toast o mensaje con `role="status"`, por ejemplo *"Usuario creado. La contraseña temporal se envió a <correo>."*;
-     - limpiar el formulario o volver a `/users`;
-     - eliminar la caja "Contraseña temporal generada" y los campos de contraseña del formulario.
-  2. Manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: *"No se pudo enviar el correo; el usuario no fue creado"*.
-  3. En `detailsUserPage.tsx`, conectar "Eliminar usuario" a un diálogo de confirmación explícita que envíe `DELETE /api/admin/users/:id` y espere 204. Después, mostrar un toast y volver a `/users`, o reflejar `activo: false`, que es una baja lógica.
-- **Criterio de éxito:** el administrador ve la confirmación de cada alta sin que se muestre ninguna contraseña, y puede dar de baja a un usuario desde el detalle. Los dos casos de FRN-06 de `admin-users.test.tsx` pasan.
-
-### `FIX-25` - Persistir la edición del perfil de usuario (`FRN-06B` / `FIX-14`) (Frontend)
-
-- **Área:** Frontend
-- **Asignada:** Luz / Cristian
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `FRN-06B`, `BAC-06B` y `FIX-14`.
-- **Problema y evidencia:** en `frontend/centinela/src/pages/detailsUserPage.tsx`, el formulario de "Información general" (`informationOfUser.tsx` + `useEditableUser.ts`) modifica solo el estado local. "Guardar cambios" (`detailsUserPage.tsx:114`) llama únicamente a `instanceAccess.saveAssignments()` y está deshabilitado si no cambió ningún permiso de instancia. En todo el frontend **no existe ninguna llamada a `PUT /api/admin/users/:id`**: editar nombre, correo, rol o estado no se guarda nunca. Esto incumple `FRN-06B` y el entregable 3 de `FIX-14` ("guardar de forma atómica junto a la edición del perfil"). Prueba: `test/front/admin-users.test.tsx`, caso *"editar el nombre y guardar envía PUT /api/admin/users/:id con los datos modificados"*, que falla con `guardar no envió PUT /admin/users/u2`.
-- **Entregable:**
-  1. Agregar a `components/features/users/services/userDetailsService.ts` una función `updateUserDetails(userId, values)`. Debe enviar `PUT /api/admin/users/:id` solo con los campos modificados de `{ nombreCompleto, emailUsuario, rol, activo }` y validar la respuesta con el `isUserDetailsResponse` existente.
-  2. Habilitar "Guardar cambios" cuando haya cambios en el perfil **o** en los permisos. Al guardar, enviar primero el `PUT` del perfil y luego el de permisos, con un solo estado de carga, un toast de resultado y la vista refrescada con la respuesta.
-  3. Mostrar los errores del backend: `USER_CONFLICT` (409) para correo duplicado y 400 para datos inválidos.
-- **Criterio de éxito:** un administrador cambia el nombre, el correo, el rol o el estado de un usuario, guarda, y el cambio se refleja en el detalle y en la tabla sin recargar. El caso FRN-06B de `admin-users.test.tsx` pasa, y los 3 casos de FIX-14 siguen en verde.

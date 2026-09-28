@@ -1,20 +1,18 @@
 # Resultados de las pruebas frontend
 
-**Fecha:** 25/09/2026. **Frontend:** `7fbf969` (`origin/main`), exportado con `git archive` y ejecutado con `CENTINELA_FRONTEND_DIR`. **Comando:** `pnpm test`. Se hicieron 2 corridas con el mismo resultado (~25 s).
+**Fecha:** 25/09/2026. **Frontend:** submódulo actualizado a `7fbf969` (último commit de `main`). **Comando:** `pnpm test`. Se hicieron 2 corridas con el mismo resultado (~25 s).
 
-| Métrica | `origin/main` (7fbf969) | Submódulo local (5b91e80 + 3 parches sin commitear) |
-|---|---:|---:|
-| Pruebas | 79 | 79 |
-| Aprueban | **61** | 49 |
-| Fallan | **18** | 30 |
+| Métrica | Valor |
+|---|---:|
+| Pruebas | 80 |
+| Aprueban | **62** |
+| Fallan | **18** |
 
-La referencia es `origin/main`. El submódulo local está atrasado y no refleja el trabajo del equipo.
-
-## Por archivo (`origin/main`)
+## Por archivo
 
 | Archivo | Pruebas | Fallan | Tareas |
 |---|---:|---:|---|
-| `admin-users.test.tsx` | 17 | 1 | FRN-05 ✅, FRN-06/**FIX-24** 🟡 (5/6), FRN-06B/**FIX-25** ✅, FIX-14 ✅ (4/4, incluido READ_ONLY), FRN-08 ✅ |
+| `admin-users.test.tsx` | 18 | 1 | FRN-05 ✅, FRN-06/FIX-24 🟡 (6/7, falla **FIX-27**), FRN-06B/**FIX-25** ✅, FIX-14 ✅ (4/4, incluido READ_ONLY), FRN-08 ✅ |
 | `admin-recovery.test.tsx` | 4 | 3 | **FRN-11 / FIX-19** ❌ |
 | `recover-password.test.tsx` | 7 | 6 | **FRN-12 / FIX-18** ❌, **FIX-20** (paso 3) ❌ |
 | `navigation.test.tsx` | 6 | 3 | FRN-03 ✅, **SEC-03** ❌ (1/4) |
@@ -39,4 +37,4 @@ La referencia es `origin/main`. El submódulo local está atrasado y no refleja 
 | FIX-22 | un operador en /auditoria vuelve a /dashboard | `expected '/auditoria' to be '/dashboard'` | `applicationRoutes.tsx:50`: la ruta no está bajo `loadAdminSession` |
 | SEC-03 | usePermissions / PermissionGate (2 casos) | `ningún módulo de src/context exporta usePermissions y PermissionGate` | `src/context/AuthContext.js` está vacío |
 | SEC-03 | el ADMIN ve Usuarios y Auditoría | `Unable to find … link "Auditoría"` | El sidebar no tiene un enlace a `/auditoria` |
-| FIX-24 | 502 `EMAIL_DELIVERY_FAILED` informa que no se creó | `Unable to find … no se pudo enviar el correo` | `useCreateUser.ts` reemplaza el mensaje de `createUserService.ts` por uno genérico |
+| FIX-27 | 502 `EMAIL_DELIVERY_FAILED` informa que no se creó | `Unable to find … no se pudo enviar el correo` | `useCreateUser.ts` reemplaza el mensaje de `createUserService.ts` por uno genérico |

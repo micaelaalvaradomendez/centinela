@@ -207,8 +207,8 @@
 
 ### FRN-06B — Modal de Edición de Usuario y Cambio de Rol:
 
-> [!WARNING]
-> **Estado: Implementado con retroceso detectado (23/09/2026).** El formulario precargado existe (`informationOfUser.tsx`), pero editar nombre, correo, rol o estado no se persiste. "Guardar cambios" solo guarda permisos de instancia y se deshabilita si no cambió ninguno; en el frontend no existe `PUT /api/admin/users/:id`. Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06B. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-25`.
+> [!NOTE]
+> **Estado: Completada (verificado el 25/09/2026).** El retroceso detectado el 23/09 (la edición del perfil no se persistía) se resolvió con `FIX-25`. Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06B.
 - Asignado: Luz | Estimación: 2h
 - Depende de: FRN-05, FRN-06 y BAC-06B
 - Entregable: Formulario precargado con los datos del usuario seleccionado para modificar su información básica y cambiar su rol mediante un desplegable.  
@@ -444,7 +444,7 @@
 > - marcan las instancias asignadas;
 > - envían `PUT /api/admin/users/:id/permissions` con `{ vmids }`.
 >
-> Pendiente relacionado: guardar el perfil junto con los permisos (`FIX-25`).
+> El guardado del perfil junto con los permisos se completó con `FIX-25` (25/09/2026).
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -535,7 +535,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   - El refresh posterior falla.
   - Ambas sesiones inactivas en la base.
   - Un registro `LOGOUT` nuevo.
-- **Integración pendiente:** con el contrato actual el refresh token viaja en el body. El frontend ya no lo envía (`SEC-02`), así que el logout disparado desde la interfaz responde 400 hasta que se implemente `SEC-01`, que sigue en `actual.md`.
+- **Integración:** ✅ resuelta con `SEC-01` (25/09/2026). El logout desde la interfaz (Bearer + cookie `centinela_refresh`) revoca ambas sesiones.
 
 ### `FRN-13` - Flujo integral de logout y limpieza de sesión en cliente (Frontend)
 
@@ -553,7 +553,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   - Limpieza ante caída de red, 500 y 401.
   - `historyAction: REPLACE`.
   - Listener de `TOKEN_REVOKED` (`ApiResponseNotifier.tsx`).
-- **Integración pendiente:** la revocación en el backend depende de `SEC-01` (ver `BAC-17`).
+- **Integración:** ✅ resuelta con `SEC-01` (25/09/2026).
 
 ### `SEC-02` - Cliente frontend compatible con refresh token HttpOnly
 
@@ -573,7 +573,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   - No se persiste el refresh token que llegue en el body.
   - El interceptor renueva con `POST /auth/refresh` sin el token y con `credentials: include`.
   - El logout no envía el token.
-- **Integración pendiente:** el backend todavía no acepta estas peticiones (`400 INVALID_REQUEST`) hasta `SEC-01`. Caso `SEC-01 SEC-02 integracion…` en `test/back`.
+- **Integración:** ✅ resuelta con `SEC-01` (25/09/2026). El caso `SEC-01 SEC-02 integracion…` de `test/back` pasa.
 
 ### `FIX-14` - Integración frontend del selector de instancias (`FRN-07`)
 
@@ -586,7 +586,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   2. Marcado de los VMIDs asignados (`GET /api/admin/users/:id/permissions`).
   3. Envío de `PUT /api/admin/users/:id/permissions` con `{ vmids: number[] }`, con estados de carga y toast.
 - **Criterio de éxito:** las pruebas de `FRN-07` en `test/front/admin-users.test.tsx` pasan al 100%.
-- **Verificación:** ✅ `admin-users.test.tsx`, bloque FIX-14 / FRN-07 (3/3). La parte de guardar "junto a la edición del perfil" queda en `FIX-25`.
+- **Verificación:** ✅ `admin-users.test.tsx`, bloque FIX-14 / FRN-07 (4/4, con el contrato `{ permisos: [{ vmid, nivelAcceso }] }`). La parte de guardar "junto a la edición del perfil" se completó con `FIX-25`.
 
 ### `FRN-10` - Cambio obligatorio de contraseña temporal
 
@@ -622,3 +622,138 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   3. La exportación `/api/admin/audit/export?formato=csv`.
   4. La redirección de un operador desde `/auditoria` a `/dashboard`.
 - **Criterio de éxito:** `npm test` en `test/front` aprueba los casos de `audit.test.tsx`.
+
+---
+
+# Verificación del 25/09/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `eb0c9af` y frontend `7fbf969`, el último commit de `main` en ambos submódulos.
+
+### `SEC-01` - Refresh token en cookie HttpOnly en backend
+
+> [!NOTE]
+> **Estado: Completada (verificado el 25/09/2026, backend `eb0c9af`, commits `c719c9b` y `47bb8f2`).** `test/back/session_security_acceptance_test.go`: los casos `SEC-01…` e integración `SEC-01 SEC-02…` pasan. Se verifica:
+> - `POST /auth/2fa/verify` emite `centinela_refresh` con `HttpOnly`, `Secure` por defecto (configurable con `COOKIE_SECURE`), `SameSite=Strict` y `Path=/api/auth`.
+> - El refresh token no aparece en el JSON (`TokenResult.RefreshToken` con `json:"-"`) ni en los logs.
+> - `/auth/refresh` renueva solo con la cookie (y la rota) y responde 401 ante una cookie inválida.
+> - `/auth/logout` revoca y borra la cookie.
+> - Las peticiones reales del frontend (body `{}` con `credentials: 'include'`) funcionan. Esto cierra la integración pendiente de `BAC-17`, `FRN-13` y `SEC-02`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 3 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `BAC-17`.
+- **Entregable:**
+	1. Emitir el `refreshToken` mediante `Set-Cookie` al completar `POST /api/auth/2fa/verify`.
+	2. Leerlo desde la cookie en `POST /api/auth/refresh` y `POST /api/auth/logout`.
+	3. Dejar de devolver el refresh token en las respuestas JSON públicas.
+	4. Configurar `HttpOnly`, `Secure`, `SameSite` y `Path` de forma segura y configurable para desarrollo y producción.
+	5. Eliminar la cookie al cerrar sesión o cuando la sesión sea inválida.
+- **Criterio de éxito:** el backend renueva y revoca sesiones usando exclusivamente la cookie HttpOnly; el refresh token no aparece en cuerpos JSON ni en logs; una cookie inválida o vencida produce un error controlado.
+
+### `FIX-17` - Alinear y formalizar endpoints y contratos de contraseñas (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 25/09/2026, backend `eb0c9af`, commit `5407599`).** `test/back/password_recovery_acceptance_test.go`, caso `FIX-17 contratos canonicos…`, verifica:
+> - `docs/swagger.json` documenta `PUT /account/password`, `POST /auth/password/forgot`, `POST /auth/password/reset` y `POST /admin/users/{id}/password/reset`, sin ninguna ruta histórica.
+> - `/auth/change-password` y `/admin/users/:id/reset-password` responden 404.
+> - Los códigos de error son `PASSWORD_CHANGE_FAILED` (400), `INVALID_REQUEST` (400) y `RESET_FAILED` (400).
+> - La recuperación pública deja `cambio_contrasena=false` y revoca todas las sesiones.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 3).
+- **Depende de:** `BAC-12`, `BAC-15`, `BAC-19`, `BAC-20`.
+- **Problema y evidencia:**
+  1. *Rutas ambiguas y divergencia con la documentación:* `actual.md` y versiones previas de planificación referenciaban `POST /api/auth/change-password` para el cambio obligatorio, mientras el backend implementó `PUT /api/account/password`.
+  2. *Inconsistencia en reset administrativo:* En `terminado.md` (`BAC-15`) se documentó `POST /api/admin/users/{id}/reset-password`, pero en `cmd/api/main.go` se montó `POST /api/admin/users/:id/password/reset`.
+  3. *Confusión entre reset público y reset administrativo:* Ambos comparten el sufijo `/password/reset` pero con semánticas, autorizaciones y payloads totalmente diferentes.
+- **Entregable:**
+  1. Formalizar como canónico `PUT /api/account/password` para el cambio autenticado de contraseña (payload: `{ contrasenaActual, contrasenaNueva }`), manteniendo bajo `RequireAuth` el bloqueo 403 `PASSWORD_CHANGE_REQUIRED` a otras rutas.
+  2. Mantener `POST /api/auth/password/forgot` (payload: `{ email }`) y `POST /api/auth/password/reset` (payload: `{ email, codigo, nuevaContrasena }`) para la recuperación pública (RF-13), garantizando que tras el reset exitoso la cuenta quede con `cambio_contrasena = false` y todas las sesiones previas revocadas en `sesiones_activas`.
+  3. Confirmar como canónico `POST /api/admin/users/:id/password/reset` (sin body, requiere rol `ADMIN`), el cual genera una contraseña temporal, activa `cambio_contrasena = true`, revoca sesiones y despacha la clave por `EmailService` (`MockEmailService`).
+  4. Actualizar Swagger/OpenAPI y eliminar alias no utilizados o rutas contradictorias.
+  5. Asegurar consistencia de códigos de error estructurados: `PASSWORD_CHANGE_REQUIRED` (403), `PASSWORD_CHANGE_FAILED` (400), `RESET_FAILED` (400) y `INVALID_REQUEST` (400).
+- **Criterio de éxito:** Swagger expone los contratos precisos y unificados; `PUT /api/account/password` valida la contraseña actual y libera la cuenta; `POST /api/auth/password/reset` valida el OTP de 6 dígitos sin requerir contraseña actual; las llamadas a cada endpoint responden con los códigos de estado y payloads esperados.
+
+### `FIX-25` - Persistir la edición del perfil de usuario (`FRN-06B` / `FIX-14`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 25/09/2026, frontend `7fbf969`, commits `f2d6d9f`, `8164670` y `60f81e5`).** `test/front/admin-users.test.tsx`: los bloques FRN-06B y FIX-25 pasan (3/3), y los 4 casos de FIX-14 siguen en verde. Se verifica:
+> - `userDetailsService.updateUserDetails` envía `PUT /api/admin/users/:id` solo con los campos modificados.
+> - "Guardar cambios" se habilita con cambios de perfil o de permisos.
+> - El `409 USER_CONFLICT` se muestra junto al campo de correo.
+
+- **Área:** Frontend
+- **Asignada:** Luz / Cristian
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FRN-06B`, `BAC-06B` y `FIX-14`.
+- **Problema y evidencia:** en `frontend/centinela/src/pages/detailsUserPage.tsx`, el formulario de "Información general" (`informationOfUser.tsx` + `useEditableUser.ts`) modifica solo el estado local. "Guardar cambios" (`detailsUserPage.tsx:114`) llama únicamente a `instanceAccess.saveAssignments()` y está deshabilitado si no cambió ningún permiso de instancia. En todo el frontend **no existe ninguna llamada a `PUT /api/admin/users/:id`**: editar nombre, correo, rol o estado no se guarda nunca. Esto incumple `FRN-06B` y el entregable 3 de `FIX-14` ("guardar de forma atómica junto a la edición del perfil"). Prueba: `test/front/admin-users.test.tsx`, caso *"editar el nombre y guardar envía PUT /api/admin/users/:id con los datos modificados"*, que falla con `guardar no envió PUT /admin/users/u2`.
+- **Entregable:**
+  1. Agregar a `components/features/users/services/userDetailsService.ts` una función `updateUserDetails(userId, values)`. Debe enviar `PUT /api/admin/users/:id` solo con los campos modificados de `{ nombreCompleto, emailUsuario, rol, activo }` y validar la respuesta con el `isUserDetailsResponse` existente.
+  2. Habilitar "Guardar cambios" cuando haya cambios en el perfil **o** en los permisos. Al guardar, enviar primero el `PUT` del perfil y luego el de permisos, con un solo estado de carga, un toast de resultado y la vista refrescada con la respuesta.
+  3. Mostrar los errores del backend: `USER_CONFLICT` (409) para correo duplicado y 400 para datos inválidos.
+- **Criterio de éxito:** un administrador cambia el nombre, el correo, el rol o el estado de un usuario, guarda, y el cambio se refleja en el detalle y en la tabla sin recargar. El caso FRN-06B de `admin-users.test.tsx` pasa, y los 3 casos de FIX-14 siguen en verde.
+
+### `SEC-04` - Esquema extensible de niveles de acceso a recursos en Backend y Modelo de Datos
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 25/09/2026, backend `eb0c9af`).**
+>
+> **Funciona:**
+> - La columna `nivel_acceso` tiene default `FULL_ACCESS` y un CHECK con `FULL_ACCESS` y `READ_ONLY`.
+> - El contrato `{ permisos: [{ vmid, nivelAcceso }] }` funciona en `PUT` y `GET /api/admin/users/:id/permissions`.
+> - `VerificarAcceso` y `RequireInstanceAccess` reciben el nivel requerido: con `READ_ONLY` se puede hacer `GET /instances/:vmid`, pero `start` y `stop` responden 403; con `FULL_ACCESS` se puede hacer `start`.
+>
+> **Falla el entregable 4 (retrocompatibilidad):** `PUT /permissions` con el payload anterior `{ "vmids": [103] }` responde `400 INVALID_REQUEST`, porque `asignarPermisosRequest` solo acepta `permisos`.
+>
+> Pruebas: `test/back/resource_access_acceptance_test.go`. El caso `SEC-04 niveles de acceso…` pasa; el caso `FIX-26 SEC-04 retrocompatibilidad…` falla. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-26`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 2).
+- **Depende de:** `BAC-05`, `BAC-07` y `BAC-08`.
+
+- **Problema:** La tabla `permisos_instancia` solo almacena `(usuario_id, vmid_proxmox)` como una relación binaria (asignado o no asignado). Sin embargo, en el documento de diseño `Diseño de endpoints para front.md` y en las siguientes etapas (Etapa 1 Ciclo de vida y Etapa 3 Snapshots) se proyectan niveles de acceso sobre las instancias (por ejemplo `FULL_ACCESS` para operar energía/snapshots vs `READ_ONLY` para monitoreo de métricas sin emitir órdenes destructivas). Si no se sienta esta base en el esquema y en el guard ahora, agregar niveles de acceso en la Etapa 1 requerirá migrar tablas en producción y alterar contratos.
+- **Entregable:**
+  1. Agregar en `domain.PermisoInstancia` la columna `nivel_acceso` (VARCHAR(30) default `'FULL_ACCESS'`) con restricción CHECK o enum para los valores `FULL_ACCESS` y `READ_ONLY`.
+  2. Actualizar el puerto `InstanceRepository.VerificarAcceso` para aceptar opcionalmente el nivel de acceso requerido (`requiredLevel: string`).
+  3. Extender el middleware `RequireInstanceAccess(repo, paramName, requiredLevel)` para permitir guards como `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")` en endpoints mutantes (`POST /instances/:vmid/start`, `POST /instances/:vmid/stop`) y tolerar `READ_ONLY` en consultas (`GET /instances/:vmid`).
+  4. Mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto.
+- **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
+
+### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 25/09/2026, frontend `7fbf969`).**
+>
+> **Funciona:**
+> - El alta pide confirmar el correo y confirmar en un modal (`ConfirmUserAction`).
+> - Muestra el toast *"Usuario creado exitosamente… enviada por correo"*.
+> - El formulario ya no tiene campos de contraseña.
+> - "Eliminar usuario" abre un modal y envía `DELETE /api/admin/users/:id`.
+>
+> **Falla el entregable 2:** ante `502 EMAIL_DELIVERY_FAILED`, `createUserService.ts` arma el mensaje correcto, pero `useCreateUser.ts` lo descarta y muestra uno genérico.
+>
+> Prueba: `test/front/admin-users.test.tsx`, bloque FRN-06 (5/6); falla el caso `FIX-27…`. Defecto registrado en [`futuro.md`](futuro.md) como `FIX-27`.
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FRN-06`, `BAC-06` y `BAC-16`.
+- **Problema y evidencia:**
+  1. *Alta sin respuesta visible:* desde `BAC-16`, `POST /api/admin/users` responde `201 { id, rol, activo }` **sin `contrasenaTemp`**, porque la clave se envía por correo. `frontend/centinela/src/pages/CrearUsuarios.tsx:56` hace `setTempPassword(created.contrasenaTemp ?? null)`, y solo muestra algo si llega ese campo. Resultado: tras un alta exitosa el administrador no ve ninguna confirmación. Además, la vista conserva campos de "Contraseña temporal" y "Confirmar contraseña temporal" que ya no tienen función. Prueba: `test/front/admin-users.test.tsx`, caso *"tras el alta informa el resultado y que la clave temporal se envió por correo (BAC-16)…"*.
+  2. *Baja sin acción:* el botón "Eliminar usuario" de `frontend/centinela/src/pages/detailsUserPage.tsx:110` no tiene `onClick` y nunca envía `DELETE /api/admin/users/:id`. Prueba: `admin-users.test.tsx`, caso *"el botón 'Eliminar usuario' solicita DELETE /api/admin/users/:id"*.
+- **Entregable:**
+  1. En `CrearUsuarios.tsx`, al recibir 201:
+     - mostrar un toast o mensaje con `role="status"`, por ejemplo *"Usuario creado. La contraseña temporal se envió a <correo>."*;
+     - limpiar el formulario o volver a `/users`;
+     - eliminar la caja "Contraseña temporal generada" y los campos de contraseña del formulario.
+  2. Manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: *"No se pudo enviar el correo; el usuario no fue creado"*.
+  3. En `detailsUserPage.tsx`, conectar "Eliminar usuario" a un diálogo de confirmación explícita que envíe `DELETE /api/admin/users/:id` y espere 204. Después, mostrar un toast y volver a `/users`, o reflejar `activo: false`, que es una baja lógica.
+- **Criterio de éxito:** el administrador ve la confirmación de cada alta sin que se muestre ninguna contraseña, y puede dar de baja a un usuario desde el detalle. Los dos casos de FRN-06 de `admin-users.test.tsx` pasan.

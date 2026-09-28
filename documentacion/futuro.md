@@ -504,3 +504,44 @@ FIX DEL 21 AL 25 (en actual.md)
   1. En el Dashboard (**Belinda**), maquetar las tarjetas de resumen de VMs y LXC (`En ejecución`, `Detenidas`, `Total`) y configurar actualización automática cada 10 segundos (además de revalidar al recibir `TASK_FINISHED`).
   2. En la tabla de inventario (**Luz**), agregar las columnas de uso de CPU (`%`) y RAM (`GB usados / GB totales`), y actualizar el estado de la fila ante cualquier evento `TASK_FINISHED` recibido por `/api/events` aunque la acción la haya iniciado otro usuario.
 - **Criterio de éxito:** El Dashboard muestra y refresca sin `F5` las cantidades de VMs y LXC por estado; la tabla de inventario muestra CPU y RAM por instancia y se actualiza en vivo ante cambios de estado globales.
+---
+
+## 🛠️ Fixes detectados en la verificación del 25/09/2026
+
+Surgen de la corrida de `test/back` y `test/front` sobre el último commit de `main` (backend `eb0c9af`, frontend `7fbf969`). El detalle está en [test/informe.md](../test/informe.md). Cada FIX corrige una tarea ya movida a `terminado.md` con un entregable incumplido; su prueba de aceptación ya existe, lleva el ID del FIX y hoy falla.
+
+### `FIX-26` - Retrocompatibilidad de `PUT /permissions` con el payload `{ vmids }` (`SEC-04`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `SEC-04`.
+- **Problema y evidencia:** el entregable 4 de `SEC-04` exige *"mantener retrocompatibilidad total: si el payload de `PUT /permissions` solo envía `vmids: [101]`, asignar `FULL_ACCESS` por defecto"*. En `internal/adapters/primary/http/user_handler.go`, `asignarPermisosRequest` solo declara `Permisos []ports.PermisoInstanciaInput` con `binding:"required"`, así que el payload anterior se rechaza. La prueba `test/back/resource_access_acceptance_test.go`, caso *"FIX-26 SEC-04 retrocompatibilidad…"*, falla con:
+  ```
+  PUT permissions con el payload anterior { vmids: [103] }: esperado 204, recibido 400:
+    {"errorCode":"INVALID_REQUEST","message":"Se requiere el campo permisos (array de {vmid, nivelAcceso})."}
+  ```
+- **Entregable:**
+  1. Agregar a `asignarPermisosRequest` el campo opcional `Vmids []int` (`json:"vmids"`) y quitar el `binding:"required"` de `Permisos`.
+  2. En `AsignarPermisos`, validar que llegue exactamente uno de los dos campos. Si llega solo `vmids`, convertirlo a `[]PermisoInstanciaInput{ {Vmid: v, NivelAcceso: FULL_ACCESS} }`. Si no llega ninguno o llegan los dos, responder `400 INVALID_REQUEST`.
+  3. Mantener el resto del flujo igual: deduplicación, reemplazo atómico y auditoría `ASIGNAR_PERMISOS`.
+  4. Documentar ambos formatos en Swagger, con `{ vmids }` marcado como formato heredado.
+- **Criterio de éxito:** el caso `FIX-26 SEC-04 retrocompatibilidad…` pasa y los demás casos de `resource_access_acceptance_test.go` siguen en verde. En concreto:
+  - `PUT { "vmids": [103] }` → 204 con `nivel_acceso = FULL_ACCESS`, y el `GET` lo devuelve como `{ vmid: 103, nivelAcceso: "FULL_ACCESS" }`.
+  - `PUT { "vmids": [] }` → 204 y quita todos los permisos.
+  - `PUT {}` → 400.
+- **Alternativa:** si el equipo decide no mantener el formato heredado, porque el frontend ya usa `{ permisos }`, hay que corregir el entregable 4 de `SEC-04` en `terminado.md` y eliminar el caso de prueba. En ese caso este FIX queda sin efecto.
+
+### `FIX-27` - Mensaje específico cuando falla el envío del correo en el alta (`FIX-24`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FIX-24` y `BAC-16`.
+- **Problema y evidencia:** el entregable 2 de `FIX-24` pide *"manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: 'No se pudo enviar el correo; el usuario no fue creado'"*. El mensaje se arma bien en `components/features/createuser/services/createUserService.ts`, que relanza `ApiRequestError('No se pudo enviar el correo de activación; el usuario no fue dado de alta.', 502, 'EMAIL_DELIVERY_FAILED')`. Pero el `catch` de `components/features/createuser/hooks/useCreateUser.ts` lo ignora y siempre muestra el texto genérico *"No se pudo completar la creación del usuario."*. El administrador no se entera de que el problema fue el correo. La prueba `test/front/admin-users.test.tsx`, caso *"FIX-27 si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED)…"*, falla con `Unable to find an element with the text: /no se pudo enviar el correo|servidor de correo no está disponible/i`.
+- **Entregable:**
+  1. En el `catch` de `useCreateUser.submitNewUser`, si `error instanceof ApiRequestError && error.errorCode === 'EMAIL_DELIVERY_FAILED'`, usar `error.message` como descripción del toast de error. Mantener el mensaje genérico para el resto de los errores.
+  2. Conservar el comportamiento actual ante el error: no navegar a `/users` y dejar cargados los datos del formulario para reintentar.
+- **Criterio de éxito:** ante un 502 del correo el administrador ve el mensaje específico, sigue en el formulario de alta y los datos se conservan. Los casos `FIX-27…` de `admin-users.test.tsx` pasan y los demás casos de FRN-06 siguen en verde.

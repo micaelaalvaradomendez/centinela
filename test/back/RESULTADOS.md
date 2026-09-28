@@ -1,6 +1,6 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 25/09/2026. **Backend:** `eb0c9af` (`origin/main`), exportado con `git archive`. **Comando:** `CENTINELA_ROOT=<export> go test -v -count=1 ./...`. Se hicieron 2 corridas con el mismo resultado (~80 s) y no quedaron contenedores residuales.
+**Fecha:** 25/09/2026. **Backend:** submódulo actualizado a `eb0c9af` (último commit de `main`). **Comando:** `go test -v -count=1 ./...`. Se hicieron 2 corridas con el mismo resultado (~80 s) y no quedaron contenedores residuales.
 
 | Métrica | Valor |
 |---|---:|
@@ -21,7 +21,7 @@
 | FIX-16 / BAC-08 guard por recurso | regresión | ✅ |
 | BAC-14 inventario normalizado y filtrado | regresión | ✅ |
 | SEC-04 niveles FULL_ACCESS / READ_ONLY | SEC-04 | ✅ |
-| **SEC-04 retrocompatibilidad `{ vmids }`** | SEC-04, entregable 4 | ❌ |
+| **FIX-26 SEC-04 retrocompatibilidad `{ vmids }`** | SEC-04, entregable 4 → **FIX-26** | ❌ |
 | BAC-17 logout atómico (con cookie) | regresión | ✅ |
 | SEC-01 refresh solo en cookie HttpOnly | SEC-01 | ✅ |
 | SEC-01 / SEC-02 integración con el frontend | SEC-01 | ✅ |
@@ -37,7 +37,7 @@ password_recovery_acceptance_test.go:235: la base permitió TRUNCATE sobre audit
 ```
 No hay ningún trigger, `REVOKE` ni regla en `backend/`. La solución está detallada en FIX-23.
 
-### SEC-04, entregable 4: no hay retrocompatibilidad con `{ vmids }`
+### FIX-26 (SEC-04, entregable 4): no hay retrocompatibilidad con `{ vmids }`
 ```
 resource_access_acceptance_test.go:231: PUT permissions con el payload anterior { vmids: [103] }: esperado 204, recibido 400:
   {"errorCode":"INVALID_REQUEST", "message":"Se requiere el campo permisos (array de {vmid, nivelAcceso})."}

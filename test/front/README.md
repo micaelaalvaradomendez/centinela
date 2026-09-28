@@ -32,15 +32,15 @@ pnpm --dir test/front install
 pnpm --dir test/front test                 # contra el submódulo tal como está checkouteado
 ```
 
-**Probar la última versión del equipo sin tocar el submódulo.** `vitest.config.mjs` acepta `CENTINELA_FRONTEND_DIR`, que es la carpeta `centinela` de cualquier copia del frontend:
+Antes de correr la suite se trae el último commit del submódulo; ante un conflicto prevalece el remoto:
 
 ```bash
-mkdir -p /tmp/front-main
-git -C frontend fetch
-git -C frontend archive origin/main centinela | tar -x -C /tmp/front-main
-ln -s "$PWD/frontend/centinela/node_modules" /tmp/front-main/centinela/node_modules
-CENTINELA_FRONTEND_DIR=/tmp/front-main/centinela pnpm --dir test/front test
+git -C frontend fetch origin --prune
+git -C frontend checkout -B main origin/main --force
+git -C frontend reset --hard origin/main
 ```
+
+`vitest.config.mjs` también acepta `CENTINELA_FRONTEND_DIR` para apuntar a otra copia de `centinela/`, pero el procedimiento estándar es correr la suite sobre el submódulo actualizado.
 
 Si cambian las dependencias del frontend, primero hay que correr `pnpm install` en `frontend/centinela`.
 

@@ -5,17 +5,10 @@
 
 | Componente | Revisión probada | Cambios desde el informe anterior (23/09) |
 |---|---|---|
-| Backend | `eb0c9af` = `origin/main` | 5 commits: SEC-01 cookie HttpOnly (`c719c9b`, `47bb8f2`), SEC-04 niveles de acceso (`eb0c9af`), FIX-17 (`5407599`, solo documentación) y fecha de último acceso (`fec42b7`) |
-| Frontend | `7fbf969` = `origin/main` | 28 commits: alta y baja de usuarios con modal de confirmación, guardado del perfil (`PUT /admin/users/:id`), permisos con `nivelAcceso` y revert del rediseño del sidebar (`131ee7d`) |
+| Backend | `eb0c9af` (último commit de `main`) | 5 commits: SEC-01 cookie HttpOnly (`c719c9b`, `47bb8f2`), SEC-04 niveles de acceso (`eb0c9af`), FIX-17 (`5407599`, solo documentación) y fecha de último acceso (`fec42b7`) |
+| Frontend | `7fbf969` (último commit de `main`) | 28 commits: alta y baja de usuarios con modal de confirmación, guardado del perfil (`PUT /admin/users/:id`), permisos con `nivelAcceso` y revert del rediseño del sidebar (`131ee7d`) |
 
-**Cómo se ejecutó:** los dos `origin/main` se exportaron con `git archive` al directorio temporal, **sin modificar los submódulos**, y se probaron con estas variables:
-- `CENTINELA_ROOT`: el backend se construye con Docker Compose desde esa copia.
-- `CENTINELA_FRONTEND_DIR`: Vitest resuelve `@/` contra esa copia.
-
-Cada suite se ejecutó **dos veces** con el mismo resultado.
-
-> [!IMPORTANT]
-> La copia local de los submódulos sigue atrasada: backend en `15032da` y frontend en `5b91e80`, este último con 3 archivos modificados sin commitear que no son del equipo. Contra esa copia, el frontend da 30 fallos en lugar de 18. **Los resultados de este informe corresponden a `origin/main`**, que es lo que el equipo tiene integrado.
+**Cómo se ejecutó:** cada submódulo se actualizó a su último commit de `origin/main` (`git fetch` + `checkout -B main origin/main --force` + `reset --hard origin/main`). Ante un conflicto prevalece siempre el último commit remoto. Las suites se corrieron sobre esas carpetas, **dos veces** cada una, con el mismo resultado.
 
 ---
 
@@ -24,8 +17,8 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 | Suite | Casos | Aprueban | Fallan |
 |---|---:|---:|---:|
 | Backend (`test/back`) | 30 | 28 | **2** |
-| Frontend (`test/front`) | 79 | 61 | **18** |
-| **Total** | **109** | **89** | **20** |
+| Frontend (`test/front`) | 80 | 62 | **18** |
+| **Total** | **110** | **90** | **20** |
 
 **Avance desde el 23/09:**
 - Pasan a estar cumplidas: **SEC-01**, **FIX-17** y **FIX-25**.
@@ -41,7 +34,7 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 | Tarea | Área | Pruebas que la verifican |
 |---|---|---|
 | `SEC-01` | Back | `test/back/session_security_acceptance_test.go`: `SEC-01 refresh token solo en cookie HttpOnly` y `SEC-01 SEC-02 integracion…` |
-| `SEC-04` | Back | `test/back/resource_access_acceptance_test.go`: `SEC-04 niveles de acceso…` y `SEC-04 retrocompatibilidad…` |
+| `SEC-04` → `FIX-26` | Back | `test/back/resource_access_acceptance_test.go`: `SEC-04 niveles de acceso…` y `FIX-26 SEC-04 retrocompatibilidad…` |
 | `FRN-11` | Front | `test/front/admin-recovery.test.tsx` (4) |
 | `FRN-12` | Front | `test/front/recover-password.test.tsx` (7) |
 | `SEC-03` | Front | `test/front/navigation.test.tsx`, bloque SEC-03 (4) |
@@ -52,7 +45,7 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 | `FIX-21` | Front | `password-change.test.tsx`: `la pantalla de cambio ofrece cerrar sesión…` |
 | `FIX-22` | Front | `audit.test.tsx`: `si un operador intenta entrar a /auditoria…` |
 | `FIX-23` | Back | `password_recovery_acceptance_test.go`: `BAC-18 … append-only`, que verifica UPDATE, DELETE y TRUNCATE |
-| `FIX-24` | Front | `admin-users.test.tsx`, bloque FRN-06: alta, confirmación, formulario sin contraseña, 502 y baja con `DELETE` |
+| `FIX-24` → `FIX-27` | Front | `admin-users.test.tsx`, bloque FRN-06: alta, confirmación, formulario sin contraseña, baja con `DELETE` y los dos casos `FIX-27…` (mensaje del 502 y conservación del formulario) |
 | `FIX-25` | Front | `admin-users.test.tsx`: bloque FRN-06B (PUT del perfil) y bloque FIX-25 (409 `USER_CONFLICT`) |
 
 ---
@@ -78,7 +71,16 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 | `FIX-24` Alta sin contraseña y baja | 🟡 | 5/6 | **Implementado:**<br>• Alta con confirmación de correo y modal (`ConfirmUserAction`).<br>• Toast "Usuario creado exitosamente… enviada por correo".<br>• Formulario sin campos de contraseña.<br>• "Eliminar usuario" con modal que envía `DELETE /admin/users/:id`.<br>**Falla el entregable 2:** ante `502 EMAIL_DELIVERY_FAILED`, `createUserService.ts` arma el mensaje correcto, pero `useCreateUser.ts` lo descarta y muestra el genérico *"No se pudo completar la creación del usuario"*. | En el `catch` de `useCreateUser`, usar `error.message` en la descripción del toast cuando `errorCode === 'EMAIL_DELIVERY_FAILED'`. |
 | `FIX-25` Persistir edición del perfil | ✅ | 3/3 | — | Se verifican el `PUT /admin/users/:id` con los campos modificados (`userDetailsService.updateUserDetails`) y el 409 mostrado junto al campo de correo. Los 4 casos de FIX-14 siguen en verde, incluido "Solo lectura", que envía `READ_ONLY`. **Se puede pasar a `terminado.md`.** |
 
-**Hito "Gestión Administrativa de Usuarios":** el recorrido completo ya funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al operador. Solo queda el mensaje del 502 de `FIX-24`.
+**Hito "Gestión Administrativa de Usuarios":** el recorrido completo ya funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al operador. Solo queda el mensaje del 502 (`FIX-27`).
+
+> [!NOTE]
+> **Reclasificación (25/09/2026):**
+> - `SEC-01`, `FIX-17` y `FIX-25` pasaron todas sus pruebas y se movieron a `terminado.md`.
+> - `SEC-04` y `FIX-24` están implementadas con un entregable incumplido cada una. Pasaron a `terminado.md` con aviso, y sus correcciones quedaron en `futuro.md`:
+>   - **`FIX-26`**: retrocompatibilidad `{ vmids }` en backend.
+>   - **`FIX-27`**: mensaje del 502 en el alta.
+>
+>   Sus pruebas llevan el ID del FIX. `FIX-27` tiene además un caso que verifica que el formulario conserva los datos tras el 502; hoy pasa y queda como control de regresión.
 
 ---
 
@@ -113,8 +115,8 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 
 ## 6. Recomendaciones para la documentación
 
-- **Pasar a `terminado.md`:** `SEC-01`, `FIX-17` y `FIX-25`.
-- **`SEC-04`:** decidir si se mantiene el entregable 4 (retrocompatibilidad con `{ vmids }`). Si se mantiene, es un fix chico de backend.
+- ~~Pasar a `terminado.md`: `SEC-01`, `FIX-17` y `FIX-25`.~~ **Hecho el 25/09/2026.** También `SEC-04` y `FIX-24`, con sus correcciones `FIX-26` y `FIX-27`.
+- **`FIX-26`:** decidir si se mantiene la retrocompatibilidad con `{ vmids }`. Si no se mantiene, corregir el entregable 4 de `SEC-04` y descartar el FIX.
 - **`FIX-21` y `FIX-22`:** sus criterios citan "7/7", pero hoy esos archivos tienen 10 y 7 casos. Conviene decir "los casos de FIX-21/FIX-22 pasan" en lugar de un número fijo.
 - **Duplicados:** `FRN-11`/`FIX-19` y `FRN-12`/`FIX-18` describen el mismo trabajo con las mismas pruebas. Conviene dejar una sola tarea de cada par.
 
@@ -123,17 +125,18 @@ Cada suite se ejecutó **dos veces** con el mismo resultado.
 ## 7. Cómo reproducir
 
 ```bash
-S=/tmp/centinela-main && rm -rf $S && mkdir -p $S/stack/backend $S/front
-git -C backend fetch && git -C backend archive origin/main | tar -x -C $S/stack/backend
-cp -r docker $S/stack/docker
-git -C frontend fetch && git -C frontend archive origin/main centinela | tar -x -C $S/front
-ln -s "$PWD/frontend/centinela/node_modules" $S/front/centinela/node_modules
+# 1. Traer el último commit de cada submódulo (prevalece el remoto ante conflictos)
+for s in backend frontend; do
+  git -C $s fetch origin --prune
+  git -C $s checkout -B main origin/main --force
+  git -C $s reset --hard origin/main
+done
 
-# Backend (Docker): PostgreSQL + backend + stub de Proxmox
-(cd test/back && CENTINELA_ROOT=$S/stack CENTINELA_FRONTEND_DIR=$S/front/centinela go test -v -count=1 ./... | tee /tmp/back.log)
+# 2. Backend (Docker: PostgreSQL + backend + stub de Proxmox)
+(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)
 
-# Frontend
-CENTINELA_FRONTEND_DIR=$S/front/centinela pnpm --dir test/front test
+# 3. Frontend
+pnpm --dir test/front test
 ```
 
 Usar `| tee` y no `> archivo` para capturar la salida del backend: en este entorno, redirigir con `>` cortó la corrida y dejó contenedores huérfanos. El comando de limpieza está en `test/back/README.md`.
