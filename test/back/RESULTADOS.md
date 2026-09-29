@@ -1,12 +1,12 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 28/09/2026. **Backend:** submódulo en `d36bc50` (último commit de `main`). **Comando:** `go test -v -count=1 ./...`. Se hicieron 2 corridas con el mismo resultado (~2 min) y no quedaron contenedores residuales.
+**Fecha:** 29/09/2026. **Backend:** submódulo en `9554efa` (último commit de `main`). **Comando:** `go test -v -count=1 ./...`. Se hicieron 2 corridas con el mismo resultado (~2 min) y no quedaron contenedores residuales.
 
 | Métrica | Valor |
 |---|---:|
 | Casos | 38 |
-| Aprueban | 31 |
-| Fallan | **6** |
+| Aprueban | 32 |
+| Fallan | **5** |
 | Omitidos | 1 |
 
 ## Por caso
@@ -23,11 +23,11 @@
 | **BAC-17B una sesión = un registro** | BAC-17B | ❌ |
 | **BAC-18B índice parcial y particiones** | BAC-18B | ❌ |
 | BAC-19, BAC-20, BAC-16, BAC-21, FIX-17, BAC-13, BAC-15 | regresión | ✅ 7/7 |
-| **BAC-18 auditoría append-only** | BAC-18 / **FIX-23** | ❌ |
+| BAC-18 auditoría append-only (trigger + `REVOKE`, commits `ad52485` y `9554efa`) | BAC-18 / FIX-23 | ✅ |
 | BAC-07, FIX-16/BAC-08, BAC-14, SEC-04 | regresión | ✅ 4/4 |
 | SEC-04: el payload anterior `{ vmids }` se rechaza con 400 (contrato `{ permisos }`) | SEC-04 (FIX-26 descartado) | ✅ |
 | BAC-17, SEC-01, integración SEC-01/SEC-02 y FIX-08 | regresión | ✅ 4/4 (FIX-08 con 4 subcasos) |
-| **FRN-13 integración: logout tal como lo envía el frontend** | FRN-13 (regresión del frontend) | ❌ |
+| **FIX-28 FRN-13 integración: logout tal como lo envía el frontend** | FRN-13 (regresión del frontend) | ❌ |
 
 ## Fallos
 
@@ -37,7 +37,6 @@
 | BAC-16B | `con EMAIL_PROVIDER=smtp el alta no envió ningún correo SMTP…` | `cmd/api/main.go:85` siempre instancia `email.NewMockEmailService()` |
 | BAC-17B | `se crearon 13 filas y hay 13 activas` / `tras el logout quedaron 11 registros activos` | Login, 2FA y cada refresh insertan filas nuevas, y el logout solo desactiva el último access y el último refresh |
 | BAC-18B | `falta el índice parcial…`, `relkind actual "r"`, `falta la partición…`, `falta el índice compuesto…` | No hay migración |
-| BAC-18 / FIX-23 | `la base permitió UPDATE / DELETE / TRUNCATE sobre auditoria…` | No hay trigger ni `REVOKE` |
 | FRN-13 integración | `esperado 204, recibido 401: MISSING_TOKEN` / `el access token … recibido 200 (la sesión sigue activa)` | El frontend envía el logout sin Bearer (`skipAuthorization: true`, commit `deb59cb`) |
 
 ## Lo que la suite no cubre

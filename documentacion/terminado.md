@@ -368,8 +368,8 @@
 
 ### `BAC-18` - Base transversal de auditoría (append-only)
 
-> [!WARNING]
-> **Estado: Implementado con problema (verificado el 28/09/2026, backend `d36bc50`).** El registro, la consulta, los filtros, la exportación CSV y el 403 al operador funcionan. Pero la base de datos **permite `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria`** con las credenciales de la aplicación: no hay trigger, `REVOKE` ni regla, así que no se cumple el criterio "falla a nivel de base de datos". Prueba: `test/back/password_recovery_acceptance_test.go`, caso `BAC-18 … append-only`. La corrección es `FIX-23`, que **está en desarrollo en [`actual.md`](actual.md)**.
+> [!NOTE]
+> **Estado: Completada (verificado el 29/09/2026, backend `9554efa`).** El problema detectado el 23/09 (la base permitía `UPDATE` y `DELETE` sobre `auditoria`) se resolvió con `FIX-23`: trigger `trg_auditoria_inmutable` y `REVOKE`. `test/back/password_recovery_acceptance_test.go`, caso `BAC-18 … append-only`, pasa: registro, consulta, filtros, CSV, 403 al operador, y `UPDATE`, `DELETE` y `TRUNCATE` rechazados por el motor.
 
 - **Área:** Backend
 - **Asignado:** Tayra
@@ -610,10 +610,8 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `FRN-14` - Suite de pruebas unitarias y de integración para la vista de Auditoría (`Auditoria.tsx`)
 
-> [!WARNING]
-> **Estado: Implementado con problema (verificado el 28/09/2026, frontend `8d7ecab`).** La suite `test/front/audit.test.tsx` existe y verifica la carga paginada con Bearer, los registros reales, los filtros de acción, resultado y fechas, la paginación y la exportación CSV con Bearer (6/7).
->
-> **Falla el caso del guard:** `/auditoria` está bajo `loadProtectedSession` y no bajo `loadAdminSession` (`applicationRoutes.tsx:50`), así que **un OPERATOR puede entrar a la vista**. La corrección es `FIX-22`, que **está en desarrollo en [`actual.md`](actual.md)**.
+> [!NOTE]
+> **Estado: Completada (verificado el 29/09/2026, frontend `749194e`).** `test/front/audit.test.tsx` pasa 7/7: carga paginada con Bearer, registros reales, filtros de acción, resultado y fechas, paginación, exportación CSV con Bearer y redirección del OPERATOR a `/dashboard` (el guard se corrigió con `FIX-22`).
 
 - **Área:** Frontend
 - **Asignada:** Belinda / Luz
@@ -952,3 +950,57 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Depende de:** `INF-04`.
 - **Entregable:** whitelist de orígenes permitidos en CORS y certificados TLS configurados en Nginx para todo el tráfico hacia el frontend y la API.
 - **Criterio de éxito:** una petición desde un origen no autorizado es rechazada por CORS y el tráfico hacia el sistema se sirve únicamente sobre HTTPS.
+
+---
+
+# Verificación del 29/09/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `9554efa` y frontend `749194e`, el último commit de `main` en ambos submódulos.
+
+### `FIX-22` - Guard administrativo en la ruta `/auditoria` (`FRN-14` / `BAC-18`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 29/09/2026, frontend `749194e`, commit `5c3d780`).** `/auditoria` se movió al grupo `loadAdminSession` de `applicationRoutes.tsx`. `test/front/audit.test.tsx`, caso *"si un operador intenta entrar a /auditoria, el guard administrativo lo redirige a /dashboard"*, pasa, y los otros 6 casos de `FRN-14` siguen en verde. **Pendiente relacionado:** el enlace "Auditoría" del menú lateral sigue visible para el OPERATOR; eso lo cubre `SEC-03` en `actual.md`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda / Luz
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir (alta prioridad: es un control de acceso).
+- **Depende de:** `FRN-14` y `FIX-12`.
+- **Problema y evidencia:** en `frontend/centinela/src/routes/applicationRoutes.tsx` la ruta `{ path: '/auditoria', Component: AuditoriaPage }` está dentro del grupo `loadProtectedSession` y **no** dentro del grupo `loadAdminSession`. Un usuario `OPERATOR` puede abrir la vista de auditoría; el backend le responde 403 a los datos, pero la pantalla administrativa se muestra igual. La prueba `test/front/audit.test.tsx`, caso *"si un operador intenta entrar a /auditoria, el guard administrativo lo redirige a /dashboard"*, falla con `expected '/auditoria' to be '/dashboard'`.
+- **Entregable:** mover `{ path: '/auditoria', Component: AuditoriaPage }` al arreglo `children` del grupo con `loader: loadAdminSession`, junto a `/users`, `/users/new` y `/users/:userId`.
+- **Criterio de éxito:** un `OPERATOR` que navega a `/auditoria` es redirigido a `/dashboard`, y un `ADMIN` accede normalmente. `audit.test.tsx` pasa 7/7.
+- **Nota:** el acceso visible a Auditoría en el menú lateral, solo para administradores, forma parte de `SEC-03`, que sigue en `actual.md`.
+
+### `FIX-23` - Hacer append-only la tabla `auditoria` a nivel de base de datos (`BAC-18`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 29/09/2026, backend `9554efa`, commits `ad52485` y `9554efa`).** `postgres/db.go` y `scripts/init.sql` crean la función `audit_inmutabilidad()` y el trigger `trg_auditoria_inmutable` (`BEFORE UPDATE OR DELETE OR TRUNCATE … FOR EACH STATEMENT`). Además, se revocan `UPDATE`, `DELETE` y `TRUNCATE` al usuario de la aplicación, y la FK de `auditoria.usuario_id` pasa a `ON DELETE RESTRICT`. `test/back/password_recovery_acceptance_test.go`, caso `BAC-18 … append-only`, pasa: los tres comandos fallan en PostgreSQL, y el registro, la consulta, los filtros y el CSV siguen funcionando.
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `BAC-18`.
+- **Problema y evidencia:** el criterio de `BAC-18` exige que "un intento de `UPDATE` o `DELETE` sobre la auditoría con las credenciales de la aplicación falle a nivel de base de datos, no solo por convención de código". Hoy no existe ningún trigger, `REVOKE` ni regla: "append-only" solo aparece en comentarios (`internal/core/ports/audit_port.go:106`, `internal/core/domain/models.go:86`). La prueba `test/back/password_recovery_acceptance_test.go`, caso *"BAC-18 auditoria … append-only en la base"*, falla con:
+  ```
+  la base permitió UPDATE sobre auditoria con el usuario de la aplicación; la tabla no es append-only
+  la base permitió DELETE sobre auditoria con el usuario de la aplicación; la tabla no es append-only
+  ```
+- **Entregable:**
+  1. Crear, después del `AutoMigrate` en `postgres.InitDB()` o en `scripts/init.sql`, una función y un trigger idempotentes:
+     ```sql
+     CREATE OR REPLACE FUNCTION auditoria_append_only() RETURNS trigger AS $$
+     BEGIN
+       RAISE EXCEPTION 'la tabla auditoria es append-only (% no permitido)', TG_OP;
+     END; $$ LANGUAGE plpgsql;
+
+     DROP TRIGGER IF EXISTS trg_auditoria_append_only ON auditoria;
+     CREATE TRIGGER trg_auditoria_append_only
+       BEFORE UPDATE OR DELETE ON auditoria
+       FOR EACH ROW EXECUTE FUNCTION auditoria_append_only();
+     ```
+     Agregar también `BEFORE TRUNCATE ... FOR EACH STATEMENT`.
+  2. El trigger funciona aunque la aplicación se conecte con el usuario dueño de la tabla, que es el caso del entorno de pruebas y del compose actual. Como defensa adicional en producción, conectar la aplicación con un rol sin privilegios `UPDATE`/`DELETE` sobre `auditoria` (`REVOKE UPDATE, DELETE, TRUNCATE ON auditoria FROM <rol_app>`).
+  3. Revisar que ninguna ruta del backend haga `UPDATE`/`DELETE` sobre `auditoria`. Por ejemplo, el `ON DELETE SET NULL` de `usuario_id` al eliminar un usuario: si hace falta, resolverlo con eliminación lógica de usuarios, que es lo que ya hace `DELETE /admin/users/:id`.
+- **Criterio de éxito:** `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria` fallan en PostgreSQL con las credenciales de la aplicación; el registro y la consulta de auditoría siguen funcionando. El caso `BAC-18` de `password_recovery_acceptance_test.go` pasa.

@@ -4,13 +4,11 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!NOTE]
-> **Estado al 28/09/2026** (detalle en [test/informe.md](../test/informe.md)). En este archivo quedan **solo tareas sin implementar**; todas tienen pruebas que hoy fallan porque el código todavía no existe:
+> **Estado al 29/09/2026** (`FIX-22` y `FIX-23` se completaron y pasaron a [`terminado.md`](terminado.md)) (detalle en [test/informe.md](../test/informe.md)). En este archivo quedan **solo tareas sin implementar**; todas tienen pruebas que hoy fallan porque el código todavía no existe:
 >
 > | Tarea | Área | Qué falta |
 > |---|---|---|
 > | `SEC-03` | Frontend | `usePermissions()` / `PermissionGate` y ocultar "Auditoría" al OPERATOR en el menú |
-> | `FIX-22` | Frontend | Poner `/auditoria` bajo el guard `loadAdminSession` |
-> | `FIX-23` | Backend | Trigger que haga append-only la tabla `auditoria` |
 > | `INF-08` | Infraestructura | Documentar las variables `EMAIL_PROVIDER` y `SMTP_*` |
 > | `BAC-16B` | Backend | Adaptador `SmtpEmailService` elegido por `EMAIL_PROVIDER` |
 > | `BAC-17B` | Backend | 1 sesión de usuario = 1 registro en `sesiones_activas` |
@@ -54,49 +52,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 ---
-
-
-### `FIX-22` - Guard administrativo en la ruta `/auditoria` (`FRN-14` / `BAC-18`) (Frontend)
-
-- **Área:** Frontend
-- **Asignada:** Belinda / Luz
-- **Estimación:** 0,5 h
-- **Ventana propuesta:** A definir (alta prioridad: es un control de acceso).
-- **Depende de:** `FRN-14` y `FIX-12`.
-- **Problema y evidencia:** en `frontend/centinela/src/routes/applicationRoutes.tsx` la ruta `{ path: '/auditoria', Component: AuditoriaPage }` está dentro del grupo `loadProtectedSession` y **no** dentro del grupo `loadAdminSession`. Un usuario `OPERATOR` puede abrir la vista de auditoría; el backend le responde 403 a los datos, pero la pantalla administrativa se muestra igual. La prueba `test/front/audit.test.tsx`, caso *"si un operador intenta entrar a /auditoria, el guard administrativo lo redirige a /dashboard"*, falla con `expected '/auditoria' to be '/dashboard'`.
-- **Entregable:** mover `{ path: '/auditoria', Component: AuditoriaPage }` al arreglo `children` del grupo con `loader: loadAdminSession`, junto a `/users`, `/users/new` y `/users/:userId`.
-- **Criterio de éxito:** un `OPERATOR` que navega a `/auditoria` es redirigido a `/dashboard`, y un `ADMIN` accede normalmente. `audit.test.tsx` pasa 7/7.
-- **Nota:** el acceso visible a Auditoría en el menú lateral, solo para administradores, forma parte de `SEC-03`, que sigue en `actual.md`.
-
-### `FIX-23` - Hacer append-only la tabla `auditoria` a nivel de base de datos (`BAC-18`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `BAC-18`.
-- **Problema y evidencia:** el criterio de `BAC-18` exige que "un intento de `UPDATE` o `DELETE` sobre la auditoría con las credenciales de la aplicación falle a nivel de base de datos, no solo por convención de código". Hoy no existe ningún trigger, `REVOKE` ni regla: "append-only" solo aparece en comentarios (`internal/core/ports/audit_port.go:106`, `internal/core/domain/models.go:86`). La prueba `test/back/password_recovery_acceptance_test.go`, caso *"BAC-18 auditoria … append-only en la base"*, falla con:
-  ```
-  la base permitió UPDATE sobre auditoria con el usuario de la aplicación; la tabla no es append-only
-  la base permitió DELETE sobre auditoria con el usuario de la aplicación; la tabla no es append-only
-  ```
-- **Entregable:**
-  1. Crear, después del `AutoMigrate` en `postgres.InitDB()` o en `scripts/init.sql`, una función y un trigger idempotentes:
-     ```sql
-     CREATE OR REPLACE FUNCTION auditoria_append_only() RETURNS trigger AS $$
-     BEGIN
-       RAISE EXCEPTION 'la tabla auditoria es append-only (% no permitido)', TG_OP;
-     END; $$ LANGUAGE plpgsql;
-
-     DROP TRIGGER IF EXISTS trg_auditoria_append_only ON auditoria;
-     CREATE TRIGGER trg_auditoria_append_only
-       BEFORE UPDATE OR DELETE ON auditoria
-       FOR EACH ROW EXECUTE FUNCTION auditoria_append_only();
-     ```
-     Agregar también `BEFORE TRUNCATE ... FOR EACH STATEMENT`.
-  2. El trigger funciona aunque la aplicación se conecte con el usuario dueño de la tabla, que es el caso del entorno de pruebas y del compose actual. Como defensa adicional en producción, conectar la aplicación con un rol sin privilegios `UPDATE`/`DELETE` sobre `auditoria` (`REVOKE UPDATE, DELETE, TRUNCATE ON auditoria FROM <rol_app>`).
-  3. Revisar que ninguna ruta del backend haga `UPDATE`/`DELETE` sobre `auditoria`. Por ejemplo, el `ON DELETE SET NULL` de `usuario_id` al eliminar un usuario: si hace falta, resolverlo con eliminación lógica de usuarios, que es lo que ya hace `DELETE /admin/users/:id`.
-- **Criterio de éxito:** `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria` fallan en PostgreSQL con las credenciales de la aplicación; el registro y la consulta de auditoría siguen funcionando. El caso `BAC-18` de `password_recovery_acceptance_test.go` pasa.
 
 
 ### `INF-08` - Configuración de servidor/cuenta SMTP y variables de entorno para correo saliente
