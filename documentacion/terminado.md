@@ -862,25 +862,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   2. Deshabilitar el botón mientras se envía el formulario o el logout (`isSubmitting` / `isLoggingOut`).
 - **Criterio de éxito:** desde `/change-password` el usuario puede cerrar sesión: se llama a `/auth/logout`, se borra `centinela_access` y se navega a `/login`. `password-change.test.tsx` pasa 7/7.
 
-### `INF-06` - Despliegue de servicio Redis en Docker Compose y red `vmbr1`
 
-> [!NOTE]
-> **Estado: Completada (verificado el 28/09/2026, frontend `8d7ecab` / backend `d36bc50`).** `test/back/cierre_fase_base_acceptance_test.go`, caso `INF-06 …` (commit `2a943cd`). Se levanta el servicio `redis` de `backend/docker-compose.yml` y se verifica:
-> - Responde `PONG` con contraseña y `NOAUTH` sin ella.
-> - `maxmemory` es 268435456 (256 MB) y la política es `volatile-lru`.
-> - `REDIS_ADDR` y `REDIS_PASSWORD` están documentadas en `backend/.env.example`.
->
-> La pertenencia a la red `vmbr1` del servidor no se puede verificar desde el repo.
-
-- **Área:** Infraestructura
-- **Asignados:** Nico y Lucas
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base, previo a `BAC-17B`).
-- **Depende de:** `INF-03` e `INF-04`.
-- **Problema y contexto:** Se adelanta el despliegue de Redis al cierre de la fase base para alojar las sesiones activas con expiración automática (`TTL`), los tickets efímeros de WebSockets/SSE y la caché de Proxmox.
-- **Entregable:**
-  1. Agregar el contenedor `redis:7-alpine` en `docker-compose.yml` y en la red interna `vmbr1`, configurado con contraseña (`REDIS_PASSWORD`), límite de memoria (`maxmemory 256mb`, política `volatile-lru`) y variables `REDIS_ADDR` / `REDIS_PASSWORD` expuestas al contenedor del backend.
-- **Criterio de éxito:** Servicio Redis operativo y accesible desde la red interna `vmbr1`, respondiendo `PONG` a `redis-cli PING` con autenticación.
 
 ### `FIX-20` - Sincronización de políticas de complejidad y distinción UX entre Cambio y Restablecimiento (`FRN-10` / `FRN-12`) (Frontend / UX)
 
@@ -928,7 +910,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Estimación:** 2 h
 - **Ventana propuesta:** A definir (inmediatamente posterior a `SEC-03` y `SEC-04`).
 - **Depende de:** `SEC-03`, `SEC-04` y `FIX-14`.
-- **Problema y evidencia (`cierre-fase-base.md`):** `SEC-04` implementa `nivel_acceso` (`FULL_ACCESS` y `READ_ONLY`) en el backend, pero ninguna tarea de Frontend tenía asignado enviar ese nivel en `PUT /api/admin/users/:id/permissions`, leerlo al abrir la ficha del usuario ni exponerlo en `usePermissions()` (`SEC-03`) para distinguir quién puede solo ver una máquina de quién puede apagarla o reiniciarla.
+- **Problema y evidencia (análisis de cierre de la fase base):** `SEC-04` implementa `nivel_acceso` (`FULL_ACCESS` y `READ_ONLY`) en el backend, pero ninguna tarea de Frontend tenía asignado enviar ese nivel en `PUT /api/admin/users/:id/permissions`, leerlo al abrir la ficha del usuario ni exponerlo en `usePermissions()` (`SEC-03`) para distinguir quién puede solo ver una máquina de quién puede apagarla o reiniciarla.
 - **Entregable:**
   1. En `detailsUserPage.tsx` y `rolesAndPermissions.tsx`, leer el `nivelAcceso` de cada instancia desde `GET /api/admin/users/:id/permissions` y enviar `{ vmid, nivelAcceso: 'FULL_ACCESS' | 'READ_ONLY' }` en `PUT /api/admin/users/:id/permissions`.
   2. En el contexto `SEC-03` (`usePermissions()`), agregar el helper `canOperateInstance(vmid: number): boolean` (devuelve `true` solo si es `ADMIN` o si tiene `FULL_ACCESS` sobre ese `vmid`), diferenciándolo de `canAccessInstance(vmid)` (que devuelve `true` tanto para `READ_ONLY` como `FULL_ACCESS`).

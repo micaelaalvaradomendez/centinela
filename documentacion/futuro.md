@@ -19,10 +19,12 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
   - En PostgreSQL, se optimiza `sesiones_activas` mediante **índices parciales** (`WHERE activa = true`) y un **worker de purga periódica** que elimina registros inactivos o vencidos para evitar la degradación en cada request autenticado.
   - En la tabla `auditoria` (*append-only*, `FIX-23`), se incorpora **particionamiento trimestral por rango de fechas** (`PARTITION BY RANGE (fecha_hora)`) e indexación compuesta para sostener el crecimiento de registros operativos de las Etapas 1, 2 y 3 sin degradar las consultas ni exportaciones CSV.
 - **La auditoría (`RF-08`) y las tareas asíncronas (`RNF-04`) utilizan los modelos reales implementados en la base (`auditoria` y `tareas_asincronas`):** Toda acción de las siguientes etapas debe persistirse sobre estas tablas reales sin crear tablas paralelas (`audit_logs` o `user_instances`).
-- **Criterio estricto de Cierre de la Fase Base (Puente a Etapa 1):** La fase base **no** se cierra únicamente con `LOGIN-04`. Para iniciar la ejecución de la Etapa 1 deben estar aprobados: `LOGIN-04`, la totalidad de las tareas pendientes de `actual.md` (`SEC-01`, `SEC-03`, `SEC-04`, `FRN-11`, `FRN-12`, `FIX-17` a `FIX-25`) y las tareas de cierre/puente de este documento (`INF-06`, `INF-08`, `DB-01`, `SEC-04B`, `BRG-01` a `BRG-05`).
+- **Criterio de cierre de la Fase Base (actualizado el 30/09/2026):** la fase base se cierra cuando están aprobadas, con sus pruebas en verde, estas tareas:
+  - `LOGIN-04`.
+  - Todas las tareas de `actual.md`: `SEC-03`, `INF-08`, `BAC-16B`, `BAC-17B`, `BAC-18B` (DB-01), `FIX-27` a `FIX-30`, `BAC-21B` (BRG-01) y `BAC-21C` (BRG-02-BAC).
+  - Las tareas de la fase base que siguen en este archivo: `FRN-17C` (BRG-02-FRN) y `FIX-31`.
 
-
-
+  Las tareas puente `BRG-03`, `BRG-04` y `BRG-05` dependen de tareas de la Etapa 1 (`INF-07`, `BAC-25A`, `FRN-16`, `BAC-22` y `BAC-23A`). Por eso se movieron a `etapa1.md` y **no** bloquean el inicio de la Etapa 1.
 
 
 ### `LOGIN-04` - Prueba integral de autenticación y autorización
@@ -36,19 +38,8 @@ Las fechas y horarios siguientes son una propuesta de ejecución desde el jueves
 - **Criterio de éxito:** todos los recorridos válidos terminan con el acceso esperado y los intentos de omitir pasos, usar credenciales anteriores, acceder con otro rol, consultar una instancia no asignada o reutilizar un token revocado son rechazados con códigos HTTP controlados.
 
 
-### `QA-11` - Re-verificación completa tras el fix crítico
-
-- **Área:** Backend / Frontend
-- **Asignados:** Cristian, Tayra y Lisandro
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir, después de cerrar los fixes del hito de recursos.
-- **Depende de:** `BAC-14`, `FIX-14` y `FIX-16`.
-- **Problema:** las pruebas actuales todavía fallan en el circuito de permisos por instancia: contrato de endpoints, autorización por recurso, inventario Proxmox e integración del selector frontend.
-- **Entregable:** correr `test/back` completo contra el commit con los fixes aplicados y actualizar el estado real de cada tarea afectada en `terminado.md` (o devolverla a este documento si el criterio de éxito no se cumple).
-- **Criterio de éxito:** las suites backend y frontend pasan sin fallos relacionados con el hito de recursos y cada tarea marcada como terminada tiene su criterio de éxito confirmado por pruebas.
 
 ## Fase 3. Despliegue de persistencia y red
-
 
 
 ## Relación y orden de ejecución
@@ -182,8 +173,6 @@ Este bloque formaliza la seguridad completa (Fase 2) y cierra el hito integral `
 * `BAC-16` — Entrega segura de credenciales temporales vía SMTP.
 
 
-
-
 * **Frontend:**
 * `FRN-09` — Modal obligatorio de vinculación 2FA con escaneo de QR y confirmación.
 
@@ -192,9 +181,6 @@ Este bloque formaliza la seguridad completa (Fase 2) y cierra el hito integral `
 
 
 * `FRN-11` — Acciones de restablecimiento de contraseña y 2FA desde el panel de administración.
-
-
-
 
 
 #### 🎯 Prueba de Integración final (`LOGIN-04`):
@@ -263,123 +249,104 @@ FIX DEL 21 AL 25 (en actual.md)
 *(Todas las tareas están separadas estrictamente por equipo —**Infraestructura**, **Backend** o **Frontend**— para su asignación directa en ClickUp).*
 
 
-
-
 ---
 
-## 🔐 Bloque 5: Cierre de Huecos de la Fase Base (`cierre-fase-base.md`)
+## 🔐 Bloque 5: Cierre de Huecos de la Fase Base
+
+*(Origen: análisis de cierre de la fase base del 26/09/2026. Sus tareas se incorporaron como `FRN-18` (terminada), `BAC-21B`, `BAC-21C` (`actual.md`), `FRN-17C` (este archivo), el criterio de cierre de "Decisiones de alcance" y los ajustes de la Etapa 1 en `etapa1.md`).*
 
 
 ---
 
 ## 🌉 Bloque 6: Tareas Puente (Bridge) entre la Fase Base y la Etapa 1 (`etapa1.md`)
 
-*(Cada necesidad puente detectada en `cierre-fase-base.md` se divide en tareas individuales por área: **Backend**, **Infraestructura** y **Frontend**).*
+*(Tareas puente que pertenecen a la fase base. Las que dependen de tareas de la Etapa 1 — `BRG-03`, `BRG-04` y `BRG-05` — se movieron a `etapa1.md`).*
 
 
 
-### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Junto a `FRN-17A`.
-- **Depende de:** `BAC-21C` (`BRG-02-BAC`).
-- **Problema y contexto:** El hook `useEvents` del frontend no puede pasar el JWT por header en `EventSource`/WebSocket ni exponer el access token largo en la URL. Debe solicitar primero el ticket efímero al backend.
-- **Entregable:**
-  1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
-  2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
-- **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
-
-### `INF-07B` (`BRG-03`) - Configuración de Nginx para WebSocket/SSE (`RNF-06`) y permisos `VM.Allocate` / `VM.Monitor` en Proxmox
-
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Previo a `BAC-23A`, `BAC-24B` y `BAC-26`.
-- **Depende de:** `INF-04`, `INF-05`, `INF-07`.
-- **Problema y evidencia (`cierre-fase-base.md`):**
-  1. Nginx corta las conexiones de `/api/events` a los 60s o retiene los mensajes SSE en buffer si no tiene configuración específica.
-  2. El token de Proxmox de `INF-07` solo tiene `Sys.Audit`, `VM.Audit` y `VM.PowerMgmt`, por lo que Proxmox rechazará `DELETE /api/instances/:id` (requiere `VM.Allocate`) y la lectura de IPs por Guest Agent (requiere `VM.Monitor`).
-- **Entregable:**
-  1. Agregar en Nginx el bloque `location /api/events` con `proxy_http_version 1.1`, headers `Upgrade` y `Connection`, `proxy_buffering off`, `proxy_cache off` y `proxy_read_timeout 3600s`.
-  2. Asignar al API Token de Proxmox VE los privilegios `VM.Allocate` y `VM.Monitor` sobre el nodo/clúster de prueba.
-- **Criterio de éxito:** El stream `/api/events` funciona en tiempo real a través de Nginx sin cortes ni buffering; el token de Proxmox permite consultar IPs por Guest Agent y eliminar una VM detenida de prueba.
-
-
-
-### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Junto a `FRN-16` y `FRN-17B`.
-- **Depende de:** `BAC-25C` (`BRG-04-BAC`), `FRN-16`.
-- **Problema y evidencia (`cierre-fase-base.md`):** Si el usuario recarga la página (`F5`) o sufre un microcorte de red mientras una máquina se está encendiendo o apagando, la tabla pierde el estado en memoria y desbloquea los botones antes de que termine la operación, o pierde el evento `TASK_FINISHED`.
-- **Entregable:**
-  1. En la tabla de inventario (`FRN-16`), inicializar el estado `transitioning` (spinner + botones bloqueados) de cada fila si el ítem recibido de `GET /api/instances` trae `activeTask !== null`.
-  2. Al reconectar el canal `/api/events` tras una caída (`FRN-17C`), disparar un refresh silencioso de `GET /api/instances` para sincronizar los estados finales de las máquinas cuyos eventos hayan terminado durante la desconexión.
-- **Criterio de éxito:** Al recargar con `F5` en medio de una acción de energía, la fila continúa mostrando el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
-
-
-### `FRN-19C` (`BRG-05-FRN`) - Tarjetas de conteo de VMs/LXC con auto-actualización en Dashboard (`RF-02`) y columnas de CPU/RAM en Inventario (`RF-03`)
-
-- **Área:** Frontend
-- **Asignadas:** Belinda y Luz
-- **Estimación:** 2 h
-- **Ventana propuesta:** Junto a las vistas de Dashboard e Inventario de Etapa 1 (renumeradas como `FRN-19A/B` y `FRN-20A/B`).
-- **Depende de:** `BAC-22B` (`BRG-05-BAC`).
-- **Problema y evidencia (`cierre-fase-base.md`):** El Dashboard no tenía definido el renderizado del conteo de instancias por estado ni cómo actualizarse sin recargar (`RF-02`), y la tabla de inventario no incluía las columnas de CPU y RAM ni la actualización cuando otro usuario cambia el estado de una máquina (`RF-03`).
-- **Entregable:**
-  1. En el Dashboard (**Belinda**), maquetar las tarjetas de resumen de VMs y LXC (`En ejecución`, `Detenidas`, `Total`) y configurar actualización automática cada 10 segundos (además de revalidar al recibir `TASK_FINISHED`).
-  2. En la tabla de inventario (**Luz**), agregar las columnas de uso de CPU (`%`) y RAM (`GB usados / GB totales`), y actualizar el estado de la fila ante cualquier evento `TASK_FINISHED` recibido por `/api/events` aunque la acción la haya iniciado otro usuario.
-- **Criterio de éxito:** El Dashboard muestra y refresca sin `F5` las cantidades de VMs y LXC por estado; la tabla de inventario muestra CPU y RAM por instancia y se actualiza en vivo ante cambios de estado globales.
 ---
 
-## 🛠️ Fixes detectados en la verificación del 25/09/2026
+## 🧰 Redis y SMTP: parte local (repo del backend) y parte del servidor (30/09/2026)
 
-Surgen de la corrida de `test/back` y `test/front` sobre el último commit de `main` (backend `eb0c9af`, frontend `7fbf969`). El detalle está en [test/informe.md](../test/informe.md). Cada FIX corrige una tarea ya movida a `terminado.md` con un entregable incumplido; su prueba de aceptación ya existe, lleva el ID del FIX y hoy falla.
+`INF-06` e `INF-08` se dividieron en dos tareas cada una:
 
+| Tarea | Quién | Dónde | Destraba |
+|---|---|---|---|
+| `INF-06A` Redis local | Backend | Repo del backend (`docker-compose.yml`, `.env.example`) | `BAC-17A`, `BAC-17B`, `BAC-21C` |
+| `INF-06B` Redis en el servidor | Infraestructura | Servidor (`vmbr1`) | Despliegue en el servidor |
+| `INF-08B` Credenciales SMTP | Backend | Repo del backend (`.env.example`, `.env`) | `BAC-16B` |
+| `INF-08A` SMTP en el servidor | Infraestructura | Servidor | Envío real en el servidor |
 
-### `FIX-31` - Versionar y verificar el TLS de Nginx en el borde (`INF-05`) (Infraestructura)
+**El backend avanza en local con `INF-06A` e `INF-08B`, sin esperar al servidor.**
+
+### `INF-06A` - Redis local para desarrollo en el repositorio del backend
+
+- **Área:** Backend (en el repositorio del backend)
+- **Asignada:** Tayra
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** Ya.
+- **Depende de:** ninguna.
+- **Problema y evidencia:** el servicio `redis` ya está en `backend/docker-compose.yml`, con contraseña, `maxmemory 256mb` y `volatile-lru`, verificado por `test/back`. Pero el backend en local (`go run ./cmd/api`) **no lo puede usar**, por tres motivos:
+  - el servicio no publica ningún puerto;
+  - `REDIS_ADDR=redis:6379` solo resuelve dentro de Docker;
+  - la contraseña por defecto del compose (`centinela_redis_pass`) no coincide con la de `.env.example` (`centinela_redis_password`).
+- **Entregable:**
+  1. Publicar Redis **solo en loopback** en `backend/docker-compose.yml` (`127.0.0.1:6379:6379`).
+  2. En `backend/.env.example`, poner `REDIS_ADDR=localhost:6379` para desarrollo, con `redis:6379` comentado para cuando el backend corre en un contenedor, y unificar la contraseña con la del compose.
+- **Criterio de éxito:** con `docker compose up redis`, desde la máquina de desarrollo `redis-cli -h 127.0.0.1 -a <pass> PING` responde `PONG`, y sin contraseña responde `NOAUTH`. La prueba `INF-06A…` de `test/back` pasa.
+
+### `INF-06B` - Redis en el servidor (entornos de pruebas y estable)
+
+- **Área:** Infraestructura
+- **Asignados:** Nico y Lucas
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir. **No bloquea al backend**, que trabaja con `INF-06A`. Tiene que estar antes de desplegar `BAC-17B` y `BAC-21C` en el servidor.
+- **Depende de:** `INF-03` e `INF-04`.
+- **Entregable:**
+  1. Desplegar Redis en el servidor, en el LXC del backend o en uno propio de `vmbr1`, con contraseña y sin exponerlo fuera de la red interna.
+  2. Cargar `REDIS_ADDR` y `REDIS_PASSWORD` en el `.env` del backend de pruebas y del estable.
+- **Criterio de éxito:** desde el LXC del backend, `redis-cli -h <host> -a <pass> PING` responde `PONG` y sin contraseña responde `NOAUTH`. Desde fuera de la red interna no se alcanza.
+
+### `INF-08B` - Credenciales SMTP en `.env.example` y `.env` del repositorio del backend
+
+- **Área:** Backend (en el repositorio del backend)
+- **Asignado:** Lisandro
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** Ya. El `.env` ya está hecho en local, pero falta el `push`.
+- **Depende de:** ninguna.
+- **Problema y evidencia:** `BAC-16B` necesita credenciales SMTP reales para desarrollar y probar el envío desde local. Hoy `backend/.env.example` no tiene ninguna de las variables.
+- **Entregable:**
+  1. Agregar a `backend/.env.example` las variables sin comentar: `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
+  2. Tener las mismas variables en el `.env` local de cada desarrollador del backend (el `.env` no se versiona).
+  3. Hacer el `push` a `main`.
+- **Criterio de éxito:** la prueba `INF-08B…` de `test/back` pasa. La prueba lee `backend/.env.example`, verifica que estén las 6 variables con valores reales (no de ejemplo) y **se autentica contra el servidor SMTP**, sin enviar correos.
+- **Advertencia de seguridad:** `.env.example` queda versionado. Si contiene la contraseña real, cualquiera con acceso al repositorio puede enviar correo como El Centinela. Conviene una cuenta de uso exclusivo con permisos mínimos.
+
+### `INF-08A` - Configuración del SMTP en el servidor
 
 - **Área:** Infraestructura
 - **Asignado:** Nico
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `INF-04` e `INF-05`.
-- **Problema y evidencia:** el criterio de `INF-05` exige que *"el tráfico hacia el sistema se sirva únicamente sobre HTTPS"*. La configuración de Nginx del servidor (CT 103) no está versionada en ningún repositorio. El deploy (`frontend/.github/workflows/deploy-front-test.yml`) solo ejecuta `nginx -t` y `reload` sobre lo que ya existe en el contenedor, y el único `nginx.conf` versionado (`docker/nginx.conf`, el del escenario de integración) escucha solo en `:80`. Por eso no se puede verificar el TLS. Prueba omitida: `test/back/cierre_fase_base_acceptance_test.go`, caso *"FIX-31 INF-05 TLS en el borde con Nginx"*.
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir. **No bloquea al backend**, que trabaja con `INF-08B`.
+- **Depende de:** `INF-03`, `INF-04` e `INF-08B`.
 - **Entregable:**
-  1. Versionar la configuración de Nginx del borde, por ejemplo en `frontend/centinela/deploy/nginx.conf` o en `docker/`, con:
-     - `listen 443 ssl` y las rutas de `ssl_certificate` y `ssl_certificate_key` (sin incluir los certificados);
-     - `listen 80` que responda `return 301 https://$host$request_uri`;
-     - `proxy_pass` de `/api/` al backend.
-  2. Hacer que el deploy use ese archivo versionado.
-- **Criterio de éxito:** la configuración versionada sirve solo HTTPS y redirige HTTP → HTTPS. A partir de ahí, el caso `FIX-31…` deja de omitirse y verifica el archivo (443 ssl, redirección 301 y ningún `server` que sirva contenido por `:80`).
+  1. Cargar `EMAIL_PROVIDER` y `SMTP_*` en el `.env` del backend del servidor (pruebas y estable).
+  2. Habilitar y verificar la salida de red desde el LXC del backend hacia el host SMTP, por el puerto 587 (STARTTLS) o 465 (TLS). Por ejemplo, con `openssl s_client -starttls smtp -connect <host>:587`.
+- **Criterio de éxito:** desde el LXC del backend se establece la conexión TLS con el servidor SMTP, y el backend desplegado envía el correo de alta de usuario.
 
-
-### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Junto a `BAC-25A/B`.
-- **Depende de:** `BAC-25A`, `BAC-21B`.
-- **Problema y evidencia (`cierre-fase-base.md`):** Si el backend se reinicia mientras Proxmox ejecuta una orden, el worker en memoria pierde el seguimiento y la tarea queda en `RUNNING`/`PENDING` eternamente.
-- **Entregable:**
-  1. Al iniciar el backend, consultar en `tareas_asincronas` todas las filas con `estado = 'RUNNING'` y re-encolarlas automáticamente en el Worker Pool (`BAC-25A`) para continuar sondeando `/nodes/{node}/tasks/{upid}/status` hasta su finalización y registro en `auditoria`.
-  2. Poblar el campo `activeTask: { upid, action, status } | null` en cada instancia devuelta por `GET /api/instances` cruzando con las tareas en `estado = 'RUNNING'`.
-- **Criterio de éxito:** Reiniciar el backend durante una tarea de Proxmox no deja la tarea huérfana: al levantar retoma el sondeo, actualiza `tareas_asincronas` y `auditoria`, y emite `TASK_FINISHED`.
-
-### `BAC-22B` (`BRG-05-BAC`) - Agregación de conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
+### `BAC-17A` - Adaptador base de Redis en el backend (conexión, configuración y puerto)
 
 - **Área:** Backend
 - **Asignada:** Tayra
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Junto a `BAC-22` y `BAC-23A`.
-- **Depende de:** `BAC-22`, `BAC-23A`.
-- **Problema y evidencia (`cierre-fase-base.md`):** `RF-02` exige que el endpoint del Dashboard incluya la cantidad de VMs y LXC agrupadas por estado, y `RF-03` exige que cada instancia del inventario informe su uso de CPU y RAM.
+- **Estimación:** 2 h
+- **Ventana propuesta:** Ya. Es la base de `BAC-17B` y `BAC-21C`.
+- **Depende de:** `INF-06A` (Redis local). No depende del servidor (`INF-06B`).
+- **Problema y evidencia:** `BAC-17B` (sesiones en Redis con TTL) y `BAC-21C` (tickets de `/api/events` y bus Pub/Sub) dan por hecho que el backend ya habla con Redis. Hoy no es así: `go.mod` no incluye ningún cliente de Redis, no hay adaptador en `internal/adapters/secondary` y `cmd/api/main.go` no lee `REDIS_ADDR` ni `REDIS_PASSWORD`. Si cada tarea arma su propia conexión, se duplica el trabajo y se pisan entre sí.
 - **Entregable:**
-  1. En `GET /api/node/status` (`BAC-22`), incluir el resumen `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`.
-  2. En el adaptador de inventario (`BAC-23A`), mapear para cada VM y LXC los campos `cpuUsage` (porcentaje `0-100`), `ramUsage` (bytes/GB usados) y `maxRam` (bytes/GB asignados).
-- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose de VMs y LXC por estado cacheado en Redis, y `GET /api/instances` devuelve el consumo de CPU y RAM de cada instancia.
+  1. Agregar `github.com/redis/go-redis/v9` y crear `internal/adapters/secondary/redis/` con un constructor que lea `REDIS_ADDR`, `REDIS_PASSWORD` y `REDIS_DB` (opcional, default `0`).
+  2. Definir un puerto en `internal/core/ports`, por ejemplo `KeyValueStore`, con lo mínimo que usan las tareas siguientes:
+     - `Set(key, value, ttl)`, `Get`, `GetDel` (atómico) y `Del`, para las sesiones de BAC-17B y los tickets de BAC-21C;
+     - `Publish(canal, mensaje)` y `Subscribe(canal)`, para el bus de BAC-21C.
+  3. En `main.go`, conectarse al arrancar con un `PING` y un log claro. Hay que definir y documentar qué pasa si Redis no está: que el backend no arranque, o que funcione en modo degradado sin tickets ni bus.
+  4. Pruebas unitarias del adaptador con `miniredis` o contra el Redis del compose.
+- **Criterio de éxito:** con `docker compose up redis`, el backend en local arranca y confirma la conexión con Redis. `BAC-17B` y `BAC-21C` usan este puerto en lugar de crear sus propias conexiones.

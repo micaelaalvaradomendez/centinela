@@ -1,10 +1,13 @@
 package back_test
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/smtp"
 	"os"
 	"os/exec"
 	"regexp"
@@ -15,8 +18,8 @@ import (
 
 // Tareas de cierre de la fase base (documentacion/actual.md):
 //   - INF-05  CORS con lista blanca (el TLS de Nginx vive en el servidor y no está versionado)
-//   - INF-06  Redis en backend/docker-compose.yml con contraseña y límite de memoria
-//   - INF-08  Variables SMTP documentadas para el correo saliente
+//   - INF-06A Redis local para desarrollo (compose del backend, puerto en loopback)
+//   - INF-08B Credenciales SMTP en backend/.env.example que funcionan
 //   - BAC-16B Adaptador SmtpEmailService seleccionado por EMAIL_PROVIDER
 //   - BAC-17B 1 sesión de usuario = 1 registro activo en sesiones_activas
 //   - BAC-18B Índice parcial en sesiones_activas y particionamiento trimestral de auditoria
@@ -81,9 +84,21 @@ func TestCierreFaseBase(t *testing.T) {
 		t.Skip("INF-05 TLS no verificable automáticamente: la configuración de Nginx del servidor no está versionada; requiere verificación manual o versionar el archivo")
 	})
 
-	t.Run("INF-06 Redis con contraseña y limite de memoria en docker-compose del backend", func(t *testing.T) {
+	t.Run("INF-06A Redis local para desarrollo en el docker-compose del backend", func(t *testing.T) {
 		composePath := sourcePath("backend", "docker-compose.yml")
 		env := string(readFile(t, sourcePath("backend", ".env.example")))
+		composeText := string(readFile(t, composePath))
+		// El backend en local (go run) tiene que poder alcanzar Redis: puerto publicado solo en loopback
+		// y REDIS_ADDR apuntando a localhost.
+		if !regexp.MustCompile(`"?127\.0\.0\.1:6379:6379"?`).MatchString(composeText) {
+			t.Errorf("backend/docker-compose.yml no publica Redis en 127.0.0.1:6379: el backend en local no lo puede usar")
+		}
+		if envVars := parseEnvFile(env); !strings.HasPrefix(envVars["REDIS_ADDR"], "localhost:") && !strings.HasPrefix(envVars["REDIS_ADDR"], "127.0.0.1:") {
+			t.Errorf("REDIS_ADDR en backend/.env.example es %q; para desarrollo local debe ser localhost:6379", envVars["REDIS_ADDR"])
+		}
+		if m := regexp.MustCompile(`REDIS_PASSWORD:-([^}\s]+)`).FindStringSubmatch(composeText); m != nil && parseEnvFile(env)["REDIS_PASSWORD"] != m[1] {
+			t.Errorf("la contraseña por defecto del compose (%q) no coincide con REDIS_PASSWORD de .env.example (%q)", m[1], parseEnvFile(env)["REDIS_PASSWORD"])
+		}
 		for _, variable := range []string{"REDIS_ADDR=", "REDIS_PASSWORD="} {
 			if !strings.Contains(env, variable) {
 				t.Errorf("backend/.env.example no documenta %s para el backend", strings.TrimSuffix(variable, "="))
@@ -122,13 +137,35 @@ func TestCierreFaseBase(t *testing.T) {
 		}
 	})
 
-	t.Run("INF-08 variables SMTP documentadas para el correo saliente", func(t *testing.T) {
-		env := string(readFile(t, sourcePath("backend", ".env.example")))
-		compose := string(readFile(t, sourcePath("backend", "docker-compose.yml")))
+	t.Run("INF-08B credenciales SMTP en backend/.env.example y conexion real al servidor SMTP", func(t *testing.T) {
+		// Las credenciales del relay llegan en un commit del backend dentro de .env.example.
+		// La prueba verifica que estén completas y que funcionen: conecta, negocia TLS y se
+		// autentica contra el servidor SMTP. No envía ningún correo.
+		env := parseEnvFile(string(readFile(t, sourcePath("backend", ".env.example"))))
+		missing := false
 		for _, variable := range []string{"EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
-			if !strings.Contains(env, variable+"=") && !strings.Contains(compose, variable) {
-				t.Errorf("%s no está documentada en backend/.env.example ni en backend/docker-compose.yml", variable)
+			value, ok := env[variable]
+			switch {
+			case !ok:
+				t.Errorf("%s no está en backend/.env.example (o está comentada)", variable)
+				missing = true
+			case looksLikePlaceholder(value):
+				t.Errorf("%s en backend/.env.example tiene un valor de ejemplo (%q): faltan las credenciales reales del relay", variable, value)
+				missing = true
 			}
+		}
+		if missing {
+			return
+		}
+		if !strings.EqualFold(env["EMAIL_PROVIDER"], "smtp") {
+			t.Errorf("EMAIL_PROVIDER debe ser smtp para el correo saliente real, es %q", env["EMAIL_PROVIDER"])
+		}
+		if !regexp.MustCompile(`^[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}>?$`).MatchString(strings.Trim(env["SMTP_FROM"], `"`)) &&
+			!regexp.MustCompile(`<[^@\s]+@[^@\s]+\.[a-z]{2,}>$`).MatchString(env["SMTP_FROM"]) {
+			t.Errorf("SMTP_FROM no es una dirección de correo válida: %q", env["SMTP_FROM"])
+		}
+		if err := smtpLogin(env["SMTP_HOST"], env["SMTP_PORT"], env["SMTP_USER"], env["SMTP_PASS"]); err != nil {
+			t.Errorf("las credenciales SMTP de backend/.env.example no funcionan contra %s:%s: %v", env["SMTP_HOST"], env["SMTP_PORT"], err)
 		}
 	})
 
@@ -321,4 +358,76 @@ func passwordCandidates(body string) []string {
 		}
 	}
 	return candidates
+}
+
+// parseEnvFile interpreta un .env: KEY=VALUE por línea, ignora comentarios y líneas vacías.
+func parseEnvFile(content string) map[string]string {
+	env := map[string]string{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		if i := strings.Index(value, " #"); i >= 0 {
+			value = value[:i]
+		}
+		env[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
+	}
+	return env
+}
+
+// looksLikePlaceholder detecta valores de ejemplo que no son credenciales reales.
+func looksLikePlaceholder(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return true
+	}
+	for _, marker := range []string{"xxx", "cambia", "changeme", "tu-", "tu_", "<", "example.com", "ejemplo", "your", "placeholder"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// smtpLogin conecta al servidor SMTP (TLS implícito en 465, STARTTLS en el resto) y se
+// autentica con PLAIN. Cierra la sesión sin enviar correo.
+func smtpLogin(host, port, user, pass string) error {
+	address := net.JoinHostPort(host, port)
+	tlsConfig := &tls.Config{ServerName: host}
+	var client *smtp.Client
+	if port == "465" {
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", address, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("no se pudo abrir la conexión TLS: %w", err)
+		}
+		if client, err = smtp.NewClient(conn, host); err != nil {
+			return fmt.Errorf("el servidor no respondió como SMTP: %w", err)
+		}
+	} else {
+		conn, err := net.DialTimeout("tcp", address, 10*time.Second)
+		if err != nil {
+			return fmt.Errorf("sin conectividad de red (¿firewall o puerto bloqueado?): %w", err)
+		}
+		if client, err = smtp.NewClient(conn, host); err != nil {
+			return fmt.Errorf("el servidor no respondió como SMTP: %w", err)
+		}
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			client.Close()
+			return fmt.Errorf("el servidor no ofrece STARTTLS en el puerto %s", port)
+		}
+		if err := client.StartTLS(tlsConfig); err != nil {
+			client.Close()
+			return fmt.Errorf("falló STARTTLS: %w", err)
+		}
+	}
+	defer client.Close()
+	if err := client.Auth(smtp.PlainAuth("", user, pass, host)); err != nil {
+		return fmt.Errorf("el servidor rechazó el usuario o la contraseña: %w", err)
+	}
+	return client.Quit()
 }

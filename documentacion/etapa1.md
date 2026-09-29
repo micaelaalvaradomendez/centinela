@@ -6,6 +6,23 @@
 
 ---
 
+> [!IMPORTANT]
+> **Ajustes antes de cargar la Etapa 1 en ClickUp** (del análisis de cierre de la fase base, 26/09/2026; estado al 30/09/2026):
+> 1. **Tareas ya resueltas en la fase base:**
+>    - `INF-06` (Redis) está terminada.
+>    - `BAC-23B` ya existe como `GET /api/instances` (`BAC-14`), y su extensión retrocompatible con métricas y `nivelAcceso` es `BAC-21B`.
+>    - `BAC-24A` (`/status/:action`) y `BAC-24B` (`DELETE`, solo `ADMIN`, 409 si está encendida) también quedan cubiertas por `BAC-21B`.
+>
+>    Estas cuatro tareas se toman como verificación de lo hecho, no como desarrollo nuevo.
+> 2. **IDs repetidos:** `FRN-13A/B` y `FRN-14A/B` chocan con `FRN-13` (logout) y `FRN-14` (suite de auditoría), que ya están terminadas. Conviene renumerarlas desde `FRN-20` al cargarlas.
+> 3. **Nombres de tablas:** las tablas reales son `auditoria`, `tareas_asincronas` y `permisos_instancia`, ya corregidas en este documento.
+> 4. **Dependencias que faltaban:**
+>    - `FRN-15` y `FRN-16` dependen de `SEC-03` y `FRN-18` (`canOperateInstance`), para mostrar u ocultar botones según el rol y el nivel de acceso.
+>    - `BAC-27` depende de `FIX-23`.
+> 5. **`INF-07`:** el 29/09/2026 se verificó que el token `centi-api@pve!backend-token` ya tiene `Sys.Audit`, `VM.Audit`, `VM.PowerMgmt`, `VM.Allocate` y `VM.GuestAgent.Audit`. Solo falta documentarlo y confirmar la red.
+> 6. **Contrato de errores:** los códigos nuevos (409 por estado inválido, timeout de tarea, Proxmox inaccesible, `INSTANCE_PROTECTED`) se agregan al inventario de `FIX-08` y a Swagger (`RNF-05`) en cada tarea que los introduzca.
+> 7. **`RF-11`:** que la notificación enlace al detalle de la instancia queda pospuesto, porque en esta etapa no existe la vista de detalle.
+
 ## 1. Criterio de Planificación y Decisiones de Arquitectura
 
 1. **Regla de Granularidad ($\le$ 3 h):** Ninguna tarea supera las 2.5 horas de estimación. Cada ítem tiene una responsabilidad técnica única (separando capa de datos, lógica de negocio y capa visual) para evitar bloqueos, fatiga cognitiva y permitir entregas continuas en ClickUp.
@@ -16,7 +33,7 @@
    - Métricas históricas (`RF-05`), aprovisionamiento (`RF-07`) y snapshots (`RF-06`) corresponden a las Etapas 2 y 3.
 4. **Caché Compartida (Redis):** La telemetría del nodo (`GET /api/node/status`) consulta `/nodes/{node}/status` en Proxmox VE. Los datos se almacenan en Redis con un TTL corto (5 a 10 segundos) para no saturar al hipervisor y permitir escalabilidad horizontal del backend.
 5. **Reutilización de Cimientos Base:**
-   - **Auditoría (`BAC-18`):** Toda acción de ciclo de vida y borrado se persiste en la tabla append-only `audit_logs` con `user_id`, `resource_type`, `resource_id`, `upid` y resultado.
+   - **Auditoría (`BAC-18`):** Toda acción de ciclo de vida y borrado se persiste en la tabla append-only real **`auditoria`** (protegida por el trigger de `FIX-23`), guardando `upid`, `action` y `resource_type` en `detalles` (JSONB), y el estado de ejecución en **`tareas_asincronas`**. No se crean tablas paralelas (`audit_logs`).
    - **Contrato de Eventos (`BAC-21`):** Las notificaciones de fin de tarea emitidas por el worker de UPID respetan el schema genérico unificado de la etapa base (`TASK_FINISHED`).
 6. **Poller de UPID Desacoplado:** El backend responde `HTTP 202 Accepted` de inmediato con el identificador de tarea devuelto por Proxmox y delega el seguimiento a un worker pool concurrente en segundo plano.
 7. **Diseño Antierror en Frontend:** Patrón "Operación en progreso": al confirmar una acción, los controles de esa instancia se bloquean con spinner, impidiendo dobles envíos y órdenes conflictivas hasta recibir la confirmación vía WebSocket/SSE.
@@ -44,7 +61,7 @@ flowchart TD
         BAC25A[BAC-25A: Worker Poller Concurrente UPID]
         BAC25B[BAC-25B: Control Timeouts y Bus Eventos]
         BAC26[BAC-26: Emisión Eventos WS/SSE]
-        BAC27[BAC-27: Auditoría en audit_logs]
+        BAC27[BAC-27: Auditoría en auditoria]
     end
 
     subgraph Frontend_Views [Bloque 4: Dashboard e Inventario]
@@ -154,7 +171,7 @@ flowchart TD
 - **Depende de:** `BAC-23A`, `BAC-08` (middleware de permisos por recurso).
 - **Entregable:** Endpoint público autenticado `GET /api/instances` que aplica la matriz de control de acceso:
   - Si el rol es `ADMIN`, retorna el 100% de las instancias del host.
-  - Si el rol es `OPERATOR`, filtra cruzando contra la tabla `user_instances` y retorna únicamente sus instancias autorizadas.
+  - Si el rol es `OPERATOR`, filtra cruzando contra la tabla `permisos_instancia` y retorna únicamente sus instancias autorizadas.
 - **Criterio de éxito:** Un operador autenticado solo puede visualizar sus máquinas asignadas; llamadas no autenticadas devuelven `401` y llamadas sin permisos devuelven lista vacía.
 
 ---
@@ -167,7 +184,7 @@ flowchart TD
 - **Estimación:** 2.5 h
 - **Depende de:** `BAC-08`, `BAC-23B`, `INF-07`.
 - **Entregable:** Endpoint `POST /api/instances/{id}/status/{action}` (`start`, `shutdown`, `stop`, `reboot`).
-  - Valida el permiso del usuario en `user_instances`.
+  - Valida el permiso del usuario en `permisos_instancia` y exige nivel `FULL_ACCESS` (`SEC-04`).
   - Valida el estado previo de la instancia (ej. no enviar `start` a una máquina ya en ejecución).
   - Envía la orden a Proxmox VE, captura el string `UPID` de respuesta y retorna `HTTP 202 Accepted` con `{ "message": "Action accepted", "upid": "UPID:..." }`.
 - **Criterio de éxito:** Toda orden autorizada devuelve HTTP 202 con el UPID oficial; un usuario no asignado a la instancia recibe `403 Forbidden` sin que se envíe tráfico a Proxmox.
@@ -219,12 +236,12 @@ flowchart TD
   ```
 - **Criterio de éxito:** Los clientes conectados reciben el mensaje JSON inmediatamente al terminar la tarea; no se filtran eventos hacia usuarios sin permiso sobre la instancia.
 
-#### `BAC-27` - Auditoría de acciones de ciclo de vida en `audit_logs` (`RF-08`)
+#### `BAC-27` - Auditoría de acciones de ciclo de vida en `auditoria` (`RF-08`)
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-18` (tabla append-only `audit_logs`), `BAC-24A`, `BAC-24B`, `BAC-25B`.
-- **Entregable:** Registro estricto en la tabla inmutable `audit_logs`:
+- **Depende de:** `BAC-18` y `FIX-23` (tabla append-only `auditoria`), `BAC-24A`, `BAC-24B`, `BAC-25B`.
+- **Entregable:** Registro estricto en la tabla inmutable `auditoria`:
   - Entrada 1: Registro de la orden despachada (`action`, `user_id`, `resource_id`, `upid`, `status: "PENDING"`).
   - Entrada 2: Registro de resolución final (`status: "SUCCESS"` o `"FAILED"`, `exitstatus`).
 - **Criterio de éxito:** Auditoría trazable de cada clic operativo en la base de datos sin requerir migraciones de esquema adicionales.
@@ -338,7 +355,7 @@ flowchart TD
   1. Envío de acción y retorno de UPID con HTTP 202.
   2. Sondeo del worker hasta `exitstatus: OK`.
   3. Despacho del evento por WebSocket con payload de `BAC-21`.
-  4. Persistencia inmutable en `audit_logs`.
+  4. Persistencia inmutable en `auditoria`.
 - **Criterio de éxito:** Suite ejecutable de forma local o en CI pasando al 100% sin dependencias manuales.
 
 #### `INT-02` - Validación integral del Hito MVP Operativo (Smoke Test End-to-End)
@@ -352,8 +369,82 @@ flowchart TD
   3. **Inventario:** Comprueba que solo ve sus instancias autorizadas.
   4. **Ciclo de vida:** Enciende una VM apagada (`Start`), confirma modal, observa spinner y bloqueo.
   5. **Notificación:** Proxmox procesa la tarea, el backend emite el evento, la UI pasa a verde y salta el Toast de éxito.
-  6. **Auditoría:** Se valida que la acción figure registrada en `audit_logs`.
+  6. **Auditoría:** Se valida que la acción figure registrada en `auditoria`.
 - **Criterio de éxito:** Flujo completo sin fallas de consola ni inconsistencias de interfaz.
+
+---
+
+
+### Bloque 7: Tareas puente incorporadas desde `futuro.md` (30/09/2026)
+
+*(Se movieron desde `futuro.md` porque dependen de tareas de esta etapa.)*
+
+#### `INF-07B` (`BRG-03`) - Configuración de Nginx para WebSocket/SSE (`RNF-06`) y permisos `VM.Allocate` / `VM.Monitor` en Proxmox
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Previo a `BAC-23A`, `BAC-24B` y `BAC-26`.
+- **Depende de:** `INF-04`, `INF-05`, `INF-07`.
+- **Problema y evidencia (análisis de cierre de la fase base):**
+  1. Nginx corta las conexiones de `/api/events` a los 60s o retiene los mensajes SSE en buffer si no tiene configuración específica.
+  2. El token de Proxmox de `INF-07` solo tiene `Sys.Audit`, `VM.Audit` y `VM.PowerMgmt`, por lo que Proxmox rechazará `DELETE /api/instances/:id` (requiere `VM.Allocate`) y la lectura de IPs por Guest Agent (requiere `VM.Monitor`).
+- **Entregable:**
+  1. Agregar en Nginx el bloque `location /api/events` con `proxy_http_version 1.1`, headers `Upgrade` y `Connection`, `proxy_buffering off`, `proxy_cache off` y `proxy_read_timeout 3600s`.
+  2. Asignar al API Token de Proxmox VE los privilegios `VM.Allocate` y `VM.Monitor` sobre el nodo/clúster de prueba.
+- **Criterio de éxito:** El stream `/api/events` funciona en tiempo real a través de Nginx sin cortes ni buffering; el token de Proxmox permite consultar IPs por Guest Agent y eliminar una VM detenida de prueba.
+
+#### `BAC-22B` (`BRG-05-BAC`) - Agregación de conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `BAC-22` y `BAC-23A`.
+- **Depende de:** `BAC-22`, `BAC-23A`.
+- **Problema y evidencia (análisis de cierre de la fase base):** `RF-02` exige que el endpoint del Dashboard incluya la cantidad de VMs y LXC agrupadas por estado, y `RF-03` exige que cada instancia del inventario informe su uso de CPU y RAM.
+- **Entregable:**
+  1. En `GET /api/node/status` (`BAC-22`), incluir el resumen `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`.
+  2. En el adaptador de inventario (`BAC-23A`), mapear para cada VM y LXC los campos `cpuUsage` (porcentaje `0-100`), `ramUsage` (bytes/GB usados) y `maxRam` (bytes/GB asignados).
+- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose de VMs y LXC por estado cacheado en Redis, y `GET /api/instances` devuelve el consumo de CPU y RAM de cada instancia.
+
+#### `FRN-19C` (`BRG-05-FRN`) - Tarjetas de conteo de VMs/LXC con auto-actualización en Dashboard (`RF-02`) y columnas de CPU/RAM en Inventario (`RF-03`)
+
+- **Área:** Frontend
+- **Asignadas:** Belinda y Luz
+- **Estimación:** 2 h
+- **Ventana propuesta:** Junto a las vistas de Dashboard e Inventario de Etapa 1 (renumeradas como `FRN-19A/B` y `FRN-20A/B`).
+- **Depende de:** `BAC-22B` (`BRG-05-BAC`).
+- **Problema y evidencia (análisis de cierre de la fase base):** El Dashboard no tenía definido el renderizado del conteo de instancias por estado ni cómo actualizarse sin recargar (`RF-02`), y la tabla de inventario no incluía las columnas de CPU y RAM ni la actualización cuando otro usuario cambia el estado de una máquina (`RF-03`).
+- **Entregable:**
+  1. En el Dashboard (**Belinda**), maquetar las tarjetas de resumen de VMs y LXC (`En ejecución`, `Detenidas`, `Total`) y configurar actualización automática cada 10 segundos (además de revalidar al recibir `TASK_FINISHED`).
+  2. En la tabla de inventario (**Luz**), agregar las columnas de uso de CPU (`%`) y RAM (`GB usados / GB totales`), y actualizar el estado de la fila ante cualquier evento `TASK_FINISHED` recibido por `/api/events` aunque la acción la haya iniciado otro usuario.
+- **Criterio de éxito:** El Dashboard muestra y refresca sin `F5` las cantidades de VMs y LXC por estado; la tabla de inventario muestra CPU y RAM por instancia y se actualiza en vivo ante cambios de estado globales.
+
+#### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `BAC-25A/B`.
+- **Depende de:** `BAC-25A`, `BAC-21B`.
+- **Problema y evidencia (análisis de cierre de la fase base):** Si el backend se reinicia mientras Proxmox ejecuta una orden, el worker en memoria pierde el seguimiento y la tarea queda en `RUNNING`/`PENDING` eternamente.
+- **Entregable:**
+  1. Al iniciar el backend, consultar en `tareas_asincronas` todas las filas con `estado = 'RUNNING'` y re-encolarlas automáticamente en el Worker Pool (`BAC-25A`) para continuar sondeando `/nodes/{node}/tasks/{upid}/status` hasta su finalización y registro en `auditoria`.
+  2. Poblar el campo `activeTask: { upid, action, status } | null` en cada instancia devuelta por `GET /api/instances` cruzando con las tareas en `estado = 'RUNNING'`.
+- **Criterio de éxito:** Reiniciar el backend durante una tarea de Proxmox no deja la tarea huérfana: al levantar retoma el sondeo, actualiza `tareas_asincronas` y `auditoria`, y emite `TASK_FINISHED`.
+
+#### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `FRN-16` y `FRN-17B`.
+- **Depende de:** `BAC-25C` (`BRG-04-BAC`), `FRN-16`.
+- **Problema y evidencia (análisis de cierre de la fase base):** Si el usuario recarga la página (`F5`) o sufre un microcorte de red mientras una máquina se está encendiendo o apagando, la tabla pierde el estado en memoria y desbloquea los botones antes de que termine la operación, o pierde el evento `TASK_FINISHED`.
+- **Entregable:**
+  1. En la tabla de inventario (`FRN-16`), inicializar el estado `transitioning` (spinner + botones bloqueados) de cada fila si el ítem recibido de `GET /api/instances` trae `activeTask !== null`.
+  2. Al reconectar el canal `/api/events` tras una caída (`FRN-17C`), disparar un refresh silencioso de `GET /api/instances` para sincronizar los estados finales de las máquinas cuyos eventos hayan terminado durante la desconexión.
+- **Criterio de éxito:** Al recargar con `F5` en medio de una acción de energía, la fila continúa mostrando el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
 
 ---
 
@@ -382,4 +473,9 @@ flowchart TD
 | `FRN-17B` | Frontend | Cristian | 2.0 h | `FRN-16`, `FRN-17A` |
 | `INT-01` | Testing | Tayra, Cristian | 2.5 h | Bloques 2 y 3 cerrados |
 | `INT-02` | Integración | Equipo Completo | 2.0 h | Todas las anteriores |
-| **Total** | | | **46.0 h** | **Promedio: 2.19 h / tarea** |
+| `INF-07B` (BRG-03) | Infraestructura | Nico | 1.5 h | `INF-04`, `INF-05`/`FIX-31`, `INF-07` |
+| `BAC-22B` (BRG-05) | Backend | Tayra | 1.5 h | `BAC-22`, `BAC-23A` |
+| `FRN-19C` (BRG-05) | Frontend | Belinda, Luz | 2.0 h | `BAC-22B` |
+| `BAC-25C` (BRG-04) | Backend | Lisandro | 1.5 h | `BAC-25A`, `BAC-21B` |
+| `FRN-16B` (BRG-04) | Frontend | Cristian | 1.5 h | `BAC-25C`, `FRN-16` |
+| **Total** | | | **54.0 h** | **Promedio: 2.08 h / tarea** |

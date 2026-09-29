@@ -33,8 +33,15 @@ services:
       # con respuestas 200 reales, sin depender de un hipervisor físico.
       PROXMOX_BASE_URL: http://proxmox:80
       PROXMOX_NODE: pve
-      PROXMOX_USERNAME: stub@pve
-      PROXMOX_PASSWORD: stub
+      # Desde 725d436 el cliente usa solo API Token; el stub valida este token exacto.
+      PROXMOX_TOKEN_ID: stub@pve!tests
+      PROXMOX_TOKEN_SECRET: stub-secret
+      # VMIDs de infraestructura protegidos contra acciones destructivas (725d436).
+      # Se protege la 103 del stub para verificarlo sin afectar al resto de los casos.
+      PROXMOX_PROTECTED_VMIDS: "103"
+      # BAC-21C: Redis para los tickets de /api/events y el bus Pub/Sub.
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: redis-test
       # INF-05: lista blanca de orígenes CORS (middleware/cors_middleware.go)
       ALLOWED_ORIGINS: http://front.centinela.test
       # BAC-16B: este backend usa el correo simulado por consola (lo leen las pruebas).
@@ -46,6 +53,8 @@ services:
       db:
         condition: service_healthy
       proxmox:
+        condition: service_started
+      redis:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
@@ -66,8 +75,15 @@ services:
       APP_NAME: Centinela Test
       PROXMOX_BASE_URL: http://proxmox:80
       PROXMOX_NODE: pve
-      PROXMOX_USERNAME: stub@pve
-      PROXMOX_PASSWORD: stub
+      # Desde 725d436 el cliente usa solo API Token; el stub valida este token exacto.
+      PROXMOX_TOKEN_ID: stub@pve!tests
+      PROXMOX_TOKEN_SECRET: stub-secret
+      # VMIDs de infraestructura protegidos contra acciones destructivas (725d436).
+      # Se protege la 103 del stub para verificarlo sin afectar al resto de los casos.
+      PROXMOX_PROTECTED_VMIDS: "103"
+      # BAC-21C: Redis para los tickets de /api/events y el bus Pub/Sub.
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: redis-test
       ALLOWED_ORIGINS: http://front.centinela.test
       EMAIL_PROVIDER: smtp
       SMTP_HOST: mailpit
@@ -96,6 +112,10 @@ services:
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
     ports:
       - "127.0.0.1:${BACKEND_TEST_MAILPIT_PORT:-18025}:8025"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "redis-test"]
 
   proxmox:
     image: nginx:1.27-alpine

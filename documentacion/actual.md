@@ -9,7 +9,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > | Tarea | Área | Qué falta |
 > |---|---|---|
 > | `SEC-03` | Frontend | `usePermissions()` / `PermissionGate` y ocultar "Auditoría" al OPERATOR en el menú |
-> | `INF-08` | Infraestructura | Documentar las variables `EMAIL_PROVIDER` y `SMTP_*` |
 > | `BAC-16B` | Backend | Adaptador `SmtpEmailService` elegido por `EMAIL_PROVIDER` |
 > | `BAC-17B` | Backend | 1 sesión de usuario = 1 registro en `sesiones_activas` |
 > | `BAC-18B` | Backend | Índice parcial en `sesiones_activas` y particionado de `auditoria` |
@@ -54,32 +53,19 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ---
 
 
-### `INF-08` - Configuración de servidor/cuenta SMTP y variables de entorno para correo saliente
-
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `INF-03`, `INF-04`.
-- **Problema y contexto:** Para habilitar el envío real de correos (`RF-09` y `RF-13`) desde el backend, la infraestructura debe proveer las credenciales del relay/servidor SMTP y habilitar la salida de red en los puertos correspondientes (`587` STARTTLS / `465` TLS).
-- **Entregable:**
-  1. Configurar la cuenta de servicio o relay SMTP e inyectar en el entorno del servidor y en `.env.example` / `docker-compose.yml` las variables: `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
-  2. Verificar conectividad de red saliente desde el contenedor del backend hacia el host SMTP.
-- **Criterio de éxito:** Variables documentadas y conectividad validada desde el contenedor del backend hacia el puerto SMTP sin bloqueos de firewall.
-
 ### `BAC-16B` - Adaptador Go `SmtpEmailService` para envío real de credenciales y códigos OTP (`RF-09` / `RF-13`)
 
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2 h
 - **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `BAC-16`, `BAC-19`, `INF-08`.
+- **Depende de:** `BAC-16`, `BAC-19` e `INF-08B` (credenciales SMTP en el repo del backend, para desarrollar en local). No depende de la configuración del servidor (`INF-08A`).
 - **Problema y contexto:** `BAC-16` dejó creado el puerto hexagonal `ports.EmailService`, pero solo implementó `MockEmailService` por consola. El backend necesita el adaptador SMTP real para enviar las contraseñas temporales y los códigos de recuperación de 6 dígitos.
 - **Entregable:**
-  1. Implementar `SmtpEmailService` en `backend/internal/adapters/secondary/email/smtp_service.go` cumpliendo la interfaz `ports.EmailService` (`EnviarCredencialesTemporales` y `EnviarCodigoRecuperacion`) con soporte `STARTTLS`/`TLS`.
+  1. Implementar `SmtpEmailService` en `backend/internal/adapters/secondary/email/smtp_service.go` cumpliendo la interfaz `ports.EmailService` (`EnviarContrasenaTemporal` y `EnviarCodigoRecuperacion`, los nombres reales de `internal/core/ports/email_port.go`) con soporte `STARTTLS`/`TLS`.
   2. En `cmd/api/main.go`, instanciar `SmtpEmailService` cuando `EMAIL_PROVIDER=smtp` y mantener `MockEmailService` cuando `EMAIL_PROVIDER=mock` (usado por los tests automatizados).
   3. Estructurar los cuerpos de correo para alta de cuenta (`RF-09`), reset administrativo (`BAC-15`) y código OTP de 6 dígitos (`RF-13`).
-- **Criterio de éxito:** Con `EMAIL_PROVIDER=smtp`, el backend envía correos reales; ante un fallo de entrega aborta la operación y devuelve `502 EMAIL_DELIVERY_FAILED`; la suite de tests sigue pasando en modo `mock`.
+- **Criterio de éxito:** Con `EMAIL_PROVIDER=smtp` y las credenciales de `INF-08B`, el backend envía correos reales desde local; ante un fallo de entrega aborta la operación y devuelve `502 EMAIL_DELIVERY_FAILED`; la suite de tests sigue pasando en modo `mock`.
 
 
 ### `BAC-17B` - Corrección de lógica de inserción en `sesiones_activas` (1 sesión = 1 registro) y almacenamiento en Redis con TTL
@@ -88,7 +74,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Asignado:** Lisandro
 - **Estimación:** 2,5 h
 - **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `INF-06`, `BAC-17`.
+- **Depende de:** `INF-06A` (Redis local en el repo del backend), `BAC-17A` y `BAC-17`.
 - **Problema y diagnóstico en código (`backend/internal/core/services/auth_service.go`):**
   Actualmente el código de `auth_service.go` tiene un diseño ilógico que multiplica las filas en `sesiones_activas` por cada usuario:
   1. En `Login()` (líneas 76-84) inserta la **Fila 1** para el `jwtTemporal` (pre-2FA) con `activa = true`.
@@ -199,7 +185,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Estimación:** 2 h
 - **Ventana propuesta:** Previo al inicio de `BAC-23B`, `BAC-24A/B` y `BAC-27`.
 - **Depende de:** `BAC-14`, `FIX-16`, `SEC-04`, `FIX-23`.
-- **Problema y evidencia (`cierre-fase-base.md`):**
+- **Problema y evidencia (análisis de cierre de la fase base):**
   1. `etapa1.md` menciona `audit_logs` y `user_instances`, cuando las tablas reales en `domain/models.go` son `auditoria`, `tareas_asincronas` y `permisos_instancia`.
   2. `GET /api/instances` ya existe (`BAC-14`) y lo consume el selector `FRN-07`. Si se reemplaza su formato en vez de extenderlo, se rompe la pantalla de permisos.
   3. `FIX-16` creó `/api/instances/:vmid/start` y `/stop`, mientras que `BAC-24A` pide `/api/instances/:vmid/status/:action`. Además, falta exigir `FULL_ACCESS` en energía y restringir `DELETE /api/instances/:vmid` solo a `ADMIN`.
@@ -215,8 +201,8 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Asignada:** Tayra
 - **Estimación:** 2 h
 - **Ventana propuesta:** Junto a `BAC-25B` y `BAC-26`.
-- **Depende de:** `INF-06`, `BAC-17B`.
-- **Problema y evidencia (`cierre-fase-base.md`):** `EventSource` (SSE) y WebSockets no permiten enviar el header `Authorization: Bearer`, y la cookie `HttpOnly` de `SEC-01` solo viaja a `/api/auth`. Además, si se revoca la sesión o un permiso de instancia, las conexiones abiertas deben cerrarse o actualizar su filtro, y el bus de eventos debe usar Redis Pub/Sub para funcionar con más de una réplica.
+- **Depende de:** `INF-06A` (Redis local en el repo del backend), `BAC-17A` y `BAC-17B`.
+- **Problema y evidencia (análisis de cierre de la fase base):** `EventSource` (SSE) y WebSockets no permiten enviar el header `Authorization: Bearer`, y la cookie `HttpOnly` de `SEC-01` solo viaja a `/api/auth`. Además, si se revoca la sesión o un permiso de instancia, las conexiones abiertas deben cerrarse o actualizar su filtro, y el bus de eventos debe usar Redis Pub/Sub para funcionar con más de una réplica.
 - **Entregable:**
   1. Crear el endpoint `POST /api/events/ticket` (bajo `RequireAuth`) que guarde en Redis un ticket de un solo uso con TTL de 30 segundos (`SET ws_ticket:<uuid> <usuario_id> EX 30`) y devuelva `{ ticket }`.
   2. En `GET /api/events?ticket=<uuid>`, validar y consumir atómicamente (`GETDEL`) el ticket en Redis antes de abrir el canal SSE/WebSocket.
@@ -224,3 +210,33 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Criterio de éxito:** `/api/events` rechaza con 401 tickets inválidos o reutilizados; al hacer logout o desactivar al usuario, el backend corta el stream inmediatamente.
 
 
+---
+### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `FRN-17A`.
+- **Depende de:** `BAC-21C` (`BRG-02-BAC`).
+- **Problema y contexto:** El hook `useEvents` del frontend no puede pasar el JWT por header en `EventSource`/WebSocket ni exponer el access token largo en la URL. Debe solicitar primero el ticket efímero al backend.
+- **Entregable:**
+  1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
+  2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
+- **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
+
+
+### `FIX-31` - Versionar y verificar el TLS de Nginx en el borde (`INF-05`) (Infraestructura)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `INF-04` e `INF-05`.
+- **Problema y evidencia:** el criterio de `INF-05` exige que *"el tráfico hacia el sistema se sirva únicamente sobre HTTPS"*. La configuración de Nginx del servidor (CT 103) no está versionada en ningún repositorio. El deploy (`frontend/.github/workflows/deploy-front-test.yml`) solo ejecuta `nginx -t` y `reload` sobre lo que ya existe en el contenedor, y el único `nginx.conf` versionado (`docker/nginx.conf`, el del escenario de integración) escucha solo en `:80`. Por eso no se puede verificar el TLS. Prueba omitida: `test/back/cierre_fase_base_acceptance_test.go`, caso *"FIX-31 INF-05 TLS en el borde con Nginx"*.
+- **Entregable:**
+  1. Versionar la configuración de Nginx del borde, por ejemplo en `frontend/centinela/deploy/nginx.conf` o en `docker/`, con:
+     - `listen 443 ssl` y las rutas de `ssl_certificate` y `ssl_certificate_key` (sin incluir los certificados);
+     - `listen 80` que responda `return 301 https://$host$request_uri`;
+     - `proxy_pass` de `/api/` al backend.
+  2. Hacer que el deploy use ese archivo versionado.
+- **Criterio de éxito:** la configuración versionada sirve solo HTTPS y redirige HTTP → HTTPS. A partir de ahí, el caso `FIX-31…` deja de omitirse y verifica el archivo (443 ssl, redirección 301 y ningún `server` que sirva contenido por `:80`).

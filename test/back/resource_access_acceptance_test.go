@@ -118,6 +118,16 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 		if status != http.StatusOK {
 			t.Errorf("GET /instances/103 con ADMIN: esperado 200, recibido %d: %#v", status, body)
 		}
+
+		// VMIDs de infraestructura (commit 725d436, PROXMOX_PROTECTED_VMIDS=103 en compose.yaml):
+		// ni el ADMIN puede apagarlos, y Proxmox no recibe la orden.
+		status, body = requestJSON(t, http.MethodPost, "/instances/103/stop", adminToken, nil)
+		if status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
+			t.Errorf("POST /instances/103/stop (VMID protegido) con ADMIN: esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", status, body)
+		}
+		if stubLog, _ := runCompose("logs", "--no-color", "proxmox"); strings.Contains(stubLog, "/qemu/103/status/stop") {
+			t.Errorf("Proxmox recibió la orden de apagar la VM protegida 103")
+		}
 	})
 
 	t.Run("BAC-14 GET /api/instances normaliza el inventario y lo filtra por permisos", func(t *testing.T) {
