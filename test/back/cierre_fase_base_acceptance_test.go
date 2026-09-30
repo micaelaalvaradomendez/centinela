@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"path/filepath"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -76,12 +77,87 @@ func TestCierreFaseBase(t *testing.T) {
 		}
 	})
 
-	t.Run("FIX-31 INF-05 TLS en el borde con Nginx", func(t *testing.T) {
-		// El criterio ("el tráfico se sirve únicamente sobre HTTPS") depende de la
-		// configuración de Nginx del contenedor CT 103, que no está versionada en
-		// ningún repositorio: el deploy (frontend/.github/workflows/deploy-front-test.yml)
-		// solo ejecuta `nginx -t` y `reload` sobre la configuración del servidor.
-		t.Skip("INF-05 TLS no verificable automáticamente: la configuración de Nginx del servidor no está versionada; requiere verificación manual o versionar el archivo")
+	t.Run("FIX-31 INF-05 TLS en el borde con Nginx versionado", func(t *testing.T) {
+		// El criterio de INF-05 ("el tráfico se sirve únicamente sobre HTTPS") se verifica sobre la
+		// configuración de Nginx del borde versionada en el repo del frontend, del backend o en docker/.
+		var candidates []string
+		for _, root := range []string{sourcePath("frontend", "."), sourcePath("backend", "."), "../../docker"} {
+			_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if entry.IsDir() && (entry.Name() == "node_modules" || entry.Name() == ".git") {
+					return filepath.SkipDir
+				}
+				if !entry.IsDir() && (strings.HasSuffix(path, ".conf") || strings.Contains(entry.Name(), "nginx")) {
+					if content, err := os.ReadFile(path); err == nil && strings.Contains(string(content), "server {") {
+						candidates = append(candidates, path)
+					}
+				}
+				return nil
+			})
+		}
+		var edge, edgePath string
+		for _, path := range candidates {
+			content, _ := os.ReadFile(path)
+			if regexp.MustCompile(`listen\s+(\[::\]:)?443\s+ssl`).Match(content) {
+				edge, edgePath = string(content), path
+				break
+			}
+		}
+		if edge == "" {
+			t.Fatalf("FIX-31 no implementada: no hay ninguna configuración de Nginx versionada con `listen 443 ssl` (revisados: %v)", candidates)
+		}
+		if !strings.Contains(edge, "ssl_certificate ") || !strings.Contains(edge, "ssl_certificate_key") {
+			t.Errorf("%s: el server HTTPS no declara ssl_certificate y ssl_certificate_key", edgePath)
+		}
+		if !regexp.MustCompile(`return\s+301\s+https://`).MatchString(edge) {
+			t.Errorf("%s: falta el server en :80 que redirige con `return 301 https://…`", edgePath)
+		}
+		if !regexp.MustCompile(`location\s+/api/[\s\S]*?proxy_pass`).MatchString(edge) {
+			t.Errorf("%s: falta `location /api/ { proxy_pass … }` hacia el backend", edgePath)
+		}
+		for _, block := range regexp.MustCompile(`(?s)server\s*\{.*?\n\}`).FindAllString(edge, -1) {
+			if regexp.MustCompile(`listen\s+(\[::\]:)?80\b`).MatchString(block) &&
+				(strings.Contains(block, "proxy_pass") || strings.Contains(block, "root ")) {
+				t.Errorf("%s: un server en :80 sirve contenido en lugar de redirigir a HTTPS", edgePath)
+			}
+		}
+	})
+
+	t.Run("BAC-17A el backend se conecta a Redis con un adaptador propio", func(t *testing.T) {
+		goMod := string(readFile(t, sourcePath("backend", "go.mod")))
+		if !strings.Contains(goMod, "github.com/redis/go-redis/v9") {
+			t.Errorf("backend/go.mod no incluye github.com/redis/go-redis/v9")
+		}
+		adapters, _ := filepath.Glob(sourcePath("backend", "internal/adapters/secondary/redis/*.go"))
+		if len(adapters) == 0 {
+			t.Errorf("no existe el adaptador internal/adapters/secondary/redis/")
+		}
+		ports := ""
+		files, _ := filepath.Glob(sourcePath("backend", "internal/core/ports/*.go"))
+		for _, file := range files {
+			ports += string(readFile(t, file))
+		}
+		for _, method := range []string{"GetDel", "Publish", "Subscribe"} {
+			if !regexp.MustCompile(`(?m)^\s+` + method + `\(`).MatchString(ports) {
+				t.Errorf("ningún puerto de internal/core/ports declara %s(...) para BAC-17B y BAC-21C", method)
+			}
+		}
+		// Comportamiento: con REDIS_ADDR configurado (compose.yaml), el backend mantiene una conexión abierta.
+		clients, err := runCompose("exec", "-T", "redis", "redis-cli", "-a", "redis-test", "--no-auth-warning", "CLIENT", "LIST")
+		if err != nil {
+			t.Fatalf("no se pudo consultar Redis: %v\n%s", err, clients)
+		}
+		connected := 0
+		for _, line := range strings.Split(strings.TrimSpace(clients), "\n") {
+			if line != "" && !strings.Contains(line, "cmd=client") {
+				connected++
+			}
+		}
+		if connected == 0 {
+			t.Errorf("el backend arrancó con REDIS_ADDR=redis:6379 pero no tiene ninguna conexión abierta con Redis")
+		}
 	})
 
 	t.Run("INF-06A Redis local para desarrollo en el docker-compose del backend", func(t *testing.T) {

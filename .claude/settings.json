@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"^#### \\\\`FIX-3[23]\\\\`\\\\|FIX-32\\\\` | Backend\" etapa1.md)"
+    ]
+  }
+}

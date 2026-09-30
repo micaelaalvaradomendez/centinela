@@ -9,7 +9,7 @@
 > [!IMPORTANT]
 > **Ajustes antes de cargar la Etapa 1 en ClickUp** (del análisis de cierre de la fase base, 26/09/2026; estado al 30/09/2026):
 > 1. **Tareas ya resueltas en la fase base:**
->    - `INF-06` (Redis) está terminada.
+>    - `INF-06` (Redis) se dividió en `INF-06A` (Redis local, backend) e `INF-06B` (servidor, infraestructura), las dos en `futuro.md`.
 >    - `BAC-23B` ya existe como `GET /api/instances` (`BAC-14`), y su extensión retrocompatible con métricas y `nivelAcceso` es `BAC-21B`.
 >    - `BAC-24A` (`/status/:action`) y `BAC-24B` (`DELETE`, solo `ADMIN`, 409 si está encendida) también quedan cubiertas por `BAC-21B`.
 >
@@ -45,8 +45,9 @@
 ```mermaid
 flowchart TD
     subgraph Infra [Bloque 1: Infraestructura]
-        INF06[INF-06: Despliegue de Redis]
-        INF07[INF-07: Permisos Token y Red vmbr1]
+        SIM[Simulador Proxmox local + BAC-28]
+        RED[INF-06A + BAC-17A: Redis local]
+        INF07[INF-07: Token y red en servidor]
     end
 
     subgraph Backend_Read [Bloque 2: Telemetría e Inventario]
@@ -83,11 +84,12 @@ flowchart TD
         INT02[INT-02: Smoke Test Integral Hito MVP]
     end
 
-    INF06 --> BAC22
-    INF07 --> BAC22
-    INF07 --> BAC23A
-    INF07 --> BAC24A
-    INF07 --> BAC24B
+    RED --> BAC22
+    SIM --> BAC22
+    SIM --> BAC23A
+    SIM --> BAC24A
+    SIM --> BAC24B
+    INF07 --> INT03
 
     BAC23A --> BAC23B
 
@@ -118,6 +120,7 @@ flowchart TD
     BAC26 --> INT01
     FRN17B --> INT02
     INT01 --> INT02
+    INT02 --> INT03[INT-03: Validación en servidor]
 ```
 
 ---
@@ -126,23 +129,31 @@ flowchart TD
 
 ### Bloque 1: Infraestructura y Entorno
 
-#### `INF-06` - Despliegue de Redis para caché distribuida
+> [!IMPORTANT]
+> **Segmentación local / servidor (30/09/2026).** Se aplica la misma regla que en la fase base con Redis y SMTP: **el backend y el frontend desarrollan y prueban en local, sin esperar al servidor**, e infraestructura configura el servidor en tareas aparte. Las dos partes solo se juntan en la validación final (`INT-03`).
+>
+> | Lo que necesita el desarrollo | En local (no bloquea) | En el servidor (infraestructura) |
+> |---|---|---|
+> | Proxmox VE | **Simulador de Proxmox** del backend (`cmd/proxmox-simulador`, commit `de407a5`), más `BAC-28` para lo que le falta | `INF-07`: token y conectividad |
+> | Redis | `INF-06A` (Redis local) y `BAC-17A` (cliente), en `futuro.md` | `INF-06B`, en `futuro.md` |
+> | SMTP | `INF-08B` (credenciales en el repo), en `futuro.md` | `INF-08A`, en `futuro.md` |
+> | Nginx para WebSocket/SSE | No hace falta: en local el frontend habla directo con el backend | `INF-07B`: Nginx |
+>
+> La tarea `INF-06` de este documento se eliminó: quedó cubierta por `INF-06A` (local) e `INF-06B` (servidor), creadas en la fase base.
+
+#### `INF-07` - Token de Proxmox y conectividad desde el servidor
+
 - **Área:** Infraestructura
-- **Asignados:** Nico y Lucas
-- **Estimación:** 2.0 h
-- **Depende de:** `INF-03` e `INF-04` (red interna `vmbr1` operativa).
-- **Entregable:** Servicio de Redis incorporado al Docker Compose / contenedor LXC en la red `vmbr1`, configurado con credenciales seguras y variables de entorno documentadas para el backend.
-- **Criterio de éxito:** Conexión validada desde el contenedor backend ejecutando `PING`, `SET` con expiración y `GET` contra la instancia de Redis.
-
-#### `INF-07` - Permisos granulares de API Token y conectividad Proxmox
-- **Área:** Infraestructura / Backend
 - **Asignado:** Nico
-- **Estimación:** 2.0 h
+- **Estimación:** 1.0 h
 - **Depende de:** ninguna.
-- **Entregable:** API Token de Proxmox VE con separación de privilegios activa y permisos mínimos requeridos: `Sys.Audit` (telemetría host), `VM.Audit` (lectura de instancias e IPs) y `VM.PowerMgmt` (acciones de energía y tareas). Verificación de resolución DNS y conectividad HTTPS vía `vmbr1`.
-- **Criterio de éxito:** Comprobación con `curl` desde el entorno del backend hacia `/nodes/{node}/status` y `/nodes/{node}/qemu` retornando `200 OK` con el token.
+- **No bloquea al desarrollo:** `BAC-22`, `BAC-23A`, `BAC-24A` y `BAC-24B` se desarrollan contra el simulador. Esta tarea solo hace falta para `INT-03` (el servidor).
+- **Estado verificado (29/09/2026):** el token `centi-api@pve!backend-token` ya responde 200 en `/version`, `/nodes/proxmox/status`, `/cluster/resources` y `/cluster/nextid`, y tiene `Sys.Audit`, `VM.Audit`, `VM.PowerMgmt`, `VM.Allocate` y `VM.GuestAgent.Audit`. Eso alcanza para telemetría, inventario, energía, borrado y lectura de IP.
+- **Entregable:**
+  1. Documentar el token y sus privilegios en `documentacion/api-proxmox.md`, sin el secreto (hoy el secreto está en texto plano en ese archivo y hay que rotarlo).
+  2. Verificar con `curl` desde el LXC del backend (pruebas y estable) la conectividad HTTPS hacia `/nodes/{node}/status` y `/cluster/resources`, y cargar `PROXMOX_URL`, `PROXMOX_NODE`, `PROXMOX_TOKEN_ID` y `PROXMOX_TOKEN_SECRET` en el `.env` del servidor.
+- **Criterio de éxito:** desde el LXC del backend las dos consultas responden `200 OK` con el token, y el backend desplegado lista las instancias reales.
 
----
 
 ### Bloque 2: Backend - Telemetría e Inventario Operativo
 
@@ -150,7 +161,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 2.5 h
-- **Depende de:** `INF-06`, `INF-07`.
+- **Depende de:** `INF-06A` y `BAC-17A` (Redis local, en `futuro.md`). Se desarrolla contra el simulador de Proxmox; el servidor real se valida en `INT-03`.
 - **Entregable:** Endpoint `GET /api/node/status` consumiendo `/nodes/{node}/status` de Proxmox.
   - Normaliza: porcentaje y cores de CPU, conversión de bytes a GB para RAM y almacenamiento, y uptime en segundos.
   - Almacena el resultado en Redis con TTL de 5 a 10 segundos para blindar a Proxmox ante ráfagas de consultas.
@@ -160,7 +171,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2.5 h
-- **Depende de:** `BAC-14` (lectura inicial base), `INF-07`.
+- **Depende de:** `BAC-14` (lectura inicial base) y `BAC-28` (IP en el simulador). Se desarrolla contra el simulador de Proxmox.
 - **Entregable:** Servicio en Go que consulta los endpoints de Proxmox `/nodes/{node}/qemu` y `/nodes/{node}/lxc`, unifica ambos tipos en una estructura de datos común y resuelve la IP asignada mediante QEMU Guest Agent o configuración de red LXC.
 - **Criterio de éxito:** Función interna que retorna la lista consolidada de instancias; las instancias apagadas o sin Guest Agent devuelven `ip: null` sin generar errores ni demoras excesivas.
 
@@ -182,7 +193,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2.5 h
-- **Depende de:** `BAC-08`, `BAC-23B`, `INF-07`.
+- **Depende de:** `BAC-08` y `BAC-23B`. Se desarrolla contra el simulador de Proxmox.
 - **Entregable:** Endpoint `POST /api/instances/{id}/status/{action}` (`start`, `shutdown`, `stop`, `reboot`).
   - Valida el permiso del usuario en `permisos_instancia` y exige nivel `FULL_ACCESS` (`SEC-04`).
   - Valida el estado previo de la instancia (ej. no enviar `start` a una máquina ya en ejecución).
@@ -193,7 +204,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-08`, `BAC-23B`, `INF-07`.
+- **Depende de:** `BAC-08`, `BAC-23B` y `BAC-28` (`DELETE` en el simulador). Se desarrolla contra el simulador de Proxmox.
 - **Entregable:** Endpoint `DELETE /api/instances/{id}` para destrucción de instancias VM/LXC.
   - Verifica que la instancia se encuentre en estado `stopped` antes de solicitar el borrado en Proxmox (regla del hipervisor).
   - Captura el `UPID` de eliminación y retorna `HTTP 202 Accepted`.
@@ -358,12 +369,12 @@ flowchart TD
   4. Persistencia inmutable en `auditoria`.
 - **Criterio de éxito:** Suite ejecutable de forma local o en CI pasando al 100% sin dependencias manuales.
 
-#### `INT-02` - Validación integral del Hito MVP Operativo (Smoke Test End-to-End)
+#### `INT-02` - Validación integral del Hito MVP Operativo en local (Smoke Test End-to-End)
 - **Área:** Integración / Todo el equipo
 - **Asignados:** Equipo completo
 - **Estimación:** 2.0 h
-- **Depende de:** Todas las tareas anteriores finalizadas.
-- **Entregable:** Prueba de aceptación manual de extremo a extremo:
+- **Depende de:** todas las tareas de desarrollo de la etapa (backend y frontend). **No depende de infraestructura:** corre en local, con backend, frontend, Redis local y el simulador de Proxmox.
+- **Entregable:** Prueba de aceptación manual de extremo a extremo, en local:
   1. **Login:** Operador inicia sesión con 2FA verificado.
   2. **Dashboard:** Visualiza recursos del host físico en tiempo real.
   3. **Inventario:** Comprueba que solo ve sus instancias autorizadas.
@@ -372,6 +383,15 @@ flowchart TD
   6. **Auditoría:** Se valida que la acción figure registrada en `auditoria`.
 - **Criterio de éxito:** Flujo completo sin fallas de consola ni inconsistencias de interfaz.
 
+#### `INT-03` - Validación del Hito MVP en el servidor contra el Proxmox real
+
+- **Área:** Integración / Infraestructura
+- **Asignados:** Nico y un integrante de backend
+- **Estimación:** 1.5 h
+- **Depende de:** `INT-02`; `INF-07`, `INF-07B`, `INF-06B` e `INF-08A` (servidor); backend y frontend desplegados.
+- **Entregable:** repetir en el entorno de pruebas del servidor los pasos 1 a 6 de `INT-02`, pero contra el Proxmox real y a través de Nginx (HTTPS y `/api/events`). Las acciones de energía y borrado se hacen **solo sobre una instancia de prueba creada para la validación** (VMID ≥ 106, obtenido de `/cluster/nextid`). Nunca sobre los VMIDs protegidos 100 a 105.
+- **Criterio de éxito:** el flujo completo funciona en el servidor igual que en local: el stream `/api/events` no se corta ni se retiene en buffer, las IPs se leen del guest agent real y la instancia de prueba se enciende, se apaga y se elimina con su auditoría registrada.
+
 ---
 
 
@@ -379,19 +399,19 @@ flowchart TD
 
 *(Se movieron desde `futuro.md` porque dependen de tareas de esta etapa.)*
 
-#### `INF-07B` (`BRG-03`) - Configuración de Nginx para WebSocket/SSE (`RNF-06`) y permisos `VM.Allocate` / `VM.Monitor` en Proxmox
+#### `INF-07B` (`BRG-03`) - Configuración de Nginx para WebSocket/SSE en el servidor (`RNF-06`)
 
 - **Área:** Infraestructura
 - **Asignado:** Nico
 - **Estimación:** 1,5 h
-- **Ventana propuesta:** Previo a `BAC-23A`, `BAC-24B` y `BAC-26`.
-- **Depende de:** `INF-04`, `INF-05`, `INF-07`.
+- **Ventana propuesta:** antes de `INT-03`. **No bloquea** a `BAC-23A`, `BAC-24B` ni `BAC-26`, que se desarrollan en local sin Nginx.
+- **Depende de:** `INF-04` y `INF-05`/`FIX-31`.
 - **Problema y evidencia (análisis de cierre de la fase base):**
   1. Nginx corta las conexiones de `/api/events` a los 60s o retiene los mensajes SSE en buffer si no tiene configuración específica.
   2. El token de Proxmox de `INF-07` solo tiene `Sys.Audit`, `VM.Audit` y `VM.PowerMgmt`, por lo que Proxmox rechazará `DELETE /api/instances/:id` (requiere `VM.Allocate`) y la lectura de IPs por Guest Agent (requiere `VM.Monitor`).
 - **Entregable:**
   1. Agregar en Nginx el bloque `location /api/events` con `proxy_http_version 1.1`, headers `Upgrade` y `Connection`, `proxy_buffering off`, `proxy_cache off` y `proxy_read_timeout 3600s`.
-  2. Asignar al API Token de Proxmox VE los privilegios `VM.Allocate` y `VM.Monitor` sobre el nodo/clúster de prueba.
+  2. ~~Asignar al API Token los privilegios `VM.Allocate` y `VM.Monitor`.~~ **Ya los tiene** (verificado el 29/09/2026: `VM.Allocate` y `VM.GuestAgent.Audit`, que en Proxmox 9 reemplaza a `VM.Monitor`). Queda dentro de `INF-07`.
 - **Criterio de éxito:** El stream `/api/events` funciona en tiempo real a través de Nginx sin cortes ni buffering; el token de Proxmox permite consultar IPs por Guest Agent y eliminar una VM detenida de prueba.
 
 #### `BAC-22B` (`BRG-05-BAC`) - Agregación de conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
@@ -446,19 +466,21 @@ flowchart TD
   2. Al reconectar el canal `/api/events` tras una caída (`FRN-17C`), disparar un refresh silencioso de `GET /api/instances` para sincronizar los estados finales de las máquinas cuyos eventos hayan terminado durante la desconexión.
 - **Criterio de éxito:** Al recargar con `F5` en medio de una acción de energía, la fila continúa mostrando el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
 
+
+
 ---
 
 ## 4. Resumen de Distribución y Carga de Trabajo
 
 | Tarea | Área | Responsable(s) | Estimación | Dependencias Directas |
 |---|---|---|---|---|
-| `INF-06` | Infraestructura | Nico, Lucas | 2.0 h | `INF-03`, `INF-04` |
-| `INF-07` | Infraestructura | Nico | 2.0 h | Ninguna |
-| `BAC-22` | Backend | Tayra | 2.5 h | `INF-06`, `INF-07` |
-| `BAC-23A` | Backend | Lisandro | 2.5 h | `BAC-14`, `INF-07` |
+| `INF-07` | Infraestructura | Nico | 1.0 h | Ninguna (solo servidor) |
+| `BAC-28` | Backend | Lisandro | 1.5 h | Ninguna (simulador) |
+| `BAC-22` | Backend | Tayra | 2.5 h | `INF-06A`, `BAC-17A` |
+| `BAC-23A` | Backend | Lisandro | 2.5 h | `BAC-14`, `BAC-28` |
 | `BAC-23B` | Backend | Tayra | 2.0 h | `BAC-23A`, `BAC-08` |
-| `BAC-24A` | Backend | Lisandro | 2.5 h | `BAC-08`, `BAC-23B`, `INF-07` |
-| `BAC-24B` | Backend | Lisandro | 2.0 h | `BAC-08`, `BAC-23B`, `INF-07` |
+| `BAC-24A` | Backend | Lisandro | 2.5 h | `BAC-08`, `BAC-23B` |
+| `BAC-24B` | Backend | Lisandro | 2.0 h | `BAC-08`, `BAC-23B`, `BAC-28` |
 | `BAC-25A` | Backend | Lisandro | 2.5 h | `BAC-24A`, `BAC-24B` |
 | `BAC-25B` | Backend | Tayra | 2.0 h | `BAC-25A` |
 | `BAC-26` | Backend | Tayra | 2.5 h | `BAC-21`, `BAC-25B` |
@@ -472,10 +494,11 @@ flowchart TD
 | `FRN-17A` | Frontend | Cristian | 2.0 h | `BAC-26` |
 | `FRN-17B` | Frontend | Cristian | 2.0 h | `FRN-16`, `FRN-17A` |
 | `INT-01` | Testing | Tayra, Cristian | 2.5 h | Bloques 2 y 3 cerrados |
-| `INT-02` | Integración | Equipo Completo | 2.0 h | Todas las anteriores |
-| `INF-07B` (BRG-03) | Infraestructura | Nico | 1.5 h | `INF-04`, `INF-05`/`FIX-31`, `INF-07` |
+| `INT-02` | Integración | Equipo Completo | 2.0 h | Desarrollo de la etapa (local) |
+| `INT-03` | Integración / Infra | Nico + backend | 1.5 h | `INT-02`, `INF-07`, `INF-07B`, `INF-06B`, `INF-08A` |
+| `INF-07B` (BRG-03) | Infraestructura | Nico | 1.0 h | `INF-04`, `INF-05`/`FIX-31` |
 | `BAC-22B` (BRG-05) | Backend | Tayra | 1.5 h | `BAC-22`, `BAC-23A` |
 | `FRN-19C` (BRG-05) | Frontend | Belinda, Luz | 2.0 h | `BAC-22B` |
 | `BAC-25C` (BRG-04) | Backend | Lisandro | 1.5 h | `BAC-25A`, `BAC-21B` |
 | `FRN-16B` (BRG-04) | Frontend | Cristian | 1.5 h | `BAC-25C`, `FRN-16` |
-| **Total** | | | **54.0 h** | **Promedio: 2.08 h / tarea** |
+| **Total** | | | **54.0 h** | **Promedio: 2.00 h / tarea** |

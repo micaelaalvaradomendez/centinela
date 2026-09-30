@@ -1,14 +1,14 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 29/09/2026
-**Alcance:** tareas en desarrollo de [documentacion/actual.md](../documentacion/actual.md), correcciones pendientes de [documentacion/futuro.md](../documentacion/futuro.md) y regresión de [documentacion/terminado.md](../documentacion/terminado.md).
+**Fecha de ejecución:** 30/09/2026
+**Alcance:** las 17 tareas de [documentacion/actual.md](../documentacion/actual.md), regresión de [documentacion/terminado.md](../documentacion/terminado.md) y verificación del simulador de Proxmox del backend contra el Proxmox real.
 
-| Componente | Revisión probada | Cambios desde el informe anterior (28/09) |
+| Componente | Revisión probada | Commits nuevos desde el 29/09 |
 |---|---|---|
-| Backend | `9554efa` (último commit de `main`) | `ad52485` y `9554efa`: trigger de inmutabilidad `trg_auditoria_inmutable` (`BEFORE UPDATE OR DELETE OR TRUNCATE`) y `REVOKE` sobre `auditoria`. La FK de `auditoria.usuario_id` pasa a `ON DELETE RESTRICT` (**FIX-23**) |
-| Frontend | `749194e` (último commit de `main`) | `5c3d780`: `/auditoria` se movió dentro del grupo `loadAdminSession` (**FIX-22**). `bd0c42f`: helper `services/request.ts` (hoy no se usa: solo aparece en código comentado de `Auditoria.tsx`) |
+| Backend | `e6e7dc5` (último commit de `main`) | Ninguno desde la corrida anterior. Entre el 29 y el 30/09 llegaron `725d436`/`82add96` (protección de VMIDs de infraestructura y API Token único), `de407a5` (simulador de Proxmox para desarrollo local) y `e6e7dc5` (`ENABLE_SWAGGER` en `.env.example`) |
+| Frontend | `749194e` (último commit de `main`) | Ninguno |
 
-**Cómo se ejecutó:** cada submódulo se actualizó a su último commit de `origin/main` (`fetch` + `checkout -B main origin/main --force` + `reset --hard`). Ante un conflicto prevalece el remoto. Las suites se corrieron sobre esas carpetas **dos veces** cada una, con el mismo resultado. Las pruebas no necesitaron cambios en esta revisión.
+**Cómo se ejecutó:** cada submódulo se actualizó a su último commit de `origin/main` (`fetch` + `checkout -B main origin/main --force` + `reset --hard`); ante un conflicto prevalece el remoto. Las suites se corrieron sobre esas carpetas, **dos veces**, con el mismo resultado y sin contenedores residuales.
 
 ---
 
@@ -16,111 +16,111 @@
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 38 | 32 | **5** | 1 |
-| Frontend (`test/front`) | 82 | 74 | **8** | 0 |
-| **Total** | **120** | **106** | **13** | **1** |
+| Backend (`test/back`) | 43 | 30 | **13** | 0 |
+| Frontend (`test/front`) | 95 | 74 | **11** | 10 |
+| **Total** | **138** | **104** | **24** | **10** |
 
-**Avances desde el 28/09:**
-- **FIX-22** (`/auditoria` protegida) y **FIX-23** (auditoría append-only) pasan todas sus pruebas.
-- Con eso quedan resueltos los problemas pendientes de **FRN-14** y **BAC-18**, dos tareas que ya estaban en `terminado.md`.
-
-**Sigue abierta la regresión de FRN-13 (`FIX-28`):** el logout del frontend sale sin Bearer y la sesión sigue activa en el servidor.
-
-**Todos los fallos son del producto.** El caso omitido es el TLS de INF-05 (`FIX-31`), porque la configuración de Nginx del servidor no está versionada.
+- Los 10 casos omitidos del frontend son la prueba integral **LOGIN-04** (`login04-e2e.test.ts`). Corre desde `test/back` contra el backend real, y ahí se cuenta como un caso: `TestLOGIN04IntegracionFrontBack`, 9/10 pasos.
+- **Avance desde el 29/09: ninguno.** No hubo commits nuevos en los submódulos y todas las tareas de `actual.md` siguen igual. Los fallos nuevos respecto al informe anterior son de pruebas agregadas para tareas que no tenían cobertura: FRN-17C, BAC-17A y FIX-31.
+- **Regresión:** todo lo que está en `terminado.md` sigue en verde, salvo la regresión conocida de `FRN-13` (`FIX-28`).
+- **Todos los fallos son del producto.** El único cambio de infraestructura de las pruebas fue adaptar el stub de Proxmox al API Token obligatorio (`725d436`).
 
 ---
 
-## 2. Tareas de `actual.md`
+## 2. Cobertura y estado de las tareas de `actual.md`
 
-**Leyenda:** ✅ cumplida · ❌ no implementada.
-
-| Tarea | Pruebas | Resultado | Estado | Detalle |
-|---|---|---|---|---|
-| `FIX-22` Guard de `/auditoria` | `audit.test.tsx`: `si un operador intenta entrar a /auditoria…` | 1/1 | ✅ | La ruta está bajo `loadAdminSession` y el OPERATOR vuelve a `/dashboard`. Los otros 6 casos de FRN-14 siguen en verde. **Movida a `terminado.md`.** |
-| `FIX-23` Auditoría append-only | `password_recovery…`: `BAC-18 … append-only` | 1/1 | ✅ | `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria` fallan en PostgreSQL con las credenciales de la aplicación. El registro, la consulta, los filtros y el CSV siguen funcionando, y ningún otro caso se rompió por el trigger ni por la FK `RESTRICT`. **Movida a `terminado.md`.** |
-| `SEC-03` Contexto de permisos | `navigation.test.tsx`, bloque SEC-03 (4) | 1/4 | ❌ | No existen `usePermissions` ni `PermissionGate` (`context/AuthContext.js` solo maneja `TOKEN_REVOKED`). El sidebar le sigue mostrando **el enlace "Auditoría" al OPERATOR** (`Sidebar.tsx`, fuera de `rol === 'ADMIN'`). Desde FIX-22 el operador ya no puede entrar a la vista, pero el acceso sigue visible. |
-| `INF-08` Variables SMTP | `cierre_fase_base…`: `INF-08…` | 0/1 | ❌ | `EMAIL_PROVIDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM` no figuran en `backend/.env.example` ni en `backend/docker-compose.yml`. |
-| `BAC-16B` Adaptador SMTP | `cierre_fase_base…`: `BAC-16B…` (backend con `EMAIL_PROVIDER=smtp` + Mailpit) | 0/1 | ❌ | El alta no envía ningún correo SMTP: `cmd/api/main.go` siempre instancia `email.NewMockEmailService()`. |
-| `BAC-17B` Una sesión, un registro | `cierre_fase_base…`: `BAC-17B…` | 0/1 | ❌ | Login + 2FA + 10 refresh crean **13 filas activas**, y después del logout **quedan 11**. |
-| `BAC-18B` Índice parcial y particionado | `cierre_fase_base…`: `BAC-18B…` | 0/1 | ❌ | Faltan `idx_sesiones_activas_vigentes`, el particionado de `auditoria` (sigue siendo `relkind = r`, sin particiones) y los índices compuestos. Su dependencia `FIX-23` ya está resuelta. |
-
----
-
-## 3. Correcciones pendientes de `futuro.md`
-
-| FIX | Tarea de origen | Pruebas | Resultado | Detalle |
-|---|---|---|---|---|
-| **`FIX-28`** (prioridad alta) | FRN-13 (regresión) | `session-security.test.ts`: `FIX-28 logoutSession…` y `session_security…`: `FIX-28 FRN-13 integracion…` | ❌ 0/2 | `logoutSession()` sigue usando `skipAuthorization: true` (commit `deb59cb`). El backend responde `401 MISSING_TOKEN` y el access token sigue válido después de "Cerrar sesión". |
-| `FIX-27` | FIX-24 / FRN-06 | `admin-users.test.tsx`: `FIX-27 si el correo no se pudo enviar…` | ❌ 1/2 | Ante un `502 EMAIL_DELIVERY_FAILED` se sigue mostrando el mensaje genérico. El otro caso (el formulario conserva los datos) pasa. |
-| `FIX-29` | FIX-20 / FRN-10 | `password-change…` (sin mayúscula) y `recover-password…` (paso 3) | ❌ | `validatePasswordComplexity` sigue sin verificar la mayúscula. Los casos sin dígito, sin símbolo y fuera del largo pasan. |
-| `FIX-30` | FRN-18 | `navigation.test.tsx`: `FIX-30 canOperateInstance…` | ❌ 0/1 | Depende de `SEC-03`, que no está implementada. |
-| `FIX-31` | INF-05 | `cierre_fase_base…`: `FIX-31 INF-05 TLS…` | ⏭️ omitido | La configuración de Nginx del servidor sigue sin versionar. |
+| Tarea | Pruebas | Resultado | Qué falta |
+|---|---|---|---|
+| `SEC-03` | `navigation.test.tsx` (4) | ❌ 1/4 | No existen `usePermissions` ni `PermissionGate`, y el menú le muestra "Auditoría" al OPERATOR |
+| `BAC-16B` | `cierre_fase_base…` (backend con `EMAIL_PROVIDER=smtp` + Mailpit) | ❌ | `main.go` siempre usa `MockEmailService` |
+| `BAC-17A` | `cierre_fase_base…` **(nuevo)** | ❌ | Falta `go-redis` en `go.mod`, el adaptador `adapters/secondary/redis` y los puertos `GetDel`/`Publish`/`Subscribe`. El backend no abre ninguna conexión a Redis |
+| `BAC-17B` | `cierre_fase_base…` | ❌ | Login + 2FA + 10 refresh crean 13 filas activas; después del logout quedan 11 |
+| `BAC-18B` | `cierre_fase_base…` | ❌ | Faltan el índice parcial, las particiones y los índices compuestos |
+| `BAC-21B` | `puente_etapa1…` (3) | ❌ 0/3 | `GET /instances` no trae los campos nuevos; `/status/:action` → 404; `DELETE` → 405 |
+| `BAC-21C` | `puente_etapa1…` (2) | ❌ 0/2 | `/events/ticket` y `/events` → 404 |
+| `FRN-17C` | `events-client.test.tsx` (3) **(nuevo)** | ❌ 0/3 | No existe `useEvents` |
+| `FIX-27` | `admin-users.test.tsx` (2) | ❌ 1/2 | El 502 del correo muestra un mensaje genérico |
+| `FIX-28` | `session-security.test.ts`, `session_security…` y LOGIN-04 paso 7 | ❌ | El logout sale sin Bearer y la sesión sigue activa en el servidor |
+| `FIX-29` | `password-change` y `recover-password` | ❌ | El validador no chequea la mayúscula |
+| `FIX-30` | `navigation.test.tsx` | ❌ | Depende de `SEC-03` |
+| `FIX-31` | `cierre_fase_base…` **(ahora verifica, antes se omitía)** | ❌ | No hay ninguna configuración de Nginx versionada con `listen 443 ssl` (se revisó `docker/nginx.conf` y los dos repos) |
+| `INF-06A` | `cierre_fase_base…` | ❌ | Redis no está publicado en `127.0.0.1:6379`, `REDIS_ADDR=redis:6379`, y la contraseña del compose es distinta a la de `.env.example` |
+| `INF-08B` | `cierre_fase_base…` (valida las variables y **se autentica** contra el SMTP) | ❌ | Las 6 variables no están en `backend/.env.example` (falta el `push`) |
+| `INF-06B` | Sin prueba automatizada | — | Redis en `vmbr1`: no se alcanza desde el repo |
+| `INF-08A` | Sin prueba automatizada | — | SMTP del servidor: no se alcanza desde el repo |
 
 ---
 
-## 4. Regresión de `terminado.md`
+## 3. Prueba integral LOGIN-04 (código real del frontend contra el backend real)
 
-El resto de las tareas de `terminado.md` pasa todas sus pruebas. Las implementadas con problema tienen su corrección en la sección 3, y FRN-14 y BAC-18 quedaron completas con FIX-22 y FIX-23.
+`TestLOGIN04IntegracionFrontBack`: 9 de 10 pasos en verde. Funcionan de punta a punta:
+- el alta con la clave por correo;
+- el 2FA con la cookie HttpOnly;
+- el cambio y la recuperación de contraseña;
+- los permisos por instancia;
+- la renovación silenciosa;
+- los resets administrativos;
+- la auditoría.
 
-| Tarea | Estado al 29/09 | Nota para la documentación |
-|---|---|---|
-| `FRN-14` | ✅ 7/7 | El aviso de `terminado.md` (el guard faltante → FIX-22) quedó desactualizado. |
-| `BAC-18` | ✅ | El aviso de `terminado.md` (no es append-only → FIX-23) quedó desactualizado. |
-| `FRN-13` | ❌ regresión | `FIX-28`, sin cambios. |
-| `INF-03` e `INF-04` | Sin prueba automatizada | Son configuración del servidor sin artefactos versionados. |
-
----
-
-## 5. Integración front ↔ back
-
-| Flujo | 28/09 | 29/09 |
-|---|---|---|
-| Logout desde la interfaz | ❌ `401 MISSING_TOKEN`, la sesión sigue activa | ❌ Sin cambios (`FIX-28`) |
-| Renovación silenciosa con la cookie `centinela_refresh` | ✅ | ✅ |
-| CORS (`ALLOWED_ORIGINS`, `Allow-Credentials`) | ✅ | ✅ |
-| Recuperación y reset administrativo de contraseña y 2FA | ✅ | ✅ |
-| Permisos por instancia `{ permisos: [{ vmid, nivelAcceso }] }` | ✅ | ✅ |
-| Acceso del OPERATOR a Auditoría | ❌ Entraba a la vista | ✅ La ruta lo redirige (el backend ya respondía 403). 🟡 El enlace del menú sigue visible (`SEC-03`) |
-| Complejidad de contraseña | 🟡 | 🟡 Las claves sin mayúscula siguen llegando al backend (`FIX-29`) |
+**Falla el paso 7:** después de "Cerrar sesión", el access token sigue respondiendo 200 en el servidor (`FIX-28`). **LOGIN-04 no se puede aprobar hasta que se corrija `FIX-28`.**
 
 ---
 
-## 6. Recomendaciones para la documentación
+## 4. Simulador de Proxmox del backend (`cmd/proxmox-simulador`, commit `de407a5`)
 
-- ~~Pasar `FIX-22` y `FIX-23` a `terminado.md` y actualizar los avisos de `FRN-14` y `BAC-18`.~~ **Hecho el 29/09/2026:** las cuatro figuran como completadas en `terminado.md`.
-- **Prioridad de asignación:** `FIX-28` sigue siendo la corrección más urgente (media hora, frontend).
-- **`BAC-18B`:** ya tiene resuelta su dependencia `FIX-23`. Al particionar `auditoria`, el trigger de inmutabilidad tiene que aplicarse también a las particiones; el test de BAC-18 lo va a verificar.
+### 4.1 Flujo del backend contra el simulador
+Se levantó el backend de `main` con `PROXMOX_URL` apuntando al simulador, con las mismas credenciales de `documentacion/api-proxmox.md`:
+
+| Acción | Resultado |
+|---|---|
+| `GET /api/instances` | ✅ 200 con las 8 instancias del simulador, con el contrato de BAC-14 |
+| `GET /api/instances/110` | ✅ 200 |
+| `POST /api/instances/100/stop` (VMID protegido) | ✅ 403 `INSTANCE_PROTECTED`, sin llegar a Proxmox |
+| `POST /api/instances/110/start` | ✅ 202 con UPID; la 110 pasa de `stopped` a `running` cuando termina la tarea |
+| `GET /api/instances/424242` | ✅ 404 `INSTANCE_NOT_FOUND` |
+| `stop` inmediatamente después de un `start` | ❌ **502 `PROXMOX_UNAVAILABLE`**. Proxmox responde `500 can't lock file…` (instancia ocupada) y el backend lo reporta como "servidor caído" → **`FIX-33`** |
+
+### 4.2 Simulador vs Proxmox real (mismas credenciales, solo lecturas sobre el real)
+
+| Endpoint | Comparación |
+|---|---|
+| `cluster/resources` (con y sin `?type=vm`) | ✅ Misma estructura. `hastate` aparece solo en instancias con HA, igual que en el real |
+| `nodes/{node}/status` | ✅ Igual |
+| `nodes/{node}/lxc` | ✅ Igual |
+| `lxc/{vmid}/rrddata` | ✅ Igual |
+| `lxc/{vmid}/snapshot` | ✅ Igual (los campos dependen de si hay snapshots) |
+| Errores: VMID inexistente, nodo inexistente, ruta inexistente y token inválido | ✅ Mismos códigos (500, 500, 501 y 401) y los mismos mensajes |
+| `lxc/{vmid}/config` | ❌ `unprivileged` es número en el real y string en el simulador |
+| `lxc/{vmid}/status/current` | ❌ Falta `ha: {managed: 0}` en el simulador |
+| `cluster/nextid` | ❌ El simulador responde 501; el real devuelve `"106"` (lo necesita RF-07) |
+| `nodes/{node}/tasks` | ❌ El simulador responde 501 (útil para BAC-25C y RNF-04) |
+| Cuerpo del 401 | 🟡 El real responde sin cuerpo; el simulador devuelve un JSON. No afecta al backend |
+| `nodes/{node}/qemu` | ➖ No comparable: el servidor real no tiene VMs |
+
+**Conclusión:** el simulador está bien hecho en lo que el backend usa hoy (inventario, acciones, UPID y errores). Las diferencias quedaron registradas como **`FIX-32`** en `documentacion/etapa1.md`, junto con **`FIX-33`**, que es un problema del backend y no del simulador.
 
 ---
 
-## 7. Lo que la suite no cubre
+## 5. Estado del repositorio y configuración de las pruebas
 
-- `502 PROXMOX_UNAVAILABLE`: el stub de Proxmox siempre responde.
-- **INF-05:** el TLS de Nginx en el servidor (`FIX-31`).
-- **INF-06:** la red `vmbr1`.
-- **INF-08:** la conectividad hacia un SMTP real.
-- **BAC-18B:** la purga horaria y el tiempo de consulta menor a 20 ms.
-- **INF-03 e INF-04:** la configuración del servidor.
+- Los submódulos están en el último commit y sin cambios locales.
+- **Cambios en las pruebas:**
+  - el stub de Proxmox exige API Token;
+  - `compose.yaml` suma Redis y `PROXMOX_PROTECTED_VMIDS=103`;
+  - nuevos tests de BAC-21B, BAC-21C, BAC-17A, FRN-17C y FIX-31, y la prueba integral LOGIN-04.
+- **`backend/.env.example` cambió el ejemplo de Proxmox:** usa la IP interna `10.10.20.1` y el token `centinela-api@pve!backend-token`. Las credenciales que funcionan desde esta máquina (Tailscale) son las de `api-proxmox.md` (`100.81.49.19`, `centi-api@pve!backend-token`). Conviene que el equipo confirme cuál es el vigente.
+- **Seguridad:** `documentacion/api-proxmox.md` tiene el secreto real del token de Proxmox versionado. Hay que regenerarlo y sacarlo del documento.
 
 ---
 
-## 8. Cómo reproducir
+## 6. Cómo reproducir
 
 ```bash
-# 1. Traer el último commit de cada submódulo (prevalece el remoto ante conflictos)
 for s in backend frontend; do
-  git -C $s fetch origin --prune
-  git -C $s checkout -B main origin/main --force
-  git -C $s reset --hard origin/main
+  git -C $s fetch origin --prune && git -C $s checkout -B main origin/main --force && git -C $s reset --hard origin/main
 done
-
-# 2. Backend (Docker: PostgreSQL, 2 backends, stub de Proxmox y Mailpit; ~2 min)
-(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)
-
-# 3. Frontend
+(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)   # incluye LOGIN-04 front ↔ back
 pnpm --dir test/front test
 ```
-
-Usar `| tee` y no `> archivo` para capturar la salida del backend. Los puertos que se usan son `15433`, `18080`, `18081` y `18025`. El comando de limpieza está en `test/back/README.md`.
 
 Detalle por suite: [test/back/RESULTADOS.md](back/RESULTADOS.md) y [test/front/RESULTADOS.md](front/RESULTADOS.md).

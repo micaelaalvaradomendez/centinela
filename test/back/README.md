@@ -8,7 +8,8 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `backend` | `docker/backend.Dockerfile` (compila `backend/`) | API real en `127.0.0.1:18080` |
 | `backend-smtp` | misma imagen que `backend`, con `EMAIL_PROVIDER=smtp` | Segundo backend en `127.0.0.1:18081` para BAC-16B |
 | `mailpit` | `axllent/mailpit` | Servidor SMTP de prueba; su API en `127.0.0.1:18025` permite leer los correos recibidos |
-| `proxmox` | `nginx:1.27-alpine` + [`proxmox-stub/nginx.conf`](proxmox-stub/nginx.conf) | Stub de la API de Proxmox VE con un inventario fijo: `101` qemu, `102` lxc, `103` qemu, más un nodo y un storage que el backend debe descartar |
+| `redis` | `redis:7-alpine` | Redis con contraseña para BAC-17A, BAC-17B y BAC-21C |
+| `proxmox` | `nginx:1.27-alpine` + [`proxmox-stub/nginx.conf`](proxmox-stub/nginx.conf) | Stub de la API de Proxmox VE (exige API Token) con un inventario fijo: `101` qemu, `102` lxc, `103` qemu, más un nodo y un storage que el backend debe descartar |
 
 ## Principios
 
@@ -25,7 +26,9 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `password_recovery_acceptance_test.go` | BAC-13, BAC-15, BAC-16, BAC-18, BAC-19, BAC-20, BAC-21 |
 | `resource_access_acceptance_test.go` | BAC-07, FIX-16/BAC-08, BAC-14, **SEC-04** |
 | `session_security_acceptance_test.go` | BAC-17, SEC-01, integración SEC-01/SEC-02, **integración del logout de FRN-13**, FIX-08 |
-| `cierre_fase_base_acceptance_test.go` | **INF-05** (CORS; TLS omitido), **INF-06** (levanta el `redis` de `backend/docker-compose.yml`), **INF-08**, **BAC-16B**, **BAC-17B**, **BAC-18B** |
+| `cierre_fase_base_acceptance_test.go` | INF-05 (CORS), **FIX-31** (TLS de Nginx versionado), **INF-06A** (Redis local del compose del backend), **INF-08B** (credenciales SMTP que se autentican), **BAC-16B**, **BAC-17A**, **BAC-17B**, **BAC-18B** |
+| `puente_etapa1_acceptance_test.go` | **BAC-21B** (instancias extendidas, `/status/:action`, `DELETE`), **BAC-21C** (tickets y `/api/events`) |
+| `login04_integracion_front_back_test.go` | **LOGIN-04** con el código real del frontend (`test/front/login04-e2e.test.ts`) contra este backend |
 
 ## Requisitos
 
