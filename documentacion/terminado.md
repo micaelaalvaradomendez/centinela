@@ -986,3 +986,122 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   2. El trigger funciona aunque la aplicación se conecte con el usuario dueño de la tabla, que es el caso del entorno de pruebas y del compose actual. Como defensa adicional en producción, conectar la aplicación con un rol sin privilegios `UPDATE`/`DELETE` sobre `auditoria` (`REVOKE UPDATE, DELETE, TRUNCATE ON auditoria FROM <rol_app>`).
   3. Revisar que ninguna ruta del backend haga `UPDATE`/`DELETE` sobre `auditoria`. Por ejemplo, el `ON DELETE SET NULL` de `usuario_id` al eliminar un usuario: si hace falta, resolverlo con eliminación lógica de usuarios, que es lo que ya hace `DELETE /admin/users/:id`.
 - **Criterio de éxito:** `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria` fallan en PostgreSQL con las credenciales de la aplicación; el registro y la consulta de auditoría siguen funcionando. El caso `BAC-18` de `password_recovery_acceptance_test.go` pasa.
+
+---
+
+# Verificación del 30/09/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `43a0b06` y frontend `749194e`.
+
+### `BAC-17A` - Adaptador base de Redis en el backend (conexión, configuración y puerto)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 30/09/2026, backend `43a0b06`), commit `0aac034`.** `test/back/cierre_fase_base_acceptance_test.go`, caso `BAC-17A…`:
+> - `github.com/redis/go-redis/v9` en `go.mod`, adaptador `internal/adapters/secondary/redis/` y puerto `KeyValueStore` con `GetDel`, `Publish` y `Subscribe`.
+> - Con `REDIS_ADDR` configurado, el backend abre la conexión al arrancar. Si Redis no responde, arranca en **modo degradado** (almacén en memoria), según `docs/redis.md`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** Ya. Es la base de `BAC-17B` y `BAC-21C`.
+- **Depende de:** `INF-06A` (Redis local). No depende del servidor (`INF-06B`).
+- **Problema y evidencia:** `BAC-17B` (sesiones en Redis con TTL) y `BAC-21C` (tickets de `/api/events` y bus Pub/Sub) dan por hecho que el backend ya habla con Redis. Hoy no es así: `go.mod` no incluye ningún cliente de Redis, no hay adaptador en `internal/adapters/secondary` y `cmd/api/main.go` no lee `REDIS_ADDR` ni `REDIS_PASSWORD`. Si cada tarea arma su propia conexión, se duplica el trabajo y se pisan entre sí.
+- **Entregable:**
+  1. Agregar `github.com/redis/go-redis/v9` y crear `internal/adapters/secondary/redis/` con un constructor que lea `REDIS_ADDR`, `REDIS_PASSWORD` y `REDIS_DB` (opcional, default `0`).
+  2. Definir un puerto en `internal/core/ports`, por ejemplo `KeyValueStore`, con lo mínimo que usan las tareas siguientes:
+     - `Set(key, value, ttl)`, `Get`, `GetDel` (atómico) y `Del`, para las sesiones de BAC-17B y los tickets de BAC-21C;
+     - `Publish(canal, mensaje)` y `Subscribe(canal)`, para el bus de BAC-21C.
+  3. En `main.go`, conectarse al arrancar con un `PING` y un log claro. Hay que definir y documentar qué pasa si Redis no está: que el backend no arranque, o que funcione en modo degradado sin tickets ni bus.
+  4. Pruebas unitarias del adaptador con `miniredis` o contra el Redis del compose.
+- **Criterio de éxito:** con `docker compose up redis`, el backend en local arranca y confirma la conexión con Redis. `BAC-17B` y `BAC-21C` usan este puerto en lugar de crear sus propias conexiones.
+
+### `BAC-17B` - Corrección de lógica de inserción en `sesiones_activas` (1 sesión = 1 registro) y almacenamiento en Redis con TTL
+
+> [!NOTE]
+> **Estado: Completada (verificado el 30/09/2026, backend `43a0b06`), commit `9e0f43c`.** `test/back/cierre_fase_base_acceptance_test.go`, caso `BAC-17B…`:
+> - Login + 2FA + 10 refresh generan **1 sola fila** en `sesiones_activas`, con `id` igual al claim `sid` y las columnas `jti_access` y `jti_refresh`.
+> - Después del logout no quedan filas activas.
+> - Cada refresh rota el `jti_access` y el access token anterior deja de valer (`session_security…`, caso de integración SEC-01/SEC-02).
+> - La prueba integral LOGIN-04 sigue en verde con el esquema nuevo.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2,5 h
+- **Ventana propuesta:** A definir (Cierre de Fase Base).
+- **Depende de:** `INF-06A` (Redis local en el repo del backend), `BAC-17A` y `BAC-17`.
+- **Problema y diagnóstico en código (`backend/internal/core/services/auth_service.go`):**
+  Actualmente el código de `auth_service.go` tiene un diseño ilógico que multiplica las filas en `sesiones_activas` por cada usuario:
+  1. En `Login()` (líneas 76-84) inserta la **Fila 1** para el `jwtTemporal` (pre-2FA) con `activa = true`.
+  2. En `VerificarTotp()` (líneas 249-313), en vez de transformar esa sesión o eliminar la temporal, deja la **Fila 1** con `activa = true`, inserta la **Fila 2** para el `refreshToken` y encima inserta la **Fila 3** para el `accessToken`. **Un solo inicio de sesión genera 3 filas en la base de datos.**
+  3. En `RefrescarToken()` (líneas 388-399), cada vez que el frontend renueva el `accessToken`, el backend hace **otro `INSERT`** (`Fila 4, Fila 5, Fila 6...`) dejando todas las filas de `accessToken` anteriores con `activa = true`.
+  4. En `CerrarSesion()` (líneas 433-438), solo pasa a `activa = false` el último `access` y `refresh`, dejando huérfanas la fila pre-2FA y todas las filas de renovaciones intermedias.
+- **Entregable (Solución arquitectónica):**
+  1. **Regla de oro (1 Sesión de Usuario = 1 único registro activo):**
+     - **Paso Pre-2FA (`Login`):** Guardar el `jtiTemporal` exclusivamente en Redis (`SET auth:pre2fa:<jti> <usuario_id> EX 300`) con expiración automática de 5 minutos (o si se usa PostgreSQL, que sea la única fila creada que luego se actualiza en el paso 2FA). **Nunca dejar filas pre-2FA sueltas.**
+     - **Paso Post-2FA (`VerificarTotp`):** Consumir y eliminar (`DEL`) el `jtiTemporal` pre-2FA. Crear **1 única sesión** para el navegador del usuario (en Redis `SET auth:session:<session_id> ... EX <ttl>` y **1 sola fila** en `sesiones_activas` que represente la sesión activa, no 2 filas separadas). Actualizar en ese mismo acto `fecha_ultimo_acceso = NOW()` en la tabla `usuarios`.
+     - **Paso Renovación (`RefrescarToken`):** **Prohibido hacer `INSERT` en `RefrescarToken`**. Al renovar el token, hacer `UPDATE` sobre el **mismo registro existente** de esa sesión (actualizando el `jti_token` vigente y su `fecha_expiracion` en la fila única y en Redis). Así, aunque un usuario renueve su token 100 veces en el día, sigue ocupando **1 sola fila**.
+     - **Paso Cierre (`CerrarSesion` / Expiración):** Eliminar la clave de Redis (`DEL`) y eliminar (`DELETE`) o desactivar esa única fila en `sesiones_activas`.
+- **Criterio de éxito:** Un usuario que inicia sesión, verifica 2FA y refresca su token 10 veces genera **exactamente 1 sesión activa** (no 12 filas); al cerrar sesión o vencer el TTL, no quedan filas residuales activas y `fecha_ultimo_acceso` se persiste correctamente en `usuarios`.
+
+### `BAC-21C` (`BRG-02-BAC`) - Autenticación de `/api/events` por ticket efímero en Redis, bus Pub/Sub y revocación en vivo
+
+> [!NOTE]
+> **Estado: Completada (verificado el 30/09/2026, backend `43a0b06`), commit `45ecad7`.** `test/back/puente_etapa1_acceptance_test.go`, casos `BAC-21C…` (2/2):
+> - `POST /api/events/ticket` exige Bearer y guarda `ws_ticket:<uuid>` en Redis con TTL de 30 s o menos.
+> - `GET /api/events?ticket=` rechaza con 401 un ticket inválido o reutilizado.
+> - El stream SSE se corta al hacer logout.
+>
+> Con esto queda desbloqueada `FRN-17C` en el frontend.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2 h
+- **Ventana propuesta:** Junto a `BAC-25B` y `BAC-26`.
+- **Depende de:** `INF-06A` (Redis local en el repo del backend), `BAC-17A` y `BAC-17B`.
+- **Problema y evidencia (análisis de cierre de la fase base):** `EventSource` (SSE) y WebSockets no permiten enviar el header `Authorization: Bearer`, y la cookie `HttpOnly` de `SEC-01` solo viaja a `/api/auth`. Además, si se revoca la sesión o un permiso de instancia, las conexiones abiertas deben cerrarse o actualizar su filtro, y el bus de eventos debe usar Redis Pub/Sub para funcionar con más de una réplica.
+- **Entregable:**
+  1. Crear el endpoint `POST /api/events/ticket` (bajo `RequireAuth`) que guarde en Redis un ticket de un solo uso con TTL de 30 segundos (`SET ws_ticket:<uuid> <usuario_id> EX 30`) y devuelva `{ ticket }`.
+  2. En `GET /api/events?ticket=<uuid>`, validar y consumir atómicamente (`GETDEL`) el ticket en Redis antes de abrir el canal SSE/WebSocket.
+  3. Publicar los eventos `TASK_FINISHED` de `BAC-25B` mediante **Redis Pub/Sub** (`centinela:events`) y cortar inmediatamente la conexión activa del usuario si recibe un evento de revocación de sesión (`BAC-17`) o recargar su filtro si cambian sus permisos (`BAC-07`).
+- **Criterio de éxito:** `/api/events` rechaza con 401 tickets inválidos o reutilizados; al hacer logout o desactivar al usuario, el backend corta el stream inmediatamente.
+
+### `INF-06A` - Redis local para desarrollo en el repositorio del backend
+
+> [!NOTE]
+> **Estado: Completada (verificado el 30/09/2026, backend `43a0b06`), commit `546e1d5`.** `test/back/cierre_fase_base_acceptance_test.go`, caso `INF-06A…`:
+> - Redis publicado en `127.0.0.1:6379:6379` y `REDIS_ADDR=localhost:6379` en `.env.example`.
+> - La misma contraseña en el compose y en `.env.example` (`centinela_redis_pass`).
+> - `REDIS_DB` agregado.
+
+- **Área:** Backend (en el repositorio del backend)
+- **Asignada:** Tayra
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** Ya.
+- **Depende de:** ninguna.
+- **Problema y evidencia:** el servicio `redis` ya está en `backend/docker-compose.yml`, con contraseña, `maxmemory 256mb` y `volatile-lru`, verificado por `test/back`. Pero el backend en local (`go run ./cmd/api`) **no lo puede usar**, por tres motivos:
+  - el servicio no publica ningún puerto;
+  - `REDIS_ADDR=redis:6379` solo resuelve dentro de Docker;
+  - la contraseña por defecto del compose (`centinela_redis_pass`) no coincide con la de `.env.example` (`centinela_redis_password`).
+- **Entregable:**
+  1. Publicar Redis **solo en loopback** en `backend/docker-compose.yml` (`127.0.0.1:6379:6379`).
+  2. En `backend/.env.example`, poner `REDIS_ADDR=localhost:6379` para desarrollo, con `redis:6379` comentado para cuando el backend corre en un contenedor, y unificar la contraseña con la del compose.
+- **Criterio de éxito:** con `docker compose up redis`, desde la máquina de desarrollo `redis-cli -h 127.0.0.1 -a <pass> PING` responde `PONG`, y sin contraseña responde `NOAUTH`. La prueba `INF-06A…` de `test/back` pasa.
+
+### `INF-08B` - Credenciales SMTP en `.env.example` y `.env` del repositorio del backend
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 30/09/2026, backend `43a0b06`), commit `233e804`.** Las 6 variables (`EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`) ya están en `backend/.env.example`. Pero `SMTP_USER` (`tu_correo@ejemplo.com`), `SMTP_PASS` (`tu_clave_secreta_aqui`) y `SMTP_FROM` (`no-reply@tudominio.com`) son **valores de ejemplo**, así que no se puede autenticar contra el relay. Prueba: `cierre_fase_base_acceptance_test.go`, caso `INF-08B…`. La corrección es `FIX-34`, en [`futuro.md`](futuro.md).
+
+- **Área:** Backend (en el repositorio del backend)
+- **Asignado:** Lisandro
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** Ya. El `.env` ya está hecho en local, pero falta el `push`.
+- **Depende de:** ninguna.
+- **Problema y evidencia:** `BAC-16B` necesita credenciales SMTP reales para desarrollar y probar el envío desde local. Hoy `backend/.env.example` no tiene ninguna de las variables.
+- **Entregable:**
+  1. Agregar a `backend/.env.example` las variables sin comentar: `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
+  2. Tener las mismas variables en el `.env` local de cada desarrollador del backend (el `.env` no se versiona).
+  3. Hacer el `push` a `main`.
+- **Criterio de éxito:** la prueba `INF-08B…` de `test/back` pasa. La prueba lee `backend/.env.example`, verifica que estén las 6 variables con valores reales (no de ejemplo) y **se autentica contra el servidor SMTP**, sin enviar correos.
+- **Advertencia de seguridad:** `.env.example` queda versionado. Si contiene la contraseña real, cualquiera con acceso al repositorio puede enviar correo como El Centinela. Conviene una cuenta de uso exclusivo con permisos mínimos.
+

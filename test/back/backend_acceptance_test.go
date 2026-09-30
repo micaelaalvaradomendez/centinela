@@ -478,7 +478,10 @@ func containsLine(output, expected string) bool {
 func signedAccessToken(t *testing.T, userID, role, orgID string) string {
 	t.Helper()
 	jti := fmt.Sprintf("test-session-%d", time.Now().UnixNano())
+	// BAC-17B: 1 sesión = 1 fila en sesiones_activas; el token lleva el id de la fila en el claim "sid".
+	sid := queryDatabase(t, "SELECT uuid_generate_v7();")
 	claims := jwt.MapClaims{
+		"sid":                         sid,
 		"sub":                         userID,
 		"rol":                         role,
 		"tipo":                        "access",
@@ -498,8 +501,8 @@ func signedAccessToken(t *testing.T, userID, role, orgID string) string {
 	// Persistir la sesión activa en PostgreSQL para que el middleware RequireAuth no la rechace con TOKEN_REVOKED
 	if len(userID) == 36 && strings.Count(userID, "-") == 4 {
 		queryDatabase(t, fmt.Sprintf(
-			"INSERT INTO sesiones_activas (id, usuario_id, jti_token, activa, fecha_expiracion, fecha_creacion) VALUES (uuid_generate_v7(), '%s', '%s', true, NOW() + interval '1 hour', NOW());",
-			userID, jti,
+			"INSERT INTO sesiones_activas (id, usuario_id, jti_access, jti_refresh, activa, fecha_expiracion, fecha_creacion, fecha_actualizacion) VALUES ('%s', '%s', '%s', '%s', true, NOW() + interval '1 hour', NOW(), NOW());",
+			sid, userID, jti, jti+"-refresh",
 		))
 	}
 

@@ -1,6 +1,6 @@
 # Resultados de las pruebas frontend
 
-**Fecha:** 30/09/2026. **Frontend:** submódulo en `749194e` (último commit de `main`). **Comando:** `pnpm test`. 2 corridas con el mismo resultado.
+**Fecha:** 30/09/2026 (2ª corrida, sin commits nuevos del frontend). **Frontend:** submódulo en `749194e` (último commit de `main`). **Comando:** `pnpm test`. 2 corridas con el mismo resultado.
 
 | Métrica | Valor |
 |---|---:|
@@ -31,5 +31,5 @@
 | FIX-28 | `authService.logoutSession()` usa `skipAuthorization: true` (`deb59cb`) |
 | FIX-29 | `validatePasswordComplexity` prueba `/[0-9]/` donde debería probar mayúsculas |
 | SEC-03 / FIX-30 | `context/AuthContext.js` no exporta `usePermissions` ni `PermissionGate`; `Sidebar.tsx` muestra "Auditoría" a todos los roles |
-| FRN-17C | No existe ningún `useEvents` que pida `POST /api/events/ticket` antes de conectarse |
+| FRN-17C | No existe ningún `useEvents` que pida `POST /api/events/ticket` antes de conectarse. El backend ya expone el endpoint (BAC-21C) |
 | FIX-27 | `useCreateUser.ts` reemplaza el mensaje del 502 por uno genérico |

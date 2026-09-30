@@ -62,11 +62,11 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 			t.Errorf("refresh token tras logout: esperado 401, recibido %d: %s", refreshAfter.Status, refreshAfter.RawBody)
 		}
 
-		inactive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND jti_token = '%s' AND activa = false;", user.ID, accessJTI))
+		inactive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND jti_access = '%s' AND activa = false;", user.ID, accessJTI))
 		if inactive != "1" {
 			t.Errorf("la sesión del access token (jti %s) no quedó con activa=false", accessJTI)
 		}
-		stillActive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND activa = true AND fecha_creacion >= (SELECT fecha_creacion FROM sesiones_activas WHERE jti_token = '%s');", user.ID, accessJTI))
+		stillActive := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE usuario_id = '%s' AND activa = true AND fecha_creacion >= (SELECT fecha_creacion FROM sesiones_activas WHERE jti_access = '%s');", user.ID, accessJTI))
 		if stillActive != "0" {
 			t.Errorf("tras el logout quedaron %s sesiones activas de este login (se esperaba revocar access y refresh)", stillActive)
 		}
@@ -148,14 +148,23 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 
 		refresh := requestRaw(t, http.MethodPost, "/auth/refresh", "", map[string]any{}, cookies...)
 		if refresh.Status != http.StatusOK {
-			t.Errorf("POST /auth/refresh con body {} (petición real del frontend): esperado 200, recibido %d: %s", refresh.Status, refresh.RawBody)
+			t.Fatalf("POST /auth/refresh con body {} (petición real del frontend): esperado 200, recibido %d: %s", refresh.Status, refresh.RawBody)
+		}
+		// Como el frontend (SEC-02): guarda el access token nuevo y usa la cookie rotada.
+		accessToken := requiredString(t, refresh.Body, "accessToken")
+		if rotated := refresh.cookie("refresh"); rotated != nil && rotated.Value != "" {
+			cookies = []*http.Cookie{rotated}
+		}
+		// BAC-17B: el refresh rota el JTI del access en la misma fila; el access anterior deja de valer.
+		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusUnauthorized {
+			t.Errorf("tras el refresh, el access token anterior debe quedar invalidado: esperado 401, recibido %d", status)
 		}
 
-		logout := requestRaw(t, http.MethodPost, "/auth/logout", session.AccessToken, map[string]any{}, cookies...)
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", accessToken, map[string]any{}, cookies...)
 		if logout.Status != http.StatusNoContent {
 			t.Errorf("POST /auth/logout con Bearer y body {} (petición real del frontend): esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
 		}
-		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusUnauthorized {
+		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", accessToken, nil); status != http.StatusUnauthorized {
 			t.Errorf("tras el logout iniciado desde el frontend el access token debe quedar revocado: esperado 401, recibido %d", status)
 		}
 	})

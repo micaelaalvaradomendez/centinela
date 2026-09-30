@@ -337,8 +337,9 @@ func TestCierreFaseBase(t *testing.T) {
 		index := queryDatabase(t, "SELECT coalesce(max(indexdef), '') FROM pg_indexes WHERE tablename = 'sesiones_activas' AND indexname = 'idx_sesiones_activas_vigentes';")
 		if index == "" {
 			t.Errorf("falta el índice parcial idx_sesiones_activas_vigentes en sesiones_activas")
-		} else if !strings.Contains(index, "WHERE (activa = true)") || !strings.Contains(index, "jti_token") {
-			t.Errorf("idx_sesiones_activas_vigentes debe ser (jti_token, usuario_id) WHERE activa = true; definición: %s", index)
+		} else if !strings.Contains(index, "WHERE (activa = true)") || !strings.Contains(index, "jti_access") {
+			// BAC-17B renombró jti_token a jti_access (1 fila por sesión con jti_access y jti_refresh).
+			t.Errorf("idx_sesiones_activas_vigentes debe ser (jti_access, usuario_id) WHERE activa = true; definición: %s", index)
 		}
 
 		if kind := queryDatabase(t, "SELECT relkind FROM pg_class WHERE relname = 'auditoria';"); kind != "p" {

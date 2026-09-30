@@ -279,3 +279,18 @@ FIX DEL 21 AL 25 (en actual.md)
 
 **El backend avanza en local con `INF-06A` e `INF-08B`, sin esperar al servidor.**
 
+---
+
+## 🛠️ Fixes detectados en la verificación del 30/09/2026
+
+### `FIX-34` - Credenciales SMTP reales en `backend/.env.example` (`INF-08B`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 0,25 h
+- **Depende de:** `INF-08B`.
+- **Problema y evidencia:** el commit `233e804` agregó las 6 variables SMTP a `backend/.env.example`, pero `SMTP_USER=tu_correo@ejemplo.com`, `SMTP_PASS=tu_clave_secreta_aqui` y `SMTP_FROM=no-reply@tudominio.com` son valores de ejemplo. La prueba `test/back/cierre_fase_base_acceptance_test.go`, caso `INF-08B…`, falla con *"SMTP_USER / SMTP_PASS tiene un valor de ejemplo: faltan las credenciales reales del relay"*. Sin credenciales reales, `BAC-16B` no se puede probar desde local contra `smtp-relay.brevo.com`.
+- **Entregable:** reemplazar esos tres valores por los reales del relay de Brevo (usuario SMTP, clave SMTP y un remitente verificado en Brevo) y hacer el `push`.
+- **Criterio de éxito:** el caso `INF-08B…` pasa. La prueba lee `.env.example` y **se autentica contra el relay** con STARTTLS en el 587, sin enviar ningún correo.
+- **Advertencia de seguridad:** esas credenciales quedan versionadas en el repositorio. Conviene una clave SMTP de Brevo exclusiva para El Centinela, que se pueda revocar sin afectar otros servicios.
+

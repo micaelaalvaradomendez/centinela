@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -n \"^#### \\\\`FIX-3[23]\\\\`\\\\|FIX-32\\\\` | Backend\" etapa1.md)"
+      "Bash(grep -n \"^#### \\\\`FIX-3[23]\\\\`\\\\|FIX-32\\\\` | Backend\" etapa1.md)",
+      "Bash(sed -n '/^func RequireAuth/,/^}/p' internal/adapters/primary/http/middleware/auth_middleware.go | head -70; grep -n \"Sid\\\\|sid\\\\\"\" internal/infrastructure/crypto/jwt.go; grep -n \"func \\(s \\\\*authServiceImpl\\) ValidarSesion\\\\|func \\(s \\\\*authServiceImpl\\) SesionVigente\\\\|ValidarAccess\" -A30 internal/core/services/auth_service.go | head -50)",
+      "Bash(timeout 400 go test -count=1 -v -run 'TestHitoSeguridadDeSesionesYCookies' ./...)"
+    ],
+    "additionalDirectories": [
+      "/home/micaela/centinela/backend/internal/adapters/primary/http/middleware"
     ]
   }
 }
