@@ -294,3 +294,56 @@ FIX DEL 21 AL 25 (en actual.md)
 - **Criterio de éxito:** el caso `INF-08B…` pasa. La prueba lee `.env.example` y **se autentica contra el relay** con STARTTLS en el 587, sin enviar ningún correo.
 - **Advertencia de seguridad:** esas credenciales quedan versionadas en el repositorio. Conviene una clave SMTP de Brevo exclusiva para El Centinela, que se pueda revocar sin afectar otros servicios.
 
+
+---
+
+## 🛠️ Fixes detectados en la verificación del 01/10/2026
+
+### `FIX-36` - Regresión: restaurar el filtro "Acción" en Auditoría (`FRN-14` / RF-08) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian (autor de `56b88f5`)
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-14` y `BAC-18`.
+- **Problema y evidencia:** el commit `56b88f5` (*"eliminar columnas que no serán utilizadas"*) quitó de `frontend/centinela/src/pages/Auditoria.tsx` dos cosas: las columnas *Nodo* e *IP origen*, y también el estado `accion`, el campo `aria-label="Acción"` y el `params.set('accion', …)` de la consulta. Las columnas eran opcionales; el filtro no:
+  - RF-08 exige *"filtros por fecha, usuario, tipo de acción y resultado"* (`requerimientos.md:193`).
+  - El backend sigue aceptando `accion` en `GET /api/admin/audit` (BAC-18 pasa).
+  - Prueba que falla: `test/front/audit.test.tsx`, caso *"actualiza los query parameters de filtro al cambiar los selectores reactivos"* (`Unable to find a label with the text of: /acción/i`). Antes pasaba 7/7; ahora 6/7.
+- **Entregable:**
+  1. Restaurar en `Auditoria.tsx` el filtro "Acción" (`aria-label="Acción"`), con el estado `accion`, su `updateFilter`, la dependencia del `useEffect` y `params.set('accion', accion)`. La exportación CSV tiene que usar los mismos filtros.
+  2. Si el equipo decide que el filtro no va, primero hay que modificar RF-08 y avisar para ajustar la prueba. No se quita en silencio.
+- **Criterio de éxito:** `audit.test.tsx` vuelve a pasar 7/7 y al elegir una acción la consulta incluye `accion=<valor>`.
+
+### `FIX-37` - Informar el nivel de acceso por instancia en `GET /account/profile` (`FIX-30` / `FRN-18` / `SEC-04`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** A definir
+- **Estimación:** 1 h
+- **Depende de:** `SEC-04` y `FIX-30`.
+- **Problema y evidencia:**
+  - `FIX-30` (frontend) arma `canOperateInstance(vmid)` con `perfil.permisos: [{ vmid, nivelAcceso }]` de `GET /account/profile`, como proponía su entregable 2. El backend no envía ese campo: `ports.UsuarioDetalleDTO` (`internal/core/ports/user_port.go:75`) solo tiene `instanciasPermitidas: []int`.
+  - Con el backend real, `mapPerfilToUserSession` guarda `permisos: []`, y **`canOperateInstance` da `false` para todo OPERATOR, aunque tenga `FULL_ACCESS`**. Cuando la UI de la Etapa 1 use el helper para habilitar encender, apagar o reiniciar, ningún operador va a poder operar.
+  - Prueba que falla: `test/back/resource_access_acceptance_test.go`, caso *"FIX-37 FRN-18 GET /account/profile expone el nivel de acceso por instancia…"*. Las claves que se reciben no incluyen `permisos`.
+- **Entregable:**
+  1. Agregar a la respuesta de `GET /account/profile` el campo `permisos: [{ vmid, nivelAcceso: "FULL_ACCESS" | "READ_ONLY" }]`, con el mismo formato de `GET /api/admin/users/:id/permissions`, leído de `permisos_instancia`.
+  2. Mantener `instanciasPermitidas` para no romper a quienes ya lo usan.
+- **Criterio de éxito:**
+  - El caso `FIX-37…` pasa: con la 101 en `FULL_ACCESS` y la 102 en `READ_ONLY`, el perfil del OPERATOR informa esos niveles.
+  - En el frontend, `canOperateInstance(101)` da `true` y `canOperateInstance(102)` da `false` con datos reales.
+  - BAC-14, SEC-04 y LOGIN-04 siguen en verde.
+
+### `FIX-38` - Corregir lo implementado hasta ahora de `usePermissions()` (`SEC-03`, en proceso) (Frontend)
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 0,5 h (se hace dentro de `SEC-03`)
+- **Depende de:** `SEC-03` y `BAC-09`.
+- **Problema y evidencia:** los commits `54b397e` a `0b632f1` crearon `src/hooks/usePermissions.ts`. Más allá de lo que todavía falta de `SEC-03` (`isOperator`, `hasRole`, `PermissionGate` y el menú), lo ya hecho tiene dos problemas:
+  1. **Ubicación:** `SEC-03` pide el hook y el contexto en `src/context/`. Si el contexto se crea ahí sin mover este hook, quedan dos fuentes de permisos que se pueden desincronizar. Las pruebas de `SEC-03` buscan en `src/context/`.
+  2. **"READ_ONLY" tratado como rol:** `canAccessInstance` acepta `user.rol` en `['OPERATOR', 'READ_ONLY']`, pero los roles son solo `ADMIN` y `OPERATOR` (`BAC-09`). `READ_ONLY` es un **nivel de acceso por instancia** (`SEC-04`), no un rol. Esa condición confunde los dos conceptos y habilitaría a un rol que no existe.
+- **Entregable:**
+  1. Llevar `usePermissions()` a `src/context/` como única fuente, junto con el contexto y `PermissionGate`. Si conviene conservar el import desde `@/hooks/usePermissions`, que ese archivo solo lo re-exporte.
+  2. En `canAccessInstance`, aceptar solo `rol === 'OPERATOR'` (y `ADMIN` siempre); el nivel `READ_ONLY` se evalúa solo dentro de `permisos`.
+- **Criterio de éxito:**
+  - Los casos de `SEC-03` y el de `FIX-30` de `navigation.test.tsx` pasan con el hook en `src/context/`.
+  - Un usuario con `rol: 'READ_ONLY'` (rol inexistente) no obtiene acceso a ninguna instancia.

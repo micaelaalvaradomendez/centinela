@@ -253,6 +253,35 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 			t.Errorf("PUT { permisos: [] } dejó %s permisos; se esperaba 0", rows)
 		}
 	})
+
+	t.Run("FIX-37 FRN-18 GET /account/profile expone el nivel de acceso por instancia para canOperateInstance", func(t *testing.T) {
+		// El frontend (FIX-30) arma canOperateInstance con perfil.permisos: [{ vmid, nivelAcceso }].
+		if status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"permisos": []map[string]any{
+			{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
+			{"vmid": 102, "nivelAcceso": "READ_ONLY"},
+		}}); status != http.StatusNoContent {
+			t.Fatalf("PUT permisos con niveles explícitos: esperado 204, recibido %d: %#v", status, body)
+		}
+		status, profile := requestJSON(t, http.MethodGet, "/account/profile", operatorToken, nil)
+		if status != http.StatusOK {
+			t.Fatalf("GET /account/profile del OPERATOR: esperado 200, recibido %d: %#v", status, profile)
+		}
+		if _, ok := profile["permisos"]; !ok {
+			t.Fatalf("GET /account/profile no incluye permisos [{ vmid, nivelAcceso }]: el frontend no puede distinguir FULL_ACCESS de READ_ONLY y canOperateInstance da false para todo OPERATOR (claves recibidas: %v)", mapKeys(profile))
+		}
+		if levels := permissionLevels(t, profile); levels[101] != "FULL_ACCESS" || levels[102] != "READ_ONLY" {
+			t.Errorf("GET /account/profile debe informar 101 FULL_ACCESS y 102 READ_ONLY; recibido %#v", profile["permisos"])
+		}
+	})
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // permissionsPayload arma el body canónico de PUT /admin/users/:id/permissions sin nivel

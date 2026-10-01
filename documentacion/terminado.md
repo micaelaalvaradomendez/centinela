@@ -340,6 +340,9 @@
 
 ### `BAC-16` - Entrega segura de credenciales temporales (Mailer Service RF-13)
 
+> [!NOTE]
+> **Actualización (01/10/2026):** el adaptador SMTP real quedó hecho con `BAC-16B` (backend `860b3c9`, ver la verificación del 01/10/2026 en este archivo).
+
 - **Área:** Backend / Infraestructura
 - **Asignados:** Lisandro y Nico
 - **Estimación:** 3 h
@@ -542,6 +545,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `FRN-13` - Flujo integral de logout y limpieza de sesión en cliente (Frontend)
 
+> [!NOTE]
+> **Actualización (01/10/2026):** la regresión se corrigió con `FIX-28` (commit `cfb88f7`, ver la verificación del 01/10/2026 en este archivo). El logout revoca la sesión en el servidor y la prueba LOGIN-04 pasa 10/10.
+
 > [!WARNING]
 > **Regresión detectada (28/09/2026, frontend `8d7ecab`).** El commit `deb59cb` quitó el `Authorization: Bearer` del logout (`skipAuthorization: true`). El backend responde `401 MISSING_TOKEN` y la sesión queda activa en el servidor, aunque el cliente limpia su almacenamiento y redirige. La corrección está registrada en [`futuro.md`](futuro.md) como `FIX-28`.
 
@@ -609,6 +615,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Criterio de éxito:** una cuenta con contraseña temporal solo puede cerrar sesión o cambiarla; después del cambio continúa al enrolamiento o validación 2FA que corresponda.
 
 ### `FRN-14` - Suite de pruebas unitarias y de integración para la vista de Auditoría (`Auditoria.tsx`)
+
+> [!WARNING]
+> **Regresión detectada (01/10/2026, frontend `3d1e84a`).** El commit `56b88f5` (*"eliminar columnas que no serán utilizadas"*) quitó de `Auditoria.tsx` el filtro **"Acción"** y el parámetro `accion`, que exige RF-08 (`requerimientos.md`: *"filtros por fecha, usuario, tipo de acción y resultado"*). `audit.test.tsx` pasa 6/7; falla *"actualiza los query parameters de filtro…"*. La corrección es **`FIX-36`**, en [`futuro.md`](futuro.md).
 
 > [!NOTE]
 > **Estado: Completada (verificado el 29/09/2026, frontend `749194e`).** `test/front/audit.test.tsx` pasa 7/7: carga paginada con Bearer, registros reales, filtros de acción, resultado y fechas, paginación, exportación CSV con Bearer y redirección del OPERATOR a `/dashboard` (el guard se corrigió con `FIX-22`).
@@ -726,6 +735,9 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
 
 ### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
+
+> [!NOTE]
+> **Actualización (01/10/2026):** el entregable 2 se corrigió con `FIX-27` (commit `3ea7fa4`). FRN-06 pasa 6/6.
 
 > [!WARNING]
 > **Estado: Implementado con problema (verificado el 25/09/2026, frontend `7fbf969`).**
@@ -904,6 +916,8 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 > **Entregable 1 cumple:** `detailsUserPage.tsx`, `rolesAndPermissions.tsx` y `userInstanceService.ts` leen el `nivelAcceso` desde `GET /permissions` (READ_ONLY se muestra como "Solo lectura") y envían `{ vmid, nivelAcceso }` en el `PUT`. Pruebas: los 2 casos `FRN-18…` de `admin-users.test.tsx` pasan.
 >
 > **Entregable 2 no existe:** no hay `canOperateInstance`, porque el hook `usePermissions()` de `SEC-03` no está implementado. Prueba que falla: `navigation.test.tsx`, caso `FIX-30 canOperateInstance…`. Corrección registrada en [`futuro.md`](futuro.md) como `FIX-30`.
+>
+> **Actualización (01/10/2026):** `FIX-30` ya agregó `canOperateInstance` en `src/hooks/usePermissions.ts` (ver la verificación del 01/10/2026). Pero el backend no informa el nivel por instancia en `GET /account/profile`, así que con datos reales el helper da `false` para todo OPERATOR. La corrección es **`FIX-37`**, en [`futuro.md`](futuro.md).
 
 - **Área:** Frontend
 - **Asignados:** Cristian y Belinda
@@ -1105,3 +1119,97 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Criterio de éxito:** la prueba `INF-08B…` de `test/back` pasa. La prueba lee `backend/.env.example`, verifica que estén las 6 variables con valores reales (no de ejemplo) y **se autentica contra el servidor SMTP**, sin enviar correos.
 - **Advertencia de seguridad:** `.env.example` queda versionado. Si contiene la contraseña real, cualquiera con acceso al repositorio puede enviar correo como El Centinela. Conviene una cuenta de uso exclusivo con permisos mínimos.
 
+---
+
+# Verificación del 01/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `860b3c9` y frontend `3d1e84a`.
+
+### `BAC-16B` - Adaptador Go `SmtpEmailService` para envío real de credenciales y códigos OTP (`RF-09` / `RF-13`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, backend `860b3c9`).** `test/back/cierre_fase_base_acceptance_test.go`, caso `BAC-16B…`, con Mailpit en **STARTTLS obligatorio**:
+> - Con `EMAIL_PROVIDER=smtp`, `cmd/api/main.go` instancia `SMTPEmailService` (`go-mail`; STARTTLS en el 587 y TLS directo en el 465). Sin `EMAIL_PROVIDER=smtp` sigue usando `MockEmailService`, y la suite pasa en ese modo.
+> - Correos multiparte (texto y HTML) para alta y reset administrativo (`EnviarCredencialesTemporales`) y para el código OTP (`EnviarCodigoRecuperacion`). La clave temporal que llega permite iniciar sesión, y el código de 6 dígitos también llega.
+> - Con el servidor SMTP caído, el alta responde `502 EMAIL_DELIVERY_FAILED` y el usuario no se guarda.
+>
+> **Notas:**
+> - El puerto cambió de nombre: `EnviarContrasenaTemporal` pasó a `EnviarCredencialesTemporales(destinatario, nombre, clave)`, y se agregó `SendMail`.
+> - El envío con las credenciales reales del relay depende de `FIX-34` (`INF-08B`).
+> - Se verificó contra Mailpit, no contra Brevo.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** A definir (Cierre de Fase Base).
+- **Depende de:** `BAC-16`, `BAC-19` e `INF-08B` (credenciales SMTP en el repo del backend, para desarrollar en local). No depende de la configuración del servidor (`INF-08A`).
+- **Problema y contexto:** `BAC-16` dejó creado el puerto hexagonal `ports.EmailService`, pero solo implementó `MockEmailService` por consola. El backend necesita el adaptador SMTP real para enviar las contraseñas temporales y los códigos de recuperación de 6 dígitos.
+- **Entregable:**
+  1. Implementar `SmtpEmailService` en `backend/internal/adapters/secondary/email/smtp_service.go` cumpliendo la interfaz `ports.EmailService` (`EnviarContrasenaTemporal` y `EnviarCodigoRecuperacion`, los nombres reales de `internal/core/ports/email_port.go`) con soporte `STARTTLS`/`TLS`.
+  2. En `cmd/api/main.go`, instanciar `SmtpEmailService` cuando `EMAIL_PROVIDER=smtp` y mantener `MockEmailService` cuando `EMAIL_PROVIDER=mock` (usado por los tests automatizados).
+  3. Estructurar los cuerpos de correo para alta de cuenta (`RF-09`), reset administrativo (`BAC-15`) y código OTP de 6 dígitos (`RF-13`).
+- **Criterio de éxito:** Con `EMAIL_PROVIDER=smtp` y las credenciales de `INF-08B`, el backend envía correos reales desde local; ante un fallo de entrega aborta la operación y devuelve `502 EMAIL_DELIVERY_FAILED`; la suite de tests sigue pasando en modo `mock`.
+
+### `FIX-27` - Mensaje específico cuando falla el envío del correo en el alta (`FIX-24`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, frontend `3d1e84a`), commit `3ea7fa4`.** `test/front/admin-users.test.tsx`, caso `FIX-27…`, pasa: ante `502 EMAIL_DELIVERY_FAILED` se muestra el mensaje específico, el formulario no navega y conserva los datos. Los demás casos de FRN-06 siguen en verde (19/19).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FIX-24` y `BAC-16`.
+- **Problema y evidencia:** el entregable 2 de `FIX-24` pide *"manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: 'No se pudo enviar el correo; el usuario no fue creado'"*. El mensaje se arma bien en `components/features/createuser/services/createUserService.ts`, que relanza `ApiRequestError('No se pudo enviar el correo de activación; el usuario no fue dado de alta.', 502, 'EMAIL_DELIVERY_FAILED')`. Pero el `catch` de `components/features/createuser/hooks/useCreateUser.ts` lo ignora y siempre muestra el texto genérico *"No se pudo completar la creación del usuario."*. El administrador no se entera de que el problema fue el correo. La prueba `test/front/admin-users.test.tsx`, caso *"FIX-27 si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED)…"*, falla con `Unable to find an element with the text: /no se pudo enviar el correo|servidor de correo no está disponible/i`.
+- **Entregable:**
+  1. En el `catch` de `useCreateUser.submitNewUser`, si `error instanceof ApiRequestError && error.errorCode === 'EMAIL_DELIVERY_FAILED'`, usar `error.message` como descripción del toast de error. Mantener el mensaje genérico para el resto de los errores.
+  2. Conservar el comportamiento actual ante el error: no navegar a `/users` y dejar cargados los datos del formulario para reintentar.
+- **Criterio de éxito:** ante un 502 del correo el administrador ve el mensaje específico, sigue en el formulario de alta y los datos se conservan. Los casos `FIX-27…` de `admin-users.test.tsx` pasan y los demás casos de FRN-06 siguen en verde.
+
+### `FIX-28` - Regresión: el logout del frontend no envía el access token y la sesión no se revoca (`FRN-13` / `BAC-17`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, frontend `3d1e84a`), commit `cfb88f7`.** Se quitó `skipAuthorization: true` de `logoutSession()`: el logout viaja con `Authorization: Bearer` y la cookie `centinela_refresh`. Pasan los tres controles:
+> - `session-security.test.ts`, caso `FIX-28…` (12/12 en el archivo).
+> - `session_security_acceptance_test.go`, caso de integración `FIX-28…`: `204`, y después el access token viejo recibe `401`.
+> - Prueba integral LOGIN-04 frontend ↔ backend, **paso 7**: la prueba completa pasa 10/10 por primera vez.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir. **Prioridad alta**: la sesión queda abierta en el servidor después de "Cerrar sesión".
+- **Depende de:** `FRN-13`, `BAC-17` y `SEC-01`.
+- **Problema y evidencia:**
+  1. En el commit `deb59cb` (*"Se limpia implementacion vieja de endpoint donde se utiliza body y header"*), `authService.logoutSession()` pasó a llamar a `POST /api/auth/logout` con `skipAuthorization: true`, es decir, **sin `Authorization: Bearer <accessToken>`**.
+  2. El backend no cambió ese contrato: `cmd/api/main.go:157` monta `/auth/logout` con `middleware.RequireAuth`, porque `BAC-17` necesita el JTI del access token para revocar atómicamente el access y el refresh. Sin el Bearer responde `401 MISSING_TOKEN` antes de llegar al handler.
+  3. El usuario no ve el error, porque `useLogout()` limpia la sesión local y redirige a `/login` igual, pero **el access token sigue siendo válido hasta que expira**. Esto incumple el entregable 1 de `FRN-13` y el criterio de `BAC-17`.
+  - Pruebas que lo muestran:
+    - `test/front/session-security.test.ts`, caso *"FIX-28 logoutSession envía POST /auth/logout con Authorization: Bearer…"*: `expected undefined to be 'Bearer access-123'`.
+    - `test/back/session_security_acceptance_test.go`, caso *"FIX-28 FRN-13 integracion el logout tal como lo envia el frontend…"*: `esperado 204, recibido 401: MISSING_TOKEN`, y después del logout `/account/profile` sigue respondiendo 200.
+- **Entregable:**
+  1. En `components/features/auth/services/authService.ts`, quitar `skipAuthorization: true` de `logoutSession()` para que el cliente adjunte el `Bearer` del access token, manteniendo `credentials: 'include'` para la cookie `centinela_refresh`.
+  2. Mantener la limpieza local actual de `useLogout()`: `catch` + `finally` con `clearAuthTokens()` y `navigate('/login', { replace: true })`.
+- **Criterio de éxito:** los dos casos `FIX-28…` pasan. "Cerrar sesión" revoca en el servidor el access y el refresh (el access token revocado responde `401 TOKEN_REVOKED`), y los demás casos de `session-security.test.ts` siguen en verde.
+- **Alternativa descartada:** aceptar en el backend un logout solo con la cookie. Sin el access token, el backend no puede revocar el JTI del access, que es lo que exige `BAC-17`.
+
+### `FIX-30` - Helper `canOperateInstance` en `usePermissions()` (`FRN-18`) (Frontend)
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 01/10/2026, frontend `3d1e84a`), commits `54b397e` a `0b632f1`.**
+>
+> **Frontend cumple:** `src/hooks/usePermissions.ts` expone `canOperateInstance(vmid)`. Da `true` para `ADMIN` o `FULL_ACCESS` y `false` para `READ_ONLY` o un VMID sin asignar. Lo arma con `permisos: [{ vmid, nivelAcceso }]` de la sesión, que se carga desde `GET /account/profile` (`mapPerfilToUserSession`). Prueba: `navigation.test.tsx`, caso `FIX-30…`, que siembra ese formato.
+>
+> **Falta la fuente de datos real:** el backend no devuelve `permisos` en `GET /account/profile`; `UsuarioDetalleDTO` solo tiene `instanciasPermitidas`. Con el backend real, la sesión queda con `permisos: []` y **`canOperateInstance` da `false` para todo OPERATOR, aunque tenga `FULL_ACCESS`**. Prueba: `resource_access_acceptance_test.go`, caso `FIX-37…`. La corrección es **`FIX-37`** (backend), en [`futuro.md`](futuro.md).
+>
+> **Nota:** el hook quedó en `src/hooks/` y no en `src/context/`, que es lo que pide `SEC-03`. Eso se sigue en `SEC-03` y `FIX-38`.
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 0,5 h (una vez que exista `SEC-03`)
+- **Ventana propuesta:** A definir, junto con `SEC-03` o inmediatamente después.
+- **Depende de:** `SEC-03` y `FRN-18`.
+- **Problema y evidencia:** el entregable 2 de `FRN-18` pide agregar a `usePermissions()` el helper `canOperateInstance(vmid)`. Debe devolver `true` solo para `ADMIN` o para instancias con `FULL_ACCESS`, a diferencia de `canAccessInstance(vmid)`, que acepta `READ_ONLY` y `FULL_ACCESS`. No existe, porque `usePermissions()` (`SEC-03`) no está implementado: `context/AuthContext.js` no exporta ningún hook. Prueba que falla: `test/front/navigation.test.tsx`, caso *"FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)"*.
+- **Entregable:**
+  1. Exponer `canOperateInstance(vmid: number): boolean` en `usePermissions()`.
+  2. Tomar el nivel por instancia de la sesión del usuario: por ejemplo `permisos: [{ vmid, nivelAcceso }]` en `centinela_user`, cargado con el mismo contrato de `GET /api/admin/users/:id/permissions`, o con un campo equivalente en `GET /account/profile`. La prueba siembra ese formato. Si se elige otra fuente, hay que avisar para alinear la prueba.
+- **Criterio de éxito:** `canOperateInstance(101)` es `true` con `FULL_ACCESS`, es `false` con `READ_ONLY` y para un VMID no asignado, y siempre es `true` para `ADMIN`. El caso `FIX-30…` pasa.

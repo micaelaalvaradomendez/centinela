@@ -1,22 +1,21 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 30/09/2026 (segunda corrida del día)
-**Alcance:** las tareas de [documentacion/actual.md](../documentacion/actual.md), incluidos `FIX-32` y `FIX-33`, y la regresión de [documentacion/terminado.md](../documentacion/terminado.md).
+**Fecha de ejecución:** 01/10/2026
+**Alcance:** las tareas de [documentacion/actual.md](../documentacion/actual.md) y la regresión de [terminado.md](../documentacion/terminado.md) y [terminado-1.md](../documentacion/terminado-1.md).
 
-| Componente | Revisión probada | Commits nuevos desde la corrida anterior |
+| Componente | Revisión probada | Commits nuevos desde la corrida anterior (30/09) |
 |---|---|---|
-| Backend | `43a0b06` (último commit de `main`) | 8 commits (ver detalle abajo) |
-| Frontend | `749194e` (último commit de `main`) | Ninguno |
+| Backend | `860b3c9` (último commit de `main`) | 1 |
+| Frontend | `3d1e84a` (último commit de `main`) | 4 merges (PR #67 a #70) |
 
-Commits nuevos del backend:
-- `9e0f43c`: 1 sesión = 1 fila en `sesiones_activas` y sesiones efímeras en Redis con TTL (**BAC-17B**).
-- `546e1d5`: credenciales de Redis local unificadas y `REDIS_DB` (**INF-06A**).
-- `0aac034`: puerto `KeyValueStore` con adaptador Redis y Pub/Sub (**BAC-17A**).
-- `233e804`: variables SMTP en `.env.example` (**INF-08B**).
-- `45ecad7`: SSE en `/api/events` con ticket efímero, bus Pub/Sub y corte en vivo (**BAC-21C**).
-- `c997398`, `2c56bab` y `43a0b06`: correcciones del simulador de Proxmox (**FIX-32**) y `409 INSTANCE_BUSY` (**FIX-33**).
+**Commits nuevos:**
+- **Backend** `860b3c9`: adaptador `SmtpEmailService` con STARTTLS/TLS, elegido con `EMAIL_PROVIDER=smtp` (**BAC-16B**).
+- **Frontend** `cfb88f7`: el logout envía Bearer y la cookie HttpOnly (**FIX-28**).
+- **Frontend** `3ea7fa4`: mensaje correcto cuando falla el correo al crear un usuario (**FIX-27**).
+- **Frontend** `54b397e` … `0b632f1`: hook `usePermissions()` con `canOperateInstance` (**FIX-30**).
+- **Frontend** `56b88f5` y `e6ad7ad`: refactor de Auditoría. Se quitaron las columnas Nodo e IP origen, y también **el filtro por acción** (ver §2.1).
 
-**Cómo se ejecutó:** cada submódulo se actualizó a su último commit de `origin/main`; ante un conflicto prevalece el remoto. Cada suite se corrió **dos veces**, con el mismo resultado y sin contenedores residuales.
+**Cómo se ejecutó:** cada submódulo se llevó al último commit de `origin/main`; ante un conflicto prevalece el remoto. El backend se corrió **dos veces completo**, con el mismo resultado y sin contenedores residuales. El frontend también se corrió dos veces, con el mismo resultado.
 
 ---
 
@@ -24,15 +23,18 @@ Commits nuevos del backend:
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 43 | **35** | **8** | 0 |
-| Frontend (`test/front`) | 95 | 74 | **11** | 10 |
-| **Total** | **138** | **109** | **19** | **10** |
+| Backend (`test/back`) | 44 | **37** (antes 35) | **7** | 0 |
+| Frontend (`test/front`) | 95 | **76** (antes 74) | **9** | 10 |
+| **Total** | **139** | **113** | **16** | **10** |
 
-Los 10 omitidos del frontend son la prueba integral LOGIN-04, que corre desde `test/back` contra el backend real.
+Los 10 omitidos del frontend son la prueba integral LOGIN-04, que se ejecuta desde `test/back` contra el backend real. **Esta corrida pasa 10/10.**
 
-**Avance: el backend completó 6 tareas** (BAC-17A, BAC-17B, BAC-21C, INF-06A, FIX-33 y FIX-32), y pasa de 30 a 35 casos aprobados. El frontend no tuvo cambios.
+**Avance:**
+- **Completas:** `BAC-16B`, `FIX-27` y `FIX-28`. `FIX-30` está hecha en el frontend, pero el backend no le da los datos: `FIX-37`, caso nuevo que falla (§2).
+- **La prueba integral LOGIN-04 pasa completa** por primera vez: el paso 7 (logout) ya revoca la sesión.
+- **Regresión nueva:** la pantalla de Auditoría ya no tiene el filtro por acción (`FRN-14`).
 
-**Todos los fallos son del producto.** Los ajustes que hubo que hacer en las pruebas se explican en la [sección 5](#5-ajustes-a-las-pruebas-en-esta-corrida).
+Todos los fallos que quedan son del producto. Algunos tests se tuvieron que adaptar; se explica en la [sección 5](#5-ajustes-a-las-pruebas-en-esta-corrida).
 
 ---
 
@@ -42,72 +44,76 @@ Los 10 omitidos del frontend son la prueba integral LOGIN-04, que corre desde `t
 
 | Tarea | Pruebas | Estado | Detalle |
 |---|---|---|---|
-| `BAC-17A` Adaptador de Redis | `cierre_fase_base…` | ✅ **Nueva** | `go-redis`, adaptador `secondary/redis`, puerto `KeyValueStore` con `GetDel`/`Publish`/`Subscribe`, y el backend conectado a Redis al arrancar. Si Redis no está, arranca en modo degradado en memoria (`docs/redis.md`) |
-| `BAC-17B` Una sesión = un registro | `cierre_fase_base…` | ✅ **Nueva** | Login + 2FA + 10 refresh = 1 fila; después del logout no quedan filas activas. Además, cada refresh rota el access token y el anterior deja de valer |
-| `BAC-21C` Tickets y `/api/events` | `puente_etapa1…` (2) | ✅ **Nueva** | El ticket vive en Redis con TTL de 30 s o menos y es de un solo uso (un ticket inválido o reutilizado recibe 401). El stream SSE se corta al hacer logout |
-| `INF-06A` Redis local | `cierre_fase_base…` | ✅ **Nueva** | Publicado en `127.0.0.1:6379`, `REDIS_ADDR=localhost:6379` y la misma contraseña en el compose y en `.env.example` |
-| `FIX-33` Bloqueo → 409 | Verificación contra el simulador (§4) | ✅ **Nueva** | Un `stop` inmediatamente después de un `start` responde `409 INSTANCE_BUSY` ("La instancia se encuentra ejecutando otra tarea") |
-| `FIX-32` Fidelidad del simulador | Comparación contra el Proxmox real (§4) | ✅ **Nueva** | `unprivileged` numérico, `ha` en `status/current`, `/cluster/nextid`, `/nodes/{node}/tasks` con los mismos campos que el real y 401 sin cuerpo. `tasks` lista solo tareas terminadas, igual que el real; la primera medición la vi vacía porque consulté con la tarea en curso |
-| `BAC-28` Simulador para la Etapa 1 | Verificación del simulador y comparación del endpoint de IP con el real | 🟡 | `DELETE` (UPID `qmdestroy`, 500 si está encendida) y guest agent funcionan. En `lxc/{vmid}/interfaces`, `prefix` es número (en el real, string) y un LXC apagado responde 500 (en el real, `200 {"data":null}`) → **`FIX-35`** (`futuro-1.md`) |
-| `INF-08B` Credenciales SMTP → `FIX-34` | `cierre_fase_base…` | 🟡 | Las 6 variables ya están en `.env.example` (`233e804`), pero `SMTP_USER` y `SMTP_PASS` tienen **valores de ejemplo** (`tu_correo@ejemplo.com`, `tu_clave_secreta_aqui`). Con eso no se puede autenticar contra `smtp-relay.brevo.com` |
-| `BAC-16B` Adaptador SMTP | `cierre_fase_base…` | ❌ | Con `EMAIL_PROVIDER=smtp` sigue sin salir ningún correo por SMTP |
-| `BAC-18B` Índice parcial y particiones | `cierre_fase_base…` | ❌ | No hay `idx_sesiones_activas_vigentes` (ahora sobre `jti_access`), ni particiones, ni índices compuestos |
-| `BAC-21B` Instancias extendidas | `puente_etapa1…` (3) | ❌ | `GET /instances` no trae `ip`/`cpuUsage`/`ramUsage`/`maxRam`/`nivelAcceso`/`activeTask`; `/status/:action` → 404; `DELETE` → 405. **Nota:** `start` ya devuelve `tareaId` además del `upid` |
-| `FIX-31` TLS de Nginx versionado | `cierre_fase_base…` | ❌ | No hay ninguna configuración de Nginx con `listen 443 ssl` |
-| `FIX-28` Logout sin Bearer | `session-security`, `session_security…` y LOGIN-04 paso 7 | ❌ | El frontend no cambió: la sesión sigue activa en el servidor después de "Cerrar sesión" |
-| `SEC-03`, `FIX-30` | `navigation.test.tsx` | ❌ | Frontend sin cambios |
-| `FIX-27`, `FIX-29` | `admin-users`, `password-change` y `recover-password` | ❌ | Frontend sin cambios |
-| `FRN-17C` Cliente de eventos | `events-client.test.tsx` (3) | ❌ | No existe `useEvents`. **El backend ya expone `/api/events/ticket` y `/api/events` (BAC-21C), así que FRN-17C está desbloqueada** |
+| `BAC-16B` Adaptador SMTP | `cierre_fase_base…` | ✅ **Nueva** | Con `EMAIL_PROVIDER=smtp` y STARTTLS obligatorio, la clave temporal llega por SMTP y permite iniciar sesión, y también llega el código de 6 dígitos. Con el servidor SMTP caído, el alta responde `502 EMAIL_DELIVERY_FAILED` y no se guarda el usuario. Sin `EMAIL_PROVIDER` se sigue usando el mock |
+| `FIX-28` Logout con Bearer | `session-security`, `session_security…` y LOGIN-04 paso 7 | ✅ **Nueva** | El frontend envía `Authorization: Bearer` y la cookie (`cfb88f7`). En la prueba integral, el access token queda revocado después de "Cerrar sesión" |
+| `FIX-27` Mensaje ante fallo de correo | `admin-users.test.tsx` | ✅ **Nueva** | El mensaje del 502 se muestra tal como lo envía el backend (`3ea7fa4`) |
+| `FIX-30` `canOperateInstance` | `navigation.test.tsx` y `resource_access…` (`FIX-37`, nuevo) | 🟡 | En el frontend cumple: `canOperateInstance(vmid)` responde `true` con `FULL_ACCESS` y `false` con `READ_ONLY` o sin asignación, leyendo `perfil.permisos`. **Pero `GET /account/profile` no devuelve `permisos`**, solo `instanciasPermitidas`. Con datos reales, el helper da `false` para todo OPERATOR → **`FIX-37`** (backend) |
+| `SEC-03` Permisos reactivos | `navigation.test.tsx` (3) | 🟡 Parcial | Existe `usePermissions()`, pero en `src/hooks/` y no en `src/context/`, como pide el entregable. Le faltan `isOperator` y `hasRole`; no existe `PermissionGate`, y el menú sigue mostrando "Auditoría" al OPERATOR |
+| `FIX-29` Complejidad de contraseña | `password-change`, `recover-password` | ❌ | Sin cambios: se valida `/[0-9]/` donde corresponde validar mayúsculas |
+| `FRN-17C` Cliente de eventos | `events-client.test.tsx` (3) | ❌ | No existe `useEvents`. El backend ya ofrece `/api/events/ticket` y `/api/events` (BAC-21C) |
+| `INF-08B` → `FIX-34` | `cierre_fase_base…` | 🟡 (ya en `terminado.md`) | `SMTP_USER` y `SMTP_PASS` siguen con valores de ejemplo |
+| `BAC-18B` Índice parcial y particiones | `cierre_fase_base…` | ❌ | Sin índice parcial sobre `jti_access`, sin particiones y sin índices compuestos |
+| `BAC-21B` Instancias extendidas | `puente_etapa1…` (3) | ❌ | Faltan `ip`, `cpuUsage`, `ramUsage`, `maxRam`, `nivelAcceso` y `activeTask`. `/status/:action` responde 404 y `DELETE` responde 405 |
+| `FIX-31` TLS de Nginx versionado | `cierre_fase_base…` | ❌ | Ninguna configuración de Nginx versionada tiene `listen 443 ssl` |
 | `INF-06B`, `INF-08A` | Sin prueba automatizada | — | Configuración del servidor |
 
-**Reclasificación (30/09/2026):**
-- Pasaron a `terminado.md`: `BAC-17A`, `BAC-17B`, `BAC-21C` e `INF-06A` (completas), e `INF-08B` (con problema; su corrección es `FIX-34` en `futuro.md`).
-- Pasaron a `terminado-1.md`: `FIX-32` y `FIX-33` (completas), y `BAC-28` (con problema; su corrección es `FIX-35` en `futuro-1.md`).
+### 2.1 Regresión: filtro por acción en Auditoría (`FRN-14`, en `terminado.md`)
+
+`56b88f5` ("eliminar columnas que no serán utilizadas") sacó de `src/pages/Auditoria.tsx`:
+- las columnas *Nodo* e *IP origen*;
+- el campo **"Acción"** y el parámetro `accion` de la consulta.
+
+Las columnas eran opcionales, pero el filtro lo exige **RF-08**: [requerimientos.md:193](../documentacion/requerimientos.md#L193) dice "filtros por fecha, usuario, tipo de acción y resultado". El backend lo sigue aceptando (BAC-18 pasa).
+
+**Prueba que falla:** `audit.test.tsx`, *"actualiza los query parameters de filtro al cambiar los selectores reactivos"*. Antes pasaba (7/7) y ahora da 6/7.
+
+**Cómo seguir:** restaurar el filtro "Acción". Si se decide que no va, primero hay que cambiar RF-08. Corresponde agregar un **FIX** en `futuro.md` y una advertencia en `FRN-14`.
 
 ---
 
 ## 3. Prueba integral LOGIN-04 (frontend real contra backend real)
 
-9 de 10 pasos en verde, igual que antes, ahora también con las sesiones nuevas de BAC-17B. **Sigue fallando el paso 7** (`FIX-28`): después de "Cerrar sesión", el access token sigue válido.
+**10 de 10 pasos en verde.** El paso 7 ya funciona: "Cerrar sesión" revoca la sesión en el servidor (`FIX-28`). El paso 8 (recuperación de contraseña) también pasa, después de adaptar el test al texto nuevo del correo simulado (§5).
 
 ---
 
-## 4. Simulador de Proxmox (FIX-32 y FIX-33)
+## 4. Simulador de Proxmox
 
-Se compararon el simulador de `43a0b06` y el Proxmox real, con las credenciales de `api-proxmox.md`. Sobre el real se hicieron solo lecturas.
+El simulador no cambió desde la corrida anterior (`860b3c9` solo toca el correo), así que no repetí la comparación con el Proxmox real.
 
-| Endpoint | 30/09 (1ª corrida) | Ahora |
-|---|---|---|
-| `cluster/resources`, `nodes/{node}/status`, `lxc`, `rrddata` | ✅ | ✅ |
-| `lxc/{vmid}/status/current` | ❌ faltaba `ha` | ✅ |
-| `lxc/{vmid}/config` | ❌ `unprivileged` era texto | ✅ Mismos tipos (las claves que difieren son propias de cada contenedor) |
-| `cluster/nextid` | ❌ 501 | ✅ |
-| `nodes/{node}/tasks` | ❌ 501 | ✅ `{total, data[]}` con los mismos campos que el real; lista las tareas terminadas |
-| `lxc/{vmid}/interfaces` (BAC-28) | — | ❌ `prefix` es número (en el real, string); LXC apagado → 500 (en el real, `200 {"data":null}`) → `FIX-35` |
-| 401 con token inválido | 🟡 con cuerpo JSON | ✅ `401 Authentication failed!` sin cuerpo, igual que el real |
-
-**Backend contra el simulador:** el listado, la protección de VMIDs y el `start` con UPID y `tareaId` funcionan. Un segundo comando mientras hay una tarea en curso ahora responde `409 INSTANCE_BUSY` (**FIX-33 ✅**).
+**Sigue vigente:**
+- `FIX-32` y `FIX-33` completas (`terminado-1.md`).
+- `BAC-28` con diferencias en `lxc/{vmid}/interfaces`: `prefix` es número y un LXC apagado responde 500. Su corrección es `FIX-35`, en `futuro-1.md`.
 
 ---
 
 ## 5. Ajustes a las pruebas en esta corrida
 
-Hicieron falta por el cambio de esquema de BAC-17B y no ocultan fallos:
+Ninguno oculta un fallo. Todos alinean el test con lo que pide la tarea:
 
 | Cambio | Motivo |
 |---|---|
-| `signedAccessToken` crea la sesión con `id = sid`, `jti_access` y `jti_refresh`, y agrega el claim `sid` | `sesiones_activas` ya no tiene `jti_token`. La sesión se identifica por el claim `sid` y el middleware valida `jti_access` |
-| BAC-17 busca por `jti_access` | Cambió el nombre de la columna |
-| BAC-18B espera el índice parcial sobre `jti_access` | La tarea nombraba `jti_token`, que se renombró en BAC-17B |
-| La integración SEC-01/SEC-02 usa el access token nuevo y la cookie rotada después del refresh, y verifica que el access anterior quede invalidado | Es lo que hace el frontend real. BAC-17B rota el access en cada refresh |
+| Mailpit (`compose.yaml`) con certificado de prueba y **STARTTLS obligatorio** (`MP_SMTP_REQUIRE_STARTTLS`). `backend-smtp` confía en esa CA (`SSL_CERT_FILE`, `test/back/mailpit-tls/`) | El adaptador, como corresponde, no manda credenciales por una conexión sin cifrar, y el Mailpit anterior no ofrecía TLS: el alta daba 502. El relay real (puerto 587) usa STARTTLS. Ahora el test además comprueba que el envío vaya cifrado |
+| `passwordCandidates` toma la clave de "contraseña … es:" en el cuerpo sin limpiar | La clave temporal puede tener `@`, `*`, `<`, `=`, etc. El test la descartaba o la recortaba, así que fallaba según la clave que tocara |
+| La marca del código de recuperación pasa a `"código de seguridad es:"` (`main_test.go` y `login04-e2e.test.ts`) | `860b3c9` cambió el texto que imprime el `MockEmailService`. Es un detalle interno del mock, no un contrato. BAC-19, BAC-20, FIX-17 y el paso 8 de LOGIN-04 fallaban solo por eso |
+| La integración FIX-28 (`session_security…`) envía el logout con Bearer y cookie | Simulaba el frontend anterior (sin Bearer). Ahora replica lo que hace `cfb88f7`; que el frontend mande el header lo verifica `session-security.test.ts` |
+| El caso FIX-30 busca `usePermissions` en `src/context` **o** `src/hooks`, sin exigir `PermissionGate` | FIX-30 solo pide el helper `canOperateInstance`. La ubicación en `src/context`, `isOperator`, `hasRole` y `PermissionGate` los siguen exigiendo los casos de SEC-03 |
+| Caso nuevo `FIX-37…` en `resource_access…`: `GET /account/profile` debe informar `permisos [{ vmid, nivelAcceso }]` | La prueba de FIX-30 siembra la sesión a mano; este caso verifica que el backend real entregue el dato. Hoy falla |
 
 ---
 
 ## 6. Pendientes y observaciones
 
-- **Frontend:** no hubo commits. Lo más urgente sigue siendo `FIX-28` (media hora), y ahora se puede avanzar con `FRN-17C`.
-- **INF-08B:** falta reemplazar los valores de ejemplo por las credenciales reales del relay (Brevo). Cuando estén, el test se autentica solo contra el SMTP.
-- **Seguridad:** el secreto del token de Proxmox sigue en texto plano en `documentacion/api-proxmox.md`.
+- **Reclasificación (01/10/2026):**
+  - Pasaron a `terminado.md`: `BAC-16B`, `FIX-27` y `FIX-28` (completas) y `FIX-30` (con problema).
+  - FIX nuevos en `futuro.md`: `FIX-36` (filtro "Acción", §2.1), `FIX-37` (`permisos` en el perfil) y `FIX-38` (lo ya hecho de `SEC-03`: ubicación del hook y "READ_ONLY" tratado como rol).
+  - `FIX-35` (Etapa 1) sigue en `actual.md`: el simulador no cambió.
+- **Frontend:** quedan `SEC-03` (ubicación, `isOperator`, `hasRole`, `PermissionGate` y menú), `FIX-29` y `FRN-17C`.
+- **Backend:** quedan `BAC-18B`, `BAC-21B`, `FIX-31` y `FIX-34` (credenciales reales en `.env.example`).
+- **Seguridad:**
+  - El secreto del token de Proxmox sigue en texto plano en `documentacion/api-proxmox.md`.
+  - Cuando se cierre `FIX-34`, las credenciales SMTP quedarán versionadas en el repositorio del backend.
+  - El certificado de `test/back/mailpit-tls/` es solo para pruebas: se creó con CN `mailpit`, sin la clave de la CA y no vale fuera de este entorno.
 
 ---
 

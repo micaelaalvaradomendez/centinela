@@ -19,7 +19,8 @@
       "Bash(pnpm vitest *)",
       "Bash(go test *)",
       "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/back2.log)",
-      "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/front2.log)"
+      "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/front2.log)",
+      "Bash(git check-ignore *)"
     ],
     "additionalDirectories": [
       "/home/micaela/centinela/backend/internal/adapters/primary/http/middleware",

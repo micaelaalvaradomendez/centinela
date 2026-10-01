@@ -4,22 +4,22 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!NOTE]
-> **Estado al 30/09/2026** (detalle en [test/informe.md](../test/informe.md)).
-> - `BAC-17A`, `BAC-17B`, `BAC-21C` e `INF-06A` están completas, y `INF-08B` está implementada con problema (su corrección es `FIX-34`). Las cinco pasaron a [`terminado.md`](terminado.md).
-> - De la Etapa 1, `FIX-32`, `FIX-33` y `BAC-28` pasaron a [`terminado-1.md`](terminado-1.md). `BAC-28` tiene problemas y su corrección es `FIX-35`, en [`futuro-1.md`](futuro-1.md).
+> **Estado al 01/10/2026** (detalle en [test/informe.md](../test/informe.md)).
+> - `BAC-16B`, `FIX-27` y `FIX-28` están completas, y `FIX-30` está implementada con problema (su corrección es `FIX-37`, en el backend). Las cuatro pasaron a [`terminado.md`](terminado.md).
+> - FIX nuevos en [`futuro.md`](futuro.md): `FIX-36` (regresión del filtro "Acción" en Auditoría, `FRN-14`), `FIX-37` (`permisos` con nivel en `GET /account/profile`) y `FIX-38` (lo que ya implementó `SEC-03`).
 >
-> **Quedan en este archivo solo tareas sin implementar**, todas con pruebas que hoy fallan:
+> **Quedan en este archivo:**
 >
-> | Tarea | Área | Qué falta |
+> | Tarea | Área | Estado |
 > |---|---|---|
-> | `SEC-03` | Frontend | `usePermissions()` / `PermissionGate`, y ocultar "Auditoría" al OPERATOR |
-> | `FIX-27`, `FIX-28`, `FIX-29`, `FIX-30` | Frontend | Mensaje del 502, logout con Bearer, mayúscula en el validador, `canOperateInstance` |
-> | `FRN-17C` | Frontend | `useEvents` con ticket efímero (ya desbloqueada por `BAC-21C`) |
-> | `BAC-16B` | Backend | `SmtpEmailService` elegido por `EMAIL_PROVIDER` |
-> | `BAC-18B` | Backend | Índice parcial en `sesiones_activas` (`jti_access`) y particionado de `auditoria` |
-> | `BAC-21B` | Backend | Campos nuevos en `GET /instances`, `/status/:action` y `DELETE` |
-> | `FIX-31` | Infraestructura | Configuración de Nginx con TLS versionada |
+> | `SEC-03` | Frontend | En proceso: `usePermissions` existe en `src/hooks/`; faltan `isOperator`, `hasRole`, `PermissionGate` y el menú (ver `FIX-38`) |
+> | `FIX-29` | Frontend | En proceso, sin cambios: mayúscula en el validador |
+> | `FRN-17C` | Frontend | En proceso, sin cambios: `useEvents` con ticket efímero (desbloqueada por `BAC-21C`) |
+> | `BAC-18B` | Backend | No implementada: índice parcial en `sesiones_activas` (`jti_access`) y particionado de `auditoria` |
+> | `BAC-21B` | Backend | No implementada: campos nuevos en `GET /instances`, `/status/:action` y `DELETE` |
+> | `FIX-31` | Infraestructura | No implementada: configuración de Nginx con TLS versionada |
 > | `INF-06B`, `INF-08A` | Infraestructura | Redis y SMTP en el servidor (sin prueba automatizada) |
+> | `FIX-35` (Etapa 1) | Backend | No implementada: el simulador no cambió desde `43a0b06` |
 
 ---
 
@@ -30,7 +30,7 @@ Crea un usuario desde el modal (POST), el Back genera su clave temporal y must_c
 Modifica su rol o lo desactiva (PUT/DELETE).  
 Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, recibe un 403 Forbidden.  
 
-> **Estado verificado (28/09/2026):** el recorrido completo funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al `OPERATOR`. Solo queda el mensaje ante `502 EMAIL_DELIVERY_FAILED` en el alta, cuya corrección es `FIX-27` en [`futuro.md`](futuro.md), no en este archivo.
+> **Estado verificado (01/10/2026):** el recorrido completo funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al `OPERATOR`. El mensaje ante `502 EMAIL_DELIVERY_FAILED` en el alta quedó resuelto con `FIX-27` (en `terminado.md`).
 
 ---
 
@@ -41,7 +41,12 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Estimación:** 2,5 h
 - **Ventana propuesta:** A definir (Fase Base / Bloque 2).
 - **Depende de:** `FRN-04`, `BAC-07` y `BAC-09`.
-- **Estado verificado (23/09/2026):** no implementada.
+- **Estado verificado (01/10/2026, frontend `3d1e84a`):** en proceso, parcial. `test/front/navigation.test.tsx`: fallan los 3 casos de SEC-03 (el de `FIX-30` pasa).
+  - Existe `usePermissions()` en `src/hooks/usePermissions.ts` (no en `src/context/`), con `isAdmin`, `canAccessInstance` y `canOperateInstance`.
+  - Faltan `isOperator`, `hasRole` y `PermissionGate`; `src/context/AuthContext.js` sigue vacío.
+  - `Sidebar.tsx` sigue mostrando "Auditoría" al OPERATOR.
+  - Problemas de lo ya implementado: ver `FIX-38` en [`futuro.md`](futuro.md).
+- **Estado anterior (23/09/2026):** no implementada.
   - `src/context/AuthContext.js` está vacío.
   - No existen `usePermissions` ni `PermissionGate`.
   - El menú solo filtra con un `isAdmin` ad hoc en `Sidebar.tsx` y no tiene un acceso a Auditoría para el administrador.
@@ -55,21 +60,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 ---
-
-
-### `BAC-16B` - Adaptador Go `SmtpEmailService` para envío real de credenciales y códigos OTP (`RF-09` / `RF-13`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2 h
-- **Ventana propuesta:** A definir (Cierre de Fase Base).
-- **Depende de:** `BAC-16`, `BAC-19` e `INF-08B` (credenciales SMTP en el repo del backend, para desarrollar en local). No depende de la configuración del servidor (`INF-08A`).
-- **Problema y contexto:** `BAC-16` dejó creado el puerto hexagonal `ports.EmailService`, pero solo implementó `MockEmailService` por consola. El backend necesita el adaptador SMTP real para enviar las contraseñas temporales y los códigos de recuperación de 6 dígitos.
-- **Entregable:**
-  1. Implementar `SmtpEmailService` en `backend/internal/adapters/secondary/email/smtp_service.go` cumpliendo la interfaz `ports.EmailService` (`EnviarContrasenaTemporal` y `EnviarCodigoRecuperacion`, los nombres reales de `internal/core/ports/email_port.go`) con soporte `STARTTLS`/`TLS`.
-  2. En `cmd/api/main.go`, instanciar `SmtpEmailService` cuando `EMAIL_PROVIDER=smtp` y mantener `MockEmailService` cuando `EMAIL_PROVIDER=mock` (usado por los tests automatizados).
-  3. Estructurar los cuerpos de correo para alta de cuenta (`RF-09`), reset administrativo (`BAC-15`) y código OTP de 6 dígitos (`RF-13`).
-- **Criterio de éxito:** Con `EMAIL_PROVIDER=smtp` y las credenciales de `INF-08B`, el backend envía correos reales desde local; ante un fallo de entrega aborta la operación y devuelve `502 EMAIL_DELIVERY_FAILED`; la suite de tests sigue pasando en modo `mock`.
 
 
 ### `BAC-18B` - Índice parcial y purga en `sesiones_activas`, y particionamiento trimestral en `auditoria` (PostgreSQL)
@@ -97,40 +87,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ---
 
 
-### `FIX-27` - Mensaje específico cuando falla el envío del correo en el alta (`FIX-24`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 0,5 h
-- **Ventana propuesta:** A definir.
-- **Depende de:** `FIX-24` y `BAC-16`.
-- **Problema y evidencia:** el entregable 2 de `FIX-24` pide *"manejar `502 EMAIL_DELIVERY_FAILED` con un mensaje claro: 'No se pudo enviar el correo; el usuario no fue creado'"*. El mensaje se arma bien en `components/features/createuser/services/createUserService.ts`, que relanza `ApiRequestError('No se pudo enviar el correo de activación; el usuario no fue dado de alta.', 502, 'EMAIL_DELIVERY_FAILED')`. Pero el `catch` de `components/features/createuser/hooks/useCreateUser.ts` lo ignora y siempre muestra el texto genérico *"No se pudo completar la creación del usuario."*. El administrador no se entera de que el problema fue el correo. La prueba `test/front/admin-users.test.tsx`, caso *"FIX-27 si el correo no se pudo enviar (502 EMAIL_DELIVERY_FAILED)…"*, falla con `Unable to find an element with the text: /no se pudo enviar el correo|servidor de correo no está disponible/i`.
-- **Entregable:**
-  1. En el `catch` de `useCreateUser.submitNewUser`, si `error instanceof ApiRequestError && error.errorCode === 'EMAIL_DELIVERY_FAILED'`, usar `error.message` como descripción del toast de error. Mantener el mensaje genérico para el resto de los errores.
-  2. Conservar el comportamiento actual ante el error: no navegar a `/users` y dejar cargados los datos del formulario para reintentar.
-- **Criterio de éxito:** ante un 502 del correo el administrador ve el mensaje específico, sigue en el formulario de alta y los datos se conservan. Los casos `FIX-27…` de `admin-users.test.tsx` pasan y los demás casos de FRN-06 siguen en verde.
-
-
-### `FIX-28` - Regresión: el logout del frontend no envía el access token y la sesión no se revoca (`FRN-13` / `BAC-17`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 0,5 h
-- **Ventana propuesta:** A definir. **Prioridad alta**: la sesión queda abierta en el servidor después de "Cerrar sesión".
-- **Depende de:** `FRN-13`, `BAC-17` y `SEC-01`.
-- **Problema y evidencia:**
-  1. En el commit `deb59cb` (*"Se limpia implementacion vieja de endpoint donde se utiliza body y header"*), `authService.logoutSession()` pasó a llamar a `POST /api/auth/logout` con `skipAuthorization: true`, es decir, **sin `Authorization: Bearer <accessToken>`**.
-  2. El backend no cambió ese contrato: `cmd/api/main.go:157` monta `/auth/logout` con `middleware.RequireAuth`, porque `BAC-17` necesita el JTI del access token para revocar atómicamente el access y el refresh. Sin el Bearer responde `401 MISSING_TOKEN` antes de llegar al handler.
-  3. El usuario no ve el error, porque `useLogout()` limpia la sesión local y redirige a `/login` igual, pero **el access token sigue siendo válido hasta que expira**. Esto incumple el entregable 1 de `FRN-13` y el criterio de `BAC-17`.
-  - Pruebas que lo muestran:
-    - `test/front/session-security.test.ts`, caso *"FIX-28 logoutSession envía POST /auth/logout con Authorization: Bearer…"*: `expected undefined to be 'Bearer access-123'`.
-    - `test/back/session_security_acceptance_test.go`, caso *"FIX-28 FRN-13 integracion el logout tal como lo envia el frontend…"*: `esperado 204, recibido 401: MISSING_TOKEN`, y después del logout `/account/profile` sigue respondiendo 200.
-- **Entregable:**
-  1. En `components/features/auth/services/authService.ts`, quitar `skipAuthorization: true` de `logoutSession()` para que el cliente adjunte el `Bearer` del access token, manteniendo `credentials: 'include'` para la cookie `centinela_refresh`.
-  2. Mantener la limpieza local actual de `useLogout()`: `catch` + `finally` con `clearAuthTokens()` y `navigate('/login', { replace: true })`.
-- **Criterio de éxito:** los dos casos `FIX-28…` pasan. "Cerrar sesión" revoca en el servidor el access y el refresh (el access token revocado responde `401 TOKEN_REVOKED`), y los demás casos de `session-security.test.ts` siguen en verde.
-- **Alternativa descartada:** aceptar en el backend un logout solo con la cookie. Sin el access token, el backend no puede revocar el JTI del access, que es lo que exige `BAC-17`.
-
 ### `FIX-29` - Validar la mayúscula en `validatePasswordComplexity` (`FIX-20`) (Frontend)
 
 - **Área:** Frontend
@@ -147,19 +103,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Corregir el mensaje de largo: *"Debe tener entre 8 y 12 caracteres."*.
 - **Criterio de éxito:** los casos `FIX-29…` pasan, y siguen en verde los de dígito, símbolo y largo, y los casos de `FRN-12` y `FIX-21`.
 
-
-### `FIX-30` - Helper `canOperateInstance` en `usePermissions()` (`FRN-18`) (Frontend)
-
-- **Área:** Frontend
-- **Asignados:** Cristian y Belinda
-- **Estimación:** 0,5 h (una vez que exista `SEC-03`)
-- **Ventana propuesta:** A definir, junto con `SEC-03` o inmediatamente después.
-- **Depende de:** `SEC-03` y `FRN-18`.
-- **Problema y evidencia:** el entregable 2 de `FRN-18` pide agregar a `usePermissions()` el helper `canOperateInstance(vmid)`. Debe devolver `true` solo para `ADMIN` o para instancias con `FULL_ACCESS`, a diferencia de `canAccessInstance(vmid)`, que acepta `READ_ONLY` y `FULL_ACCESS`. No existe, porque `usePermissions()` (`SEC-03`) no está implementado: `context/AuthContext.js` no exporta ningún hook. Prueba que falla: `test/front/navigation.test.tsx`, caso *"FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)"*.
-- **Entregable:**
-  1. Exponer `canOperateInstance(vmid: number): boolean` en `usePermissions()`.
-  2. Tomar el nivel por instancia de la sesión del usuario: por ejemplo `permisos: [{ vmid, nivelAcceso }]` en `centinela_user`, cargado con el mismo contrato de `GET /api/admin/users/:id/permissions`, o con un campo equivalente en `GET /account/profile`. La prueba siembra ese formato. Si se elige otra fuente, hay que avisar para alinear la prueba.
-- **Criterio de éxito:** `canOperateInstance(101)` es `true` con `FULL_ACCESS`, es `false` con `READ_ONLY` y para un VMID no asignado, y siempre es `true` para `ADMIN`. El caso `FIX-30…` pasa.
 
 ### `BAC-21B` (`BRG-01`) - Alineación de esquema (`auditoria`/`tareas_asincronas`), rutas de energía (`FULL_ACCESS`), regla de `DELETE` y extensión de `GET /api/instances`
 
@@ -236,6 +179,21 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 ---
 # ETAPA 1
+---
 
 > Las tareas de la Etapa 1 ya verificadas están en [`terminado-1.md`](terminado-1.md), y sus correcciones en [`futuro-1.md`](futuro-1.md).
 
+### `FIX-35` - Formato de las IP de contenedores en el simulador de Proxmox (`BAC-28`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-28`.
+- **Problema y evidencia:** se comparó `GET /nodes/proxmox/lxc/{vmid}/interfaces` del simulador con el del Proxmox real 9.2.2 (lecturas del 30/09/2026):
+  1. **Tipo de dato:** `ip-addresses[].prefix` es **string** en el real (`"prefix":"24"`) y **número** en el simulador (`"prefix":24`). `BAC-23A` va a leer la IP de ahí, y un decodificador escrito contra el simulador falla contra el real, o al revés.
+  2. **Contenedor apagado:** el real responde **`200 {"data":null}`** (verificado con la 104, apagada); el simulador responde `500 CT 201 not running`. Con el simulador, `BAC-23A` trataría como error algo que en el real es "sin IP".
+- **Entregable:**
+  1. Devolver `prefix` como string en `lxc/{vmid}/interfaces`. Revisar también `agent/network-get-interfaces` contra la documentación de Proxmox, porque no se pudo comparar: el servidor no tiene VMs.
+  2. Para un LXC apagado, responder `200` con `{"data": null}`.
+  3. Agregar ambos casos a `cmd/proxmox-simulador/simulador_test.go`.
+- **Criterio de éxito:** la comparación contra el Proxmox real de `lxc/{vmid}/interfaces` no muestra diferencias de tipos, y un contenedor apagado responde igual en los dos.
