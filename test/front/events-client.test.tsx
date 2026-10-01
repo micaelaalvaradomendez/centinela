@@ -20,7 +20,7 @@ async function loadUseEvents() {
 }
 
 // Sustitutos de EventSource y WebSocket: registran la URL con la que se abre cada conexión.
-const opened: { url: string; instance: FakeConnection }[] = [];
+const opened: { url: string; instance: FakeConnection; at: number }[] = [];
 class FakeConnection {
   onerror: ((event: Event) => void) | null = null;
   onclose: ((event: Event) => void) | null = null;
@@ -28,7 +28,7 @@ class FakeConnection {
   onopen: ((event: Event) => void) | null = null;
   readyState = 1;
   private listeners: Record<string, ((event: Event) => void)[]> = {};
-  constructor(public url: string) { opened.push({ url: String(url), instance: this }); }
+  constructor(public url: string) { opened.push({ url: String(url), instance: this, at: Date.now() }); }
   addEventListener(type: string, listener: (event: Event) => void) { (this.listeners[type] ??= []).push(listener); }
   removeEventListener() {}
   close() { this.readyState = 2; }
@@ -94,6 +94,29 @@ describe('FRN-17C - Cliente de eventos con ticket efímero y reconexión segura'
     expect(ticketCalls(fetchMock).length).toBeGreaterThanOrEqual(2);
     expect(opened[1].url).toMatch(/ticket=ticket-2$/);
   }, 30000);
+
+  it('las reconexiones sucesivas aplican retroceso exponencial (la segunda espera más que la primera)', async () => {
+    const useEvents = await loadUseEvents();
+    let n = 0;
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ ticket: `ticket-${++n}` })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderHook(() => useEvents());
+    await waitFor(() => expect(opened).toHaveLength(1));
+
+    // Ninguna conexión llega a abrir (onopen), así que el retroceso no debería reiniciarse.
+    const firstFail = Date.now();
+    act(() => opened[0].instance.fail());
+    await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(2), { timeout: 30000 });
+    const firstDelay = opened[1].at - firstFail;
+
+    const secondFail = Date.now();
+    act(() => opened[1].instance.fail());
+    await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(3), { timeout: 30000 });
+    const secondDelay = opened[2].at - secondFail;
+
+    expect(secondDelay, `espera 1: ${firstDelay} ms, espera 2: ${secondDelay} ms`).toBeGreaterThan(firstDelay * 1.5);
+  }, 70000);
 
   it('si /api/events/ticket responde 401 cierra la sesión local y lleva a /login', async () => {
     const useEvents = await loadUseEvents();

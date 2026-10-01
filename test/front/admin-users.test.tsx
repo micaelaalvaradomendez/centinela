@@ -275,6 +275,17 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
   });
 });
 
+describe('FIX-38 - "Solo lectura" no es un rol de usuario (BAC-09 / SEC-04)', () => {
+  it('el selector "Rol" de la ficha ofrece solo ADMIN y OPERATOR (el backend rechaza otro rol con 400)', async () => {
+    vi.stubGlobal('fetch', detailBackend());
+
+    renderUserDetail('u2');
+    const roleSelect = await screen.findByRole('combobox', { name: /^rol$/i });
+    const options = within(roleSelect).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+    expect(options.sort()).toEqual(['ADMIN', 'OPERATOR']);
+  });
+});
+
 describe('FIX-25 - errores al guardar el perfil', () => {
   it('un correo duplicado (409 USER_CONFLICT) se muestra junto al campo de correo', async () => {
     vi.stubGlobal('fetch', detailBackend({

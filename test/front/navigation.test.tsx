@@ -134,6 +134,24 @@ describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
     expect(permissions!.canOperateInstance!(999)).toBe(false);
   });
 
+  it('FIX-38 un rol inexistente (READ_ONLY) no obtiene acceso a instancias: READ_ONLY es un nivel, no un rol', async () => {
+    const module = await loadUsePermissionsModule();
+    seedSession({
+      rol: 'READ_ONLY',
+      instanciasPermitidas: [101],
+      permisos: [{ vmid: 101, nivelAcceso: 'READ_ONLY' }],
+    } as never);
+    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
+    function Probe() {
+      permissions = module.usePermissions();
+      return null;
+    }
+
+    render(<>{withProvider(module, <Probe />)}</>);
+
+    expect(permissions!.canAccessInstance(101)).toBe(false);
+  });
+
   it('PermissionGate muestra el contenido al ADMIN y el fallback al OPERATOR', async () => {
     const { PermissionGate, ...module } = await loadPermissionsModule();
     const gate = () => withProvider(module, (

@@ -1,5 +1,3 @@
-
-
 ### `BAC-01` - Script Docker Compose de base de datos local
 
 - **Área:** Backend / Infraestructura
@@ -1103,8 +1101,25 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `INF-08B` - Credenciales SMTP en `.env.example` y `.env` del repositorio del backend
 
-> [!WARNING]
-> **Estado: Implementado con problema (verificado el 30/09/2026, backend `43a0b06`), commit `233e804`.** Las 6 variables (`EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`) ya están en `backend/.env.example`. Pero `SMTP_USER` (`tu_correo@ejemplo.com`), `SMTP_PASS` (`tu_clave_secreta_aqui`) y `SMTP_FROM` (`no-reply@tudominio.com`) son **valores de ejemplo**, así que no se puede autenticar contra el relay. Prueba: `cierre_fase_base_acceptance_test.go`, caso `INF-08B…`. La corrección es `FIX-34`, en [`futuro.md`](futuro.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, backend `860b3c9`), commit `233e804`.** Las 6 variables (`EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`) están en `backend/.env.example`.
+>
+> **Decisión del 01/10/2026:** `.env.example` conserva valores de ejemplo en `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`. Las credenciales reales están en:
+> - el `.env` local de cada desarrollador;
+> - el servidor (`INF-08A`, según infraestructura);
+> - `test/back/smtp-brevo.env`, versionado a propósito en este repositorio para las pruebas.
+>
+> Por eso se eliminó `FIX-34`.
+>
+> **Verificación:** `cierre_fase_base_acceptance_test.go`, caso `INF-08B…`, pasa:
+> - Las 6 variables están en `.env.example`, y `EMAIL_PROVIDER`, `SMTP_HOST` y `SMTP_PORT` coinciden con los del relay.
+> - Con las credenciales reales, la prueba **se autentica contra `smtp-relay.brevo.com:587` con STARTTLS**, sin enviar correos.
+>
+> El 01/10 a la mañana, Brevo rechazaba la IP (`525 Unauthorized IP address`). Ya se ajustaron los permisos de IP en la cuenta.
+>
+> **Antecedente (30/09/2026):** figuraba como implementada con problema porque se esperaban las credenciales reales en `.env.example`.
+>
+> **Nota (01/10/2026, tarde):** el rechazo `525 5.7.1 Unauthorized IP address` que apareció en una corrida dependía de la red: la IP pública de la máquina de pruebas puede cambiar (DHCP/NAT) y la cuenta de Brevo restringe por IP. Con la IP actual (`179.238.41.248`), 5 autenticaciones seguidas dieron OK. La prueba ahora reintenta ante errores de red o DNS y, ante un `525 Unauthorized IP`, omite el caso con el motivo, porque no evalúa las credenciales ni el código.
 
 - **Área:** Backend (en el repositorio del backend)
 - **Asignado:** Lisandro
@@ -1135,7 +1150,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 >
 > **Notas:**
 > - El puerto cambió de nombre: `EnviarContrasenaTemporal` pasó a `EnviarCredencialesTemporales(destinatario, nombre, clave)`, y se agregó `SendMail`.
-> - El envío con las credenciales reales del relay depende de `FIX-34` (`INF-08B`).
+> - Las credenciales reales del relay ya autentican (verificado en `INF-08B` el 01/10/2026). El envío de un correo real por el backend no se probó: la suite usa Mailpit para no mandar correos.
 > - Se verificó contra Mailpit, no contra Brevo.
 
 - **Área:** Backend
@@ -1241,7 +1256,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 > | Consultar una instancia no asignada | `403 INSTANCE_ACCESS_DENIED` |
 > | Reutilizar un token revocado | El access token después del logout recibe `401 TOKEN_REVOKED`; la sesión previa a los resets queda revocada. La revocación del refresh la cubre además `BAC-17` (`session_security…`) |
 >
-> **Nota:** el envío de correo se verificó con el mock y, en `BAC-16B`, con Mailpit en STARTTLS. Con el relay real falta `FIX-34`, que no es parte del criterio de esta tarea.
+> **Nota:** el envío de correo se verificó con el mock y, en `BAC-16B`, con Mailpit en STARTTLS. Las credenciales del relay real ya autentican (`INF-08B`), pero el envío real no es parte del criterio de esta tarea.
 
 - **Área:** Frontend / Backend
 - **Asignados:** Cristian, Tayra y Lisandro
@@ -1250,3 +1265,91 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Depende de:** `FRN-07`, `FRN-09`, `FRN-10`, `FRN-11`, `FRN-12`, `BAC-14`, `BAC-16`, `BAC-17`, `BAC-18`, `BAC-20` y `BAC-21`.
 - **Entregable:** pruebas documentadas o automatizadas de creación de usuario, entrega y cambio de clave temporal, enrolamiento y login con TOTP, acceso según rol, filtro por instancias, recuperación administrativa de contraseña y 2FA, recuperación de contraseña por el propio usuario, logout/revocación de sesión y verificación de que las acciones administrativas quedan auditadas.
 - **Criterio de éxito:** todos los recorridos válidos terminan con el acceso esperado y los intentos de omitir pasos, usar credenciales anteriores, acceder con otro rol, consultar una instancia no asignada o reutilizar un token revocado son rechazados con códigos HTTP controlados.
+
+
+### `INF-06B` - Redis en el servidor (entornos de pruebas y estable)
+
+- **Área:** Infraestructura
+- **Asignados:** Nico y Lucas
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir. **No bloquea al backend**, que trabaja con `INF-06A`. Tiene que estar antes de desplegar `BAC-17B` y `BAC-21C` en el servidor.
+- **Depende de:** `INF-03` e `INF-04`.
+- **Entregable:**
+  1. Desplegar Redis en el servidor, en el LXC del backend o en uno propio de `vmbr1`, con contraseña y sin exponerlo fuera de la red interna.
+  2. Cargar `REDIS_ADDR` y `REDIS_PASSWORD` en el `.env` del backend de pruebas y del estable.
+- **Criterio de éxito:** desde el LXC del backend, `redis-cli -h <host> -a <pass> PING` responde `PONG` y sin contraseña responde `NOAUTH`. Desde fuera de la red interna no se alcanza.
+
+### `INF-08A` - Configuración del SMTP en el servidor
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir. **No bloquea al backend**, que trabaja con `INF-08B`.
+- **Depende de:** `INF-03`, `INF-04` e `INF-08B`.
+- **Entregable:**
+  1. Cargar `EMAIL_PROVIDER` y `SMTP_*` en el `.env` del backend del servidor (pruebas y estable).
+  2. Habilitar y verificar la salida de red desde el LXC del backend hacia el host SMTP, por el puerto 587 (STARTTLS) o 465 (TLS). Por ejemplo, con `openssl s_client -starttls smtp -connect <host>:587`.
+- **Criterio de éxito:** desde el LXC del backend se establece la conexión TLS con el servidor SMTP, y el backend desplegado envía el correo de alta de usuario.
+- **Atención (01/10/2026):**
+  - Según infraestructura, el servidor ya tiene las credenciales reales. No se pudo verificar desde aquí, porque no hay acceso al LXC del backend.
+  - La cuenta de Brevo controla las IP autorizadas; el 01/10 se ajustaron los permisos y la máquina de pruebas ya autentica. Si se mantiene la restricción, la IP pública de salida del servidor tiene que estar autorizada. Si no, el relay responde `525 5.7.1 Unauthorized IP address`.
+  - Para cerrar la tarea falta verificar, desde el LXC, el criterio de éxito: conexión TLS y correo de alta enviado.
+
+
+### `FIX-31` - Versionar y verificar el TLS de Nginx en el borde (`INF-05`) (Infraestructura)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026).**
+>
+> **Decisión:** la configuración de Nginx del servidor nunca va a estar en los submódulos. Para validar el avance y la integración, el borde se versiona en el repositorio integrador, en **`docker/nginx-edge.conf`**: `listen 443 ssl` con TLS 1.2 y 1.3, HSTS, `:80` que solo responde `301 https://…` y `/api/` reenviado al backend sin buffer, para el SSE de `/api/events`.
+>
+> **Verificación:** `test/back/compose.yaml` levanta el servicio `edge` (nginx 1.29) con esa configuración delante del backend real, usando un certificado de prueba (`test/back/edge-tls/`). `cierre_fase_base_acceptance_test.go`, caso `FIX-31…`, pasa:
+> - En el archivo: el server 443 con `ssl_certificate` y `ssl_certificate_key`, el 301 y el `proxy_pass` de `/api/`, y ningún server en `:80` que sirva contenido.
+> - En funcionamiento: `https://…/api/version` responde 200 desde el backend con TLS 1.2 o superior y HSTS; `http://…/api/version` responde `301` hacia `https://`; un cliente con TLS 1.1 es rechazado.
+>
+> **Pendiente para infraestructura:** usar `docker/nginx-edge.conf` como referencia para el CT 103, con los certificados reales montados en `/etc/nginx/tls/`.
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `INF-04` e `INF-05`.
+- **Problema y evidencia:** el criterio de `INF-05` exige que *"el tráfico hacia el sistema se sirva únicamente sobre HTTPS"*. La configuración de Nginx del servidor (CT 103) no está versionada en ningún repositorio. El deploy (`frontend/.github/workflows/deploy-front-test.yml`) solo ejecuta `nginx -t` y `reload` sobre lo que ya existe en el contenedor, y el único `nginx.conf` versionado (`docker/nginx.conf`, el del escenario de integración) escucha solo en `:80`. Por eso no se puede verificar el TLS. Prueba omitida: `test/back/cierre_fase_base_acceptance_test.go`, caso *"FIX-31 INF-05 TLS en el borde con Nginx"*.
+- **Entregable:**
+  1. Versionar la configuración de Nginx del borde, por ejemplo en `frontend/centinela/deploy/nginx.conf` o en `docker/`, con:
+     - `listen 443 ssl` y las rutas de `ssl_certificate` y `ssl_certificate_key` (sin incluir los certificados);
+     - `listen 80` que responda `return 301 https://$host$request_uri`;
+     - `proxy_pass` de `/api/` al backend.
+  2. Hacer que el deploy use ese archivo versionado.
+- **Criterio de éxito:** la configuración versionada sirve solo HTTPS y redirige HTTP → HTTPS. A partir de ahí, el caso `FIX-31…` deja de omitirse y verifica el archivo (443 ssl, redirección 301 y ningún `server` que sirva contenido por `:80`).
+
+### `BAC-21B` (`BRG-01`) - Alineación de esquema (`auditoria`/`tareas_asincronas`), rutas de energía (`FULL_ACCESS`), regla de `DELETE` y extensión de `GET /api/instances`
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 01/10/2026, backend `44a2339`).** Se evaluó contra el **criterio de éxito**: la forma sugerida en el entregable orienta, pero no es obligatoria.
+>
+> **Cumple:**
+> - Las acciones de energía `start` y `stop` (`POST /instances/:vmid/start` y `/stop`) exigen `FULL_ACCESS`; un `READ_ONLY` recibe `403 INSTANCE_ACCESS_DENIED`.
+> - Cada acción queda en `tareas_asincronas`, con `tareaId` y el evento `TASK_FINISHED`.
+> - Los permisos se consultan contra `permisos_instancia`.
+> - Prueba: `puente_etapa1…`, caso *"las acciones de energía exigen FULL_ACCESS y quedan en tareas_asincronas"*.
+>
+> **Falta:** los campos nuevos de `GET /api/instances`, la auditoría de las acciones de energía y `shutdown`/`reboot`. La corrección es **`FIX-39`**, en [`futuro.md`](futuro.md), que también incluye la aclaración del 01/10/2026.
+>
+> **Fuera de alcance por ahora:** la regla de `DELETE` (solo ADMIN, 409 si está encendida). El endpoint lo crea `BAC-24B`, y la prueba se omite hasta que exista.
+
+- **Área:** Backend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 2 h
+- **Ventana propuesta:** Previo al inicio de `BAC-23B`, `BAC-24A/B` y `BAC-27`.
+- **Depende de:** `BAC-14`, `FIX-16`, `SEC-04`, `FIX-23`.
+- **Problema y evidencia (análisis de cierre de la fase base):**
+  1. `etapa1.md` menciona `audit_logs` y `user_instances`, cuando las tablas reales en `domain/models.go` son `auditoria`, `tareas_asincronas` y `permisos_instancia`.
+  2. `GET /api/instances` ya existe (`BAC-14`) y lo consume el selector `FRN-07`. Si se reemplaza su formato en vez de extenderlo, se rompe la pantalla de permisos.
+  3. `FIX-16` creó `/api/instances/:vmid/start` y `/stop`, mientras que `BAC-24A` pide `/api/instances/:vmid/status/:action`. Además, falta exigir `FULL_ACCESS` en energía y restringir `DELETE /api/instances/:vmid` solo a `ADMIN`.
+- **Entregable:**
+  1. Persistir la auditoría de ciclo de vida en la tabla real `auditoria` (guardando `upid`, `action` y `resource_type` en `detalles` JSONB) y el estado de ejecución en `tareas_asincronas`, consultando permisos contra `permisos_instancia`.
+  2. Extender `GET /api/instances` de forma 100% retrocompatible: mantener `{ id, name, type, node, status }` y agregar `{ ip, cpuUsage, ramUsage, maxRam, nivelAcceso, activeTask, instancesSummary }`.
+  3. Montar `POST /api/instances/:vmid/status/:action` manteniendo alias en `/start` y `/stop`, protegidos con `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")`. Proteger `DELETE /api/instances/:vmid` (`BAC-24B`) con `RequireRole("ADMIN")` y validación de estado `stopped` (409 Conflict si está encendida).
+- **Criterio de éxito:** `GET /api/instances` responde con los campos nuevos sin romper `FIX-14`; un operador `READ_ONLY` recibe 403 en acciones de energía; un `OPERATOR` recibe 403 en `DELETE`; todo se registra en `auditoria` y `tareas_asincronas`.
+- **Aclaración (01/10/2026, revisión de `etapa1.md`):** pasó a `FIX-39`, en [`futuro.md`](futuro.md), junto con lo que falta.

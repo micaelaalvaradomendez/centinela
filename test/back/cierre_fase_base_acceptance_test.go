@@ -2,6 +2,7 @@ package back_test
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,7 +80,8 @@ func TestCierreFaseBase(t *testing.T) {
 
 	t.Run("FIX-31 INF-05 TLS en el borde con Nginx versionado", func(t *testing.T) {
 		// El criterio de INF-05 ("el tráfico se sirve únicamente sobre HTTPS") se verifica sobre la
-		// configuración de Nginx del borde versionada en el repo del frontend, del backend o en docker/.
+		// configuración de Nginx del borde. Decisión del 01/10/2026: la del servidor nunca va a estar
+		// en los submódulos, así que se versiona en el repo integrador (docker/nginx-edge.conf).
 		var candidates []string
 		for _, root := range []string{sourcePath("frontend", "."), sourcePath("backend", "."), "../../docker"} {
 			_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
@@ -122,6 +124,46 @@ func TestCierreFaseBase(t *testing.T) {
 				(strings.Contains(block, "proxy_pass") || strings.Contains(block, "root ")) {
 				t.Errorf("%s: un server en :80 sirve contenido en lugar de redirigir a HTTPS", edgePath)
 			}
+		}
+
+		// Integración: el servicio edge de compose.yaml usa docker/nginx-edge.conf delante del backend
+		// real, con un certificado de prueba firmado por edge-tls/ca.crt.
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(readFile(t, "edge-tls/ca.crt")) {
+			t.Fatalf("no se pudo cargar edge-tls/ca.crt")
+		}
+		httpsURL := envOrDefault("BACKEND_TEST_EDGE_HTTPS_URL", "https://127.0.0.1:18453")
+		httpURL := envOrDefault("BACKEND_TEST_EDGE_HTTP_URL", "http://127.0.0.1:18089")
+		client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "centinela.test"}}}
+		response, err := client.Get(httpsURL + "/api/version")
+		if err != nil {
+			t.Fatalf("GET %s/api/version por HTTPS falló: %v", httpsURL, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Errorf("HTTPS /api/version a través del borde: esperado 200 del backend, recibido %d", response.StatusCode)
+		}
+		if response.TLS == nil || response.TLS.Version < tls.VersionTLS12 {
+			t.Errorf("el borde debe negociar TLS 1.2 o superior")
+		}
+		if response.Header.Get("Strict-Transport-Security") == "" {
+			t.Errorf("el borde no envía Strict-Transport-Security")
+		}
+
+		noRedirect := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		plain, err := noRedirect.Get(httpURL + "/api/version")
+		if err != nil {
+			t.Fatalf("GET %s/api/version por HTTP falló: %v", httpURL, err)
+		}
+		plain.Body.Close()
+		if plain.StatusCode != http.StatusMovedPermanently || !strings.HasPrefix(plain.Header.Get("Location"), "https://") {
+			t.Errorf("HTTP debe responder 301 hacia https://, recibido %d Location=%q", plain.StatusCode, plain.Header.Get("Location"))
+		}
+
+		legacy := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "centinela.test", MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS11}}}
+		if response, err := legacy.Get(httpsURL + "/api/version"); err == nil {
+			response.Body.Close()
+			t.Errorf("el borde aceptó TLS 1.1; solo deben aceptarse TLS 1.2 y 1.3")
 		}
 	})
 
@@ -213,54 +255,46 @@ func TestCierreFaseBase(t *testing.T) {
 		}
 	})
 
-	t.Run("INF-08B credenciales SMTP en backend/.env.example y conexion real al servidor SMTP", func(t *testing.T) {
-		// Las credenciales del relay llegan en un commit del backend dentro de .env.example.
-		// La prueba verifica que estén completas y que funcionen: conecta, negocia TLS y se
-		// autentica contra el servidor SMTP. No envía ningún correo.
-		env := parseEnvFile(string(readFile(t, sourcePath("backend", ".env.example"))))
-		missing := false
-		for _, variable := range []string{"EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
-			value, ok := env[variable]
-			switch {
-			case !ok:
-				t.Errorf("%s no está en backend/.env.example (o está comentada)", variable)
-				missing = true
-			case looksLikePlaceholder(value):
-				t.Errorf("%s en backend/.env.example tiene un valor de ejemplo (%q): faltan las credenciales reales del relay", variable, value)
-				missing = true
-			}
-		}
-		if missing {
-			return
-		}
-		if !strings.EqualFold(env["EMAIL_PROVIDER"], "smtp") {
-			t.Errorf("EMAIL_PROVIDER debe ser smtp para el correo saliente real, es %q", env["EMAIL_PROVIDER"])
-		}
-		if !regexp.MustCompile(`^[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}>?$`).MatchString(strings.Trim(env["SMTP_FROM"], `"`)) &&
-			!regexp.MustCompile(`<[^@\s]+@[^@\s]+\.[a-z]{2,}>$`).MatchString(env["SMTP_FROM"]) {
-			t.Errorf("SMTP_FROM no es una dirección de correo válida: %q", env["SMTP_FROM"])
-		}
-		if err := smtpLogin(env["SMTP_HOST"], env["SMTP_PORT"], env["SMTP_USER"], env["SMTP_PASS"]); err != nil {
-			t.Errorf("las credenciales SMTP de backend/.env.example no funcionan contra %s:%s: %v", env["SMTP_HOST"], env["SMTP_PORT"], err)
-		}
-	})
-
-	t.Run("FIX-34 backend/.env.example tiene las credenciales SMTP de referencia y autentican contra el relay", func(t *testing.T) {
-		// test/back/smtp-brevo.env guarda las credenciales reales del relay (versionadas a propósito).
-		// Primero se verifica que funcionen; después, que backend/.env.example tenga esas mismas.
-		reference := parseEnvFile(string(readFile(t, "smtp-brevo.env")))
-		if err := smtpLogin(reference["SMTP_HOST"], reference["SMTP_PORT"], reference["SMTP_USER"], reference["SMTP_PASS"]); err != nil {
-			t.Fatalf("las credenciales de referencia (test/back/smtp-brevo.env) no autentican contra %s:%s: %v", reference["SMTP_HOST"], reference["SMTP_PORT"], err)
-		}
+	t.Run("INF-08B variables SMTP en backend/.env.example y credenciales reales que autentican contra el relay", func(t *testing.T) {
+		// Decisión del 01/10/2026 (se elimina FIX-34): .env.example documenta las 6 variables con
+		// valores de ejemplo; las credenciales reales están en el .env local de cada desarrollador,
+		// en el servidor (INF-08A) y, versionadas a propósito, en test/back/smtp-brevo.env.
+		// La prueba conecta, negocia STARTTLS y se autentica contra el relay. No envía ningún correo.
 		example := parseEnvFile(string(readFile(t, sourcePath("backend", ".env.example"))))
+		reference := parseEnvFile(string(readFile(t, "smtp-brevo.env")))
 		for _, variable := range []string{"EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
-			if got := strings.Trim(example[variable], `"`); got != reference[variable] {
-				shown := got
-				if variable == "SMTP_PASS" && !looksLikePlaceholder(got) {
-					shown = "(otro valor)"
-				}
-				t.Errorf("%s en backend/.env.example es %q; debe ser el de test/back/smtp-brevo.env", variable, shown)
+			if _, ok := example[variable]; !ok {
+				t.Errorf("%s no está en backend/.env.example (o está comentada)", variable)
 			}
+			if looksLikePlaceholder(reference[variable]) {
+				t.Errorf("%s en test/back/smtp-brevo.env tiene un valor de ejemplo (%q)", variable, reference[variable])
+			}
+		}
+		// Lo que no es secreto debe coincidir, para que copiar .env.example a .env funcione.
+		for _, variable := range []string{"EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT"} {
+			if got := strings.Trim(example[variable], `"`); got != reference[variable] {
+				t.Errorf("%s en backend/.env.example es %q; el relay usa %q", variable, got, reference[variable])
+			}
+		}
+		if !regexp.MustCompile(`^[^@\s<>]+@[^@\s<>]+\.[a-z]{2,}$`).MatchString(reference["SMTP_FROM"]) {
+			t.Errorf("SMTP_FROM no es una dirección de correo válida: %q", reference["SMTP_FROM"])
+		}
+		// La red de la máquina de pruebas puede cambiar de IP pública (DHCP/NAT) y la cuenta de Brevo
+		// restringe por IP: un 525 "Unauthorized IP address" depende del entorno, no de las credenciales
+		// ni del código, así que se informa y se omite. Los errores de red o DNS se reintentan.
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			if err = smtpLogin(reference["SMTP_HOST"], reference["SMTP_PORT"], reference["SMTP_USER"], reference["SMTP_PASS"]); err == nil || !strings.Contains(err.Error(), "sin conectividad") {
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+		switch {
+		case err == nil:
+		case strings.Contains(err.Error(), "Unauthorized IP"):
+			t.Skipf("Brevo rechaza la IP pública de esta máquina (%v): autorizarla en Brevo → Security → Authorised IPs. Las credenciales no se pudieron evaluar", err)
+		default:
+			t.Errorf("las credenciales reales (test/back/smtp-brevo.env) no autentican contra %s:%s: %v", reference["SMTP_HOST"], reference["SMTP_PORT"], err)
 		}
 	})
 
@@ -353,31 +387,131 @@ func TestCierreFaseBase(t *testing.T) {
 	})
 
 	t.Run("BAC-18B indice parcial en sesiones_activas y auditoria particionada por trimestre", func(t *testing.T) {
-		index := queryDatabase(t, "SELECT coalesce(max(indexdef), '') FROM pg_indexes WHERE tablename = 'sesiones_activas' AND indexname = 'idx_sesiones_activas_vigentes';")
-		if index == "" {
-			t.Errorf("falta el índice parcial idx_sesiones_activas_vigentes en sesiones_activas")
-		} else if !strings.Contains(index, "WHERE (activa = true)") || !strings.Contains(index, "jti_access") {
-			// BAC-17B renombró jti_token a jti_access (1 fila por sesión con jti_access y jti_refresh).
-			t.Errorf("idx_sesiones_activas_vigentes debe ser (jti_access, usuario_id) WHERE activa = true; definición: %s", index)
+		// Se verifica el criterio, no los nombres sugeridos en el entregable: un índice parcial sobre
+		// las sesiones activas que cubra jti_access; auditoria particionada por rango de fecha_hora en
+		// tramos trimestrales (el actual y el siguiente) más una partición por defecto; e índices
+		// compuestos para las consultas por fecha/acción/resultado y por usuario/fecha.
+		partial := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'sesiones_activas' AND indexdef ILIKE '%WHERE%activa%' AND indexdef ILIKE '%jti_access%';")
+		if partial == "" {
+			t.Errorf("falta un índice parcial en sesiones_activas que cubra jti_access para las sesiones activas (… WHERE activa = true)")
 		}
 
-		if kind := queryDatabase(t, "SELECT relkind FROM pg_class WHERE relname = 'auditoria';"); kind != "p" {
-			t.Errorf("auditoria debe ser una tabla particionada (PARTITION BY RANGE (fecha_hora)); relkind actual %q", kind)
+		strategy := queryDatabase(t, "SELECT coalesce(max(pt.partstrat::text || ':' || a.attname), '') FROM pg_partitioned_table pt JOIN pg_class c ON c.oid = pt.partrelid JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = pt.partattrs[0] WHERE c.relname = 'auditoria';")
+		if strategy != "r:fecha_hora" {
+			t.Errorf("auditoria debe estar particionada por RANGE (fecha_hora); estrategia:columna actual %q", strategy)
 		}
-		partitions := queryDatabase(t, "SELECT coalesce(string_agg(c.relname, ','), '') FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid JOIN pg_class p ON p.oid = i.inhparent WHERE p.relname = 'auditoria';")
-		for _, name := range []string{"auditoria_2026_q3", "auditoria_2026_q4", "auditoria_2027_q1", "auditoria_default"} {
-			if !strings.Contains(partitions, name) {
-				t.Errorf("falta la partición %s de auditoria (particiones actuales: %q)", name, partitions)
+		bounds := queryDatabase(t, "SELECT coalesce(string_agg(c.relname || '|' || pg_get_expr(c.relpartbound, c.oid), E'\\n'), '') FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid JOIN pg_class p ON p.oid = i.inhparent WHERE p.relname = 'auditoria';")
+		hasDefault := false
+		type window struct{ from, to time.Time }
+		var ranges []window
+		rangeExpr := regexp.MustCompile(`FROM \('([^']+)'\) TO \('([^']+)'\)`)
+		parse := func(value string) (time.Time, bool) {
+			for _, layout := range []string{"2006-01-02 15:04:05-07", "2006-01-02 15:04:05", "2006-01-02"} {
+				if parsed, err := time.Parse(layout, value); err == nil {
+					return parsed, true
+				}
+			}
+			return time.Time{}, false
+		}
+		for _, line := range strings.Split(bounds, "\n") {
+			if strings.Contains(line, "DEFAULT") {
+				hasDefault = true
+			}
+			if match := rangeExpr.FindStringSubmatch(line); match != nil {
+				from, okFrom := parse(match[1])
+				to, okTo := parse(match[2])
+				if okFrom && okTo {
+					ranges = append(ranges, window{from, to})
+				}
 			}
 		}
-		indexes := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'auditoria';")
-		for _, columns := range []string{"(fecha_hora DESC, accion, resultado)", "(usuario_id, fecha_hora DESC)"} {
-			if !strings.Contains(indexes, columns) {
-				t.Errorf("falta el índice compuesto %s en auditoria", columns)
+		quarterCovering := func(moment time.Time) bool {
+			for _, r := range ranges {
+				days := r.to.Sub(r.from).Hours() / 24
+				if !moment.Before(r.from) && moment.Before(r.to) && days >= 89 && days <= 93 {
+					return true
+				}
 			}
+			return false
 		}
-		// La purga horaria (DELETE de sesiones inactivas o vencidas) y el tiempo de consulta
-		// < 20 ms no se verifican aquí: requieren esperar el ticker o un volumen de datos real.
+		now := time.Now().UTC()
+		if !quarterCovering(now) {
+			t.Errorf("auditoria no tiene una partición trimestral que cubra la fecha actual (%s); particiones: %q", now.Format("2006-01-02"), bounds)
+		}
+		if !quarterCovering(now.AddDate(0, 3, 0)) {
+			t.Errorf("auditoria no tiene creada la partición trimestral siguiente; particiones: %q", bounds)
+		}
+		if !hasDefault {
+			t.Errorf("auditoria no tiene partición DEFAULT para fechas fuera de los rangos; particiones: %q", bounds)
+		}
+
+		indexes := strings.Split(queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'auditoria';"), "\n")
+		composite := func(first string, others ...string) bool {
+			for _, def := range indexes {
+				open := strings.Index(def, "(")
+				if open < 0 {
+					continue
+				}
+				columns := def[open+1:]
+				if !strings.HasPrefix(strings.TrimSpace(columns), first) {
+					continue
+				}
+				all := true
+				for _, other := range others {
+					all = all && strings.Contains(columns, other)
+				}
+				if all {
+					return true
+				}
+			}
+			return false
+		}
+		if !composite("fecha_hora", "accion", "resultado") {
+			t.Errorf("falta en auditoria un índice compuesto que empiece por fecha_hora e incluya accion y resultado")
+		}
+		if !composite("usuario_id", "fecha_hora") {
+			t.Errorf("falta en auditoria un índice compuesto (usuario_id, fecha_hora …)")
+		}
+		// El tiempo de consulta < 20 ms no se verifica: requiere un volumen de datos real.
+	})
+
+	t.Run("BAC-18B rutina horaria que purga sesiones inactivas o vencidas de sesiones_activas", func(t *testing.T) {
+		// Entregable 2: un ticker cada 1 hora ejecuta
+		// DELETE FROM sesiones_activas WHERE activa = false OR fecha_expiracion < NOW().
+		// No se puede esperar una hora en la suite: se verifica en el código del backend, tanto SQL
+		// directo como GORM (Where(...).Delete(&SesionActiva{})).
+		purge := regexp.MustCompile(`(?is)(DELETE\s+FROM\s+sesiones_activas|Delete\(\s*&?(domain\.)?SesionActiva)`)
+		inactive := regexp.MustCompile(`(?i)activa\s*=\s*(false|\?)`)
+		expired := regexp.MustCompile(`(?i)fecha_expiracion\s*<`)
+		ticker := regexp.MustCompile(`time\.(NewTicker|Tick)\(\s*(1\s*\*\s*)?time\.Hour|time\.(NewTicker|Tick)\(\s*60\s*\*\s*time\.Minute`)
+		var purgeFiles, tickerFiles []string
+		root := sourcePath("backend", "")
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() && (entry.Name() == "vendor" || entry.Name() == ".git") {
+				if entry != nil && entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			content, _ := os.ReadFile(path)
+			text := string(content)
+			if purge.MatchString(text) && inactive.MatchString(text) && expired.MatchString(text) {
+				purgeFiles = append(purgeFiles, path)
+			}
+			if ticker.MatchString(text) {
+				tickerFiles = append(tickerFiles, path)
+			}
+			return nil
+		})
+		if len(purgeFiles) == 0 {
+			t.Errorf("no hay en el backend un borrado de sesiones_activas por activa = false o fecha_expiracion < NOW()")
+		}
+		if len(tickerFiles) == 0 {
+			t.Errorf("no hay en el backend un ticker de 1 hora (time.NewTicker(time.Hour)) para la purga")
+		}
 	})
 }
 

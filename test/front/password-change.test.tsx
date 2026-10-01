@@ -161,6 +161,23 @@ describe('FRN-10 - Cambio obligatorio de contraseña temporal', () => {
     expect(callsTo(fetchMock, '/account/password')).toHaveLength(0);
   });
 
+  // FIX-29 entregables 1 y 2: el mensaje de dígito y el de largo tienen que decir lo que validan.
+  it.each([
+    ['sin dígito', 'NuevaClave!', /al menos un número/i],
+    ['fuera de 8-12 caracteres', 'Corta1!', /entre 8 y 12 caracteres/i],
+  ])('FIX-29 el mensaje de validación describe la regla incumplida (%s)', async (_case, password, message) => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ message: 'ok' })));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token');
+
+    renderApp('/change-password');
+    await fillChangeForm(user, password);
+
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(callsTo(fetchMock, '/account/password')).toHaveLength(0);
+  });
+
   it('no llama a la API si la contraseña nueva queda fuera de 8-12 caracteres', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ message: 'ok' })));
     vi.stubGlobal('fetch', fetchMock);

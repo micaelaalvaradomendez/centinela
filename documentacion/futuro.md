@@ -272,26 +272,33 @@ FIX DEL 21 AL 25 (en actual.md)
 
 ---
 
-## 🛠️ Fixes detectados en la verificación del 30/09/2026
-
-### `FIX-34` - Credenciales SMTP reales en `backend/.env.example` (`INF-08B`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 0,25 h
-- **Depende de:** `INF-08B`.
-- **Problema y evidencia:** el commit `233e804` agregó las 6 variables SMTP a `backend/.env.example`, pero `SMTP_USER=tu_correo@ejemplo.com`, `SMTP_PASS=tu_clave_secreta_aqui` y `SMTP_FROM=no-reply@tudominio.com` son valores de ejemplo. La prueba `test/back/cierre_fase_base_acceptance_test.go`, caso `INF-08B…`, falla con *"SMTP_USER / SMTP_PASS tiene un valor de ejemplo: faltan las credenciales reales del relay"*. Sin credenciales reales, `BAC-16B` no se puede probar desde local contra `smtp-relay.brevo.com`.
-- **Estado verificado (01/10/2026, backend `860b3c9`):** no implementado. `backend/.env.example` sigue con los valores de ejemplo.
-  - Las credenciales reales ya están en este repositorio, en `test/back/smtp-brevo.env`. Se versionan a propósito: no se pueden perder durante el desarrollo, y para la entrega se crea otro SMTP con credenciales nuevas.
-  - **Bloqueo previo, en la cuenta de Brevo:** al autenticarse con esas credenciales, el relay responde **`525 5.7.1 Unauthorized IP address`**. La cuenta tiene activadas las IP autorizadas y la IP pública de la máquina de pruebas no está en la lista. Así no se puede comprobar si la clave es válida, y tampoco van a poder enviar las máquinas de los desarrolladores ni el servidor (`INF-08A`).
-  - Prueba: `test/back/cierre_fase_base_acceptance_test.go`, caso `FIX-34…`. Primero autentica con `smtp-brevo.env` y después compara `backend/.env.example` contra ese archivo.
-- **Entregable:**
-  1. **Cuenta de Brevo (dueño de la cuenta):** en *Security → Authorised IPs*, autorizar las IP públicas desde donde se envía (desarrollo, pruebas y la salida del servidor) o desactivar el bloqueo por IP.
-  2. **Backend (Lisandro):** copiar a `backend/.env.example` los valores de `test/back/smtp-brevo.env` (`SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`; los otros tres ya coinciden) y hacer el `push`.
-- **Criterio de éxito:** pasan los casos `INF-08B…` y `FIX-34…`. Las pruebas leen `.env.example`, **se autentican contra el relay** con STARTTLS en el 587 sin enviar ningún correo, y confirman que los valores coinciden con los de referencia.
-- **Advertencia de seguridad:** esas credenciales quedan versionadas en el repositorio. Conviene una clave SMTP de Brevo exclusiva para El Centinela, que se pueda revocar sin afectar otros servicios.
+> `FIX-34` (credenciales reales en `backend/.env.example`) **se eliminó el 01/10/2026**. Las credenciales reales están en el `.env` local de cada desarrollador, en el servidor (`INF-08A`) y en `test/back/smtp-brevo.env`, y autentican contra el relay. `.env.example` queda con valores de ejemplo, como corresponde. Ver `INF-08B` en [`terminado.md`](terminado.md).
 
 
 ---
 
 ## 🛠️ Fixes detectados en la verificación del 01/10/2026
+
+### `FIX-39` - Completar `BAC-21B`: campos de `GET /api/instances`, auditoría de energía, y `shutdown` y `reboot` (Backend)
+
+- **Área:** Backend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-21B` (en `terminado.md`).
+- **Problema y evidencia (verificado el 01/10/2026, backend `44a2339`):** `BAC-21B` cumple la parte de energía con `FULL_ACCESS` y `tareas_asincronas`, pero le faltan tres puntos de su criterio de éxito y de la aclaración del 01/10/2026:
+  1. **`GET /api/instances`** sigue con los 5 campos de `BAC-14` (`ports.InstanciaListadaDTO`). Faltan `ip`, `cpuUsage`, `ramUsage`, `maxRam`, `nivelAcceso` y `activeTask`. Prueba que falla: `puente_etapa1…`, caso *"GET /api/instances agrega campos sin romper el contrato de BAC-14"*.
+  2. **Auditoría de energía:** ninguna acción de energía se escribe en `auditoria`. `instance_handler.go` responde con `upid` y `tareaId` sin auditar, y `eventos_service.go` solo audita la apertura y el cierre del stream. El criterio dice *"todo se registra en `auditoria` y `tareas_asincronas`"*. Prueba que falla: *"las acciones de energía quedan en auditoria con el upid de la tarea"*.
+  3. **`shutdown` y `reboot`:** solo existen `start` y `stop`.
+- **Aclaración (01/10/2026, revisión de `etapa1.md`; antes estaba en `BAC-21B`):**
+  - **Campos nuevos:** `ip`, `cpuUsage`, `ramUsage`, `maxRam` y `activeTask` se agregan **en `null`**; solo `nivelAcceso` lleva su valor real. Los completan tareas de la Etapa 1: `BAC-23B` (IP), `BAC-22B` (CPU y RAM) y `BAC-25C` (`activeTask`). Así esta corrección no depende de ellas.
+  - **`instancesSummary`** no va en cada instancia sino en `GET /api/node/status` (`BAC-22B`); queda fuera de este FIX.
+  - **Energía:** se suman `shutdown` y `reboot`, que se agregan a `ProxmoxPort`. La ruta puede ser `/status/:action` o una por acción, como `/start` y `/stop`: lo que se exige es `FULL_ACCESS` y el registro.
+  - **Auditoría:** el registro de esta tarea es la orden despachada (`PENDING`). El resultado lo registra `BAC-27`.
+  - **Pendiente para la Etapa 1:** la validación de estado previo y los VMIDs protegidos en las acciones nuevas (`BAC-24A`/`BAC-24B`), y la regla de `DELETE` (`BAC-24B`).
+- **Entregable:**
+  1. Extender `ports.InstanciaListadaDTO` con `ip`, `cpuUsage`, `ramUsage`, `maxRam` y `activeTask` (en `null` por ahora) y con `nivelAcceso`, tomado de `permisos_instancia` (`FULL_ACCESS` o `READ_ONLY`; para el ADMIN, `FULL_ACCESS`). Los 5 campos actuales no cambian.
+  2. Auditar cada acción de energía despachada en `auditoria`: `accion`, `instancia_id`, `resultado` (`PENDING`) y el `upid` en `detalles`. Los nombres de las claves de `detalles` son libres.
+  3. Agregar `shutdown` y `reboot` a `ProxmoxPort` y exponerlos con `RequireInstanceAccess(..., FULL_ACCESS)`, con el mismo seguimiento en `tareas_asincronas`.
+- **Criterio de éxito:** en `test/back/puente_etapa1_acceptance_test.go`:
+  - pasan *"GET /api/instances agrega campos…"* (con `nivelAcceso` real), *"las acciones de energía quedan en auditoria con el upid…"* y *"shutdown y reboot exigen FULL_ACCESS…"*;
+  - siguen en verde *"las acciones de energía exigen FULL_ACCESS…"*, `BAC-14`, `FIX-14`/`FRN-07` y `SEC-04`.

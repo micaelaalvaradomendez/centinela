@@ -66,7 +66,9 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
 >   - `ip-addresses[].prefix` es **string** en el real (`"8"`, `"24"`) y **número** en el simulador.
 >   - Un contenedor apagado responde **`200 {"data":null}`** en el real, y el simulador responde `500 CT … not running`.
 >
-> La corrección es `FIX-35`, en [`futuro-1.md`](futuro-1.md). La IP de las VMs por guest agent no se pudo comparar, porque el servidor real no tiene VMs.
+> La corrección es `FIX-35`, en [`futuro-1.md`](futuro-1.md).
+>
+> **Actualización (01/10/2026):** `FIX-35` está completo (ver la verificación del 01/10/2026 en este archivo). El simulador ya responde `lxc/{vmid}/interfaces` igual que el Proxmox real. La IP de las VMs por guest agent no se pudo comparar, porque el servidor real no tiene VMs.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -80,3 +82,32 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
   2. Los dos endpoints de IP, con el formato real de Proxmox (capturarlo del servidor real con el token de solo lectura) y el caso "guest agent no está corriendo" para VMs sin agente.
   3. Pruebas en `cmd/proxmox-simulador/simulador_test.go`.
 - **Criterio de éxito:** con el simulador, `BAC-23A` obtiene IPs y `BAC-24B` elimina una instancia detenida, sin tocar el servidor.
+
+---
+
+# Verificación del 01/10/2026
+
+#### `FIX-35` - Formato de las IP de contenedores en el simulador de Proxmox (`BAC-28`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, backend `44a2339`, commit "mas arreglos del simulador").**
+> - `test/back/simulador_proxmox_acceptance_test.go` compila y levanta el simulador del submódulo y pasa los 2 casos `FIX-35…`:
+>   - en `lxc/101/interfaces`, todos los `ip-addresses[].prefix` son **string**;
+>   - `lxc/201/interfaces`, con el contenedor apagado, responde **`200 {"data": null}`**, igual que el Proxmox real.
+> - Entregable 1: `agent/network-get-interfaces` de qemu se revisó contra la especificación QAPI de QEMU (`GuestIpAddress.prefix` es entero) y se conserva numérico. `red.go` y `docs/simulador-proxmox.md` documentan la diferencia entre los dos endpoints.
+> - Entregable 3: `cmd/proxmox-simulador/simulador_test.go` suma `TestRed_InterfacesLXC_PrefixComoString`, `TestRed_InterfacesLXC_ApagadoDevuelveDataNull` y `TestRed_AgenteQemu_PrefixComoNumero`; `go test ./cmd/proxmox-simulador` pasa.
+>
+> Con esto se cierra la advertencia de `BAC-28`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-28`.
+- **Problema y evidencia:** se comparó `GET /nodes/proxmox/lxc/{vmid}/interfaces` del simulador con el del Proxmox real 9.2.2 (lecturas del 30/09/2026):
+  1. **Tipo de dato:** `ip-addresses[].prefix` es **string** en el real (`"prefix":"24"`) y **número** en el simulador (`"prefix":24`). `BAC-23A` va a leer la IP de ahí, y un decodificador escrito contra el simulador falla contra el real, o al revés.
+  2. **Contenedor apagado:** el real responde **`200 {"data":null}`** (verificado con la 104, apagada); el simulador responde `500 CT 201 not running`. Con el simulador, `BAC-23A` trataría como error algo que en el real es "sin IP".
+- **Entregable:**
+  1. Devolver `prefix` como string en `lxc/{vmid}/interfaces`. Revisar también `agent/network-get-interfaces` contra la documentación de Proxmox, porque no se pudo comparar: el servidor no tiene VMs.
+  2. Para un LXC apagado, responder `200` con `{"data": null}`.
+  3. Agregar ambos casos a `cmd/proxmox-simulador/simulador_test.go`.
+- **Criterio de éxito:** la comparación contra el Proxmox real de `lxc/{vmid}/interfaces` no muestra diferencias de tipos, y un contenedor apagado responde igual en los dos.
