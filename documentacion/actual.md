@@ -6,13 +6,13 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > [!NOTE]
 > **Estado al 01/10/2026** (detalle en [test/informe.md](../test/informe.md)).
 > - `BAC-16B`, `FIX-27` y `FIX-28` están completas, y `FIX-30` está implementada con problema (su corrección es `FIX-37`, en el backend). Las cuatro pasaron a [`terminado.md`](terminado.md).
-> - FIX nuevos en [`futuro.md`](futuro.md): `FIX-36` (regresión del filtro "Acción" en Auditoría, `FRN-14`), `FIX-37` (`permisos` con nivel en `GET /account/profile`) y `FIX-38` (lo que ya implementó `SEC-03`).
+> - FIX nuevos (al final de la fase base en este archivo): `FIX-36` (regresión del filtro "Acción" en Auditoría, `FRN-14`), `FIX-37` (`permisos` con nivel en `GET /account/profile`) y `FIX-38` (`READ_ONLY` usado como rol de usuario).
 >
 > **Quedan en este archivo:**
 >
 > | Tarea | Área | Estado |
 > |---|---|---|
-> | `SEC-03` | Frontend | En proceso: `usePermissions` existe en `src/hooks/`; faltan `isOperator`, `hasRole`, `PermissionGate` y el menú (ver `FIX-38`) |
+> | `SEC-03` | Frontend | En proceso: `usePermissions` existe en `src/hooks/`; faltan `isOperator`, `hasRole`, `PermissionGate` y el menú |
 > | `FIX-29` | Frontend | En proceso, sin cambios: mayúscula en el validador |
 > | `FRN-17C` | Frontend | En proceso, sin cambios: `useEvents` con ticket efímero (desbloqueada por `BAC-21C`) |
 > | `BAC-18B` | Backend | No implementada: índice parcial en `sesiones_activas` (`jti_access`) y particionado de `auditoria` |
@@ -42,10 +42,10 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Ventana propuesta:** A definir (Fase Base / Bloque 2).
 - **Depende de:** `FRN-04`, `BAC-07` y `BAC-09`.
 - **Estado verificado (01/10/2026, frontend `3d1e84a`):** en proceso, parcial. `test/front/navigation.test.tsx`: fallan los 3 casos de SEC-03 (el de `FIX-30` pasa).
-  - Existe `usePermissions()` en `src/hooks/usePermissions.ts` (no en `src/context/`), con `isAdmin`, `canAccessInstance` y `canOperateInstance`.
-  - Faltan `isOperator`, `hasRole` y `PermissionGate`; `src/context/AuthContext.js` sigue vacío.
+  - Existe `usePermissions()` en `src/hooks/usePermissions.ts`, con `isAdmin`, `canAccessInstance` y `canOperateInstance`. La carpeta es válida: el criterio no la fija y la prueba la acepta.
+  - Faltan `isOperator`, `hasRole` y `PermissionGate`.
   - `Sidebar.tsx` sigue mostrando "Auditoría" al OPERATOR.
-  - Problemas de lo ya implementado: ver `FIX-38` en [`futuro.md`](futuro.md).
+  - `READ_ONLY` tratado como rol (en el hook y en el selector de rol de la ficha): ver `FIX-38`, más abajo en este archivo.
 - **Estado anterior (23/09/2026):** no implementada.
   - `src/context/AuthContext.js` está vacío.
   - No existen `usePermissions` ni `PermissionGate`.
@@ -53,7 +53,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - Prueba: `test/front/navigation.test.tsx` (1/4).
 - **Problema:** En el frontend actual, el control de roles y permisos está disperso y acoplado únicamente a los loaders de rutas (`loadAdminSession`). No existe un mecanismo reactivo a nivel de componentes (`usePermissions` / `PermissionGate`) para ocultar o deshabilitar condicionalmente acciones según el rol (`ADMIN` vs `OPERATOR`) o según las instancias asignadas al operador. Esto genera que en vistas como `UserDetail.tsx` o `Header.tsx` se muestren controles estáticos o se dependa de que el backend rechace con 403, en lugar de ofrecer una experiencia fluida y consistente.
 - **Entregable:**
-  1. Crear un hook y contexto `usePermissions()` / `useAuthUser()` en `frontend/centinela/src/context/` que exponga helpers como `isAdmin`, `isOperator`, `canAccessInstance(vmid: number)` y `hasRole(role: string)`.
+  1. Crear un hook `usePermissions()` / `useAuthUser()` (en `src/context/` o `src/hooks/`; un contexto con Provider es opcional) que exponga helpers como `isAdmin`, `isOperator`, `canAccessInstance(vmid: number)` y `hasRole(role: string)`.
   2. Crear un componente wrapper `<PermissionGate requiredRole="ADMIN" fallback={...}>` para condicionar la renderización de botones y secciones administrativas (ej: botón "Eliminar usuario", accesos a auditoría, etc.).
   3. Integrar la reactividad en el menú de navegación y en el header para que las opciones no permitidas a un operador no aparezcan en la interfaz.
 - **Criterio de éxito:** Si un operador inicia sesión, la interfaz no muestra accesos directos ni botones exclusivos de administrador; si intenta interactuar con un componente restringido, el helper `canAccessInstance` evalúa en memoria las instancias permitidas cargadas en la sesión; las pruebas unitarias de componentes verifican el render condicional.
@@ -176,6 +176,58 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   1. Cargar `EMAIL_PROVIDER` y `SMTP_*` en el `.env` del backend del servidor (pruebas y estable).
   2. Habilitar y verificar la salida de red desde el LXC del backend hacia el host SMTP, por el puerto 587 (STARTTLS) o 465 (TLS). Por ejemplo, con `openssl s_client -starttls smtp -connect <host>:587`.
 - **Criterio de éxito:** desde el LXC del backend se establece la conexión TLS con el servidor SMTP, y el backend desplegado envía el correo de alta de usuario.
+- **Atención (01/10/2026):** la cuenta de Brevo tiene restringidas las IP autorizadas: desde una IP no autorizada, el relay responde `525 5.7.1 Unauthorized IP address`. Hay que autorizar en Brevo la IP pública de salida del servidor (ver `FIX-34`).
+
+
+### `FIX-36` - Regresión: restaurar el filtro "Acción" en Auditoría (`FRN-14` / RF-08) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian (autor de `56b88f5`)
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-14` y `BAC-18`.
+- **Problema y evidencia:** el commit `56b88f5` (*"eliminar columnas que no serán utilizadas"*) quitó de `frontend/centinela/src/pages/Auditoria.tsx` dos cosas: las columnas *Nodo* e *IP origen*, y también el estado `accion`, el campo `aria-label="Acción"` y el `params.set('accion', …)` de la consulta. Las columnas eran opcionales; el filtro no:
+  - RF-08 exige *"filtros por fecha, usuario, tipo de acción y resultado"* (`requerimientos.md:193`).
+  - El backend sigue aceptando `accion` en `GET /api/admin/audit` (BAC-18 pasa).
+  - Prueba que falla: `test/front/audit.test.tsx`, caso *"actualiza los query parameters de filtro al cambiar los selectores reactivos"* (`Unable to find a label with the text of: /acción/i`). Antes pasaba 7/7; ahora 6/7.
+- **Entregable:**
+  1. Restaurar en `Auditoria.tsx` el filtro "Acción" (`aria-label="Acción"`), con el estado `accion`, su `updateFilter`, la dependencia del `useEffect` y `params.set('accion', accion)`. La exportación CSV tiene que usar los mismos filtros.
+  2. Si el equipo decide que el filtro no va, primero hay que modificar RF-08 y avisar para ajustar la prueba. No se quita en silencio.
+- **Criterio de éxito:** `audit.test.tsx` vuelve a pasar 7/7 y al elegir una acción la consulta incluye `accion=<valor>`.
+
+### `FIX-37` - Informar el nivel de acceso por instancia en `GET /account/profile` (`FIX-30` / `FRN-18` / `SEC-04`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** A definir
+- **Estimación:** 1 h
+- **Depende de:** `SEC-04` y `FIX-30`.
+- **Problema y evidencia:**
+  - `FIX-30` (frontend) arma `canOperateInstance(vmid)` con `perfil.permisos: [{ vmid, nivelAcceso }]` de `GET /account/profile`, como proponía su entregable 2. El backend no envía ese campo: `ports.UsuarioDetalleDTO` (`internal/core/ports/user_port.go:75`) solo tiene `instanciasPermitidas: []int`.
+  - Con el backend real, `mapPerfilToUserSession` guarda `permisos: []`, y **`canOperateInstance` da `false` para todo OPERATOR, aunque tenga `FULL_ACCESS`**. Cuando la UI de la Etapa 1 use el helper para habilitar encender, apagar o reiniciar, ningún operador va a poder operar.
+  - Prueba que falla: `test/back/resource_access_acceptance_test.go`, caso *"FIX-37 FRN-18 GET /account/profile expone el nivel de acceso por instancia…"*. Las claves que se reciben no incluyen `permisos`.
+- **Entregable:**
+  1. Agregar a la respuesta de `GET /account/profile` el campo `permisos: [{ vmid, nivelAcceso: "FULL_ACCESS" | "READ_ONLY" }]`, con el mismo formato de `GET /api/admin/users/:id/permissions`, leído de `permisos_instancia`.
+  2. Mantener `instanciasPermitidas` para no romper a quienes ya lo usan.
+- **Criterio de éxito:**
+  - El caso `FIX-37…` pasa: con la 101 en `FULL_ACCESS` y la 102 en `READ_ONLY`, el perfil del OPERATOR informa esos niveles.
+  - En el frontend, `canOperateInstance(101)` da `true` y `canOperateInstance(102)` da `false` con datos reales.
+  - BAC-14, SEC-04 y LOGIN-04 siguen en verde.
+
+### `FIX-38` - "Solo lectura" (`READ_ONLY`) usado como rol de usuario (`SEC-03` / `FRN-18` / `BAC-09`) (Frontend)
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-09`, `SEC-04` y `FRN-18`.
+- **Revisión (01/10/2026):** la versión anterior de este FIX también pedía mover `usePermissions()` a `src/context/`. **Ese punto se descartó: era un problema de la prueba.** El criterio de éxito de `SEC-03` es de comportamiento y no fija carpeta, y un hook que lee la sesión sin Provider (`useSyncExternalStore`) es válido. `navigation.test.tsx` ahora acepta el hook en `src/context/` o en `src/hooks/`, y `PermissionGate` también en `src/components/`.
+- **Problema y evidencia:** los roles de usuario son solo `ADMIN` y `OPERATOR` (`RF-01`, `BAC-09`). `READ_ONLY` es un **nivel de acceso por instancia** (`SEC-04`); `Users.tsx` incluso lo aclara en un comentario. En tres lugares del frontend se lo trata como rol:
+  1. `components/features/users/components/informationOfUser.tsx:56`: el selector **"Rol"** de la ficha del usuario ofrece `<option value="READ_ONLY">Solo lectura</option>`. Si el administrador lo elige y guarda, `PUT /api/admin/users/:id` envía `rol: "READ_ONLY"`, y el backend lo rechaza con `400`, porque valida `binding:"omitempty,oneof=ADMIN OPERATOR"` (`backend/internal/core/ports/user_port.go:119`). La UI ofrece una opción que nunca puede guardarse.
+  2. `pages/detailsUserPage.tsx:348`, en `formatRole`, traduce el rol `READ_ONLY` a "Solo lectura".
+  3. `hooks/usePermissions.ts:26`, en `canAccessInstance`, acepta `user.rol` en `['OPERATOR', 'READ_ONLY']`. Hoy es código muerto, porque el backend nunca emite ese rol, pero mantiene la confusión entre rol y nivel.
+- **Entregable:**
+  1. Quitar la opción `READ_ONLY` del selector de rol de `informationOfUser.tsx`. "Solo lectura" se asigna **por instancia**, en `rolesAndPermissions.tsx`, que ya lo hace bien.
+  2. Quitar el caso `READ_ONLY` de `formatRole` y la condición de rol `READ_ONLY` de `canAccessInstance`. Solo `ADMIN` y `OPERATOR` son roles; el nivel se evalúa en `permisos`.
+- **Criterio de éxito:** el selector de rol muestra solo "Operador" y "Administrador"; "Solo lectura" sigue disponible por instancia; un usuario con un rol desconocido no obtiene acceso a ninguna instancia. Los casos de `FRN-05`, `FRN-06B`, `FRN-18` y `FIX-30` siguen en verde.
+
 
 ---
 # ETAPA 1

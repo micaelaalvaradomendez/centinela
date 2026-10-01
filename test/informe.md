@@ -23,9 +23,9 @@
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 44 | **37** (antes 35) | **7** | 0 |
+| Backend (`test/back`) | 45 | **37** (antes 35) | **8** | 0 |
 | Frontend (`test/front`) | 95 | **76** (antes 74) | **9** | 10 |
-| **Total** | **139** | **113** | **16** | **10** |
+| **Total** | **140** | **113** | **17** | **10** |
 
 Los 10 omitidos del frontend son la prueba integral LOGIN-04, que se ejecuta desde `test/back` contra el backend real. **Esta corrida pasa 10/10.**
 
@@ -48,7 +48,7 @@ Todos los fallos que quedan son del producto. Algunos tests se tuvieron que adap
 | `FIX-28` Logout con Bearer | `session-security`, `session_security…` y LOGIN-04 paso 7 | ✅ **Nueva** | El frontend envía `Authorization: Bearer` y la cookie (`cfb88f7`). En la prueba integral, el access token queda revocado después de "Cerrar sesión" |
 | `FIX-27` Mensaje ante fallo de correo | `admin-users.test.tsx` | ✅ **Nueva** | El mensaje del 502 se muestra tal como lo envía el backend (`3ea7fa4`) |
 | `FIX-30` `canOperateInstance` | `navigation.test.tsx` y `resource_access…` (`FIX-37`, nuevo) | 🟡 | En el frontend cumple: `canOperateInstance(vmid)` responde `true` con `FULL_ACCESS` y `false` con `READ_ONLY` o sin asignación, leyendo `perfil.permisos`. **Pero `GET /account/profile` no devuelve `permisos`**, solo `instanciasPermitidas`. Con datos reales, el helper da `false` para todo OPERATOR → **`FIX-37`** (backend) |
-| `SEC-03` Permisos reactivos | `navigation.test.tsx` (3) | 🟡 Parcial | Existe `usePermissions()`, pero en `src/hooks/` y no en `src/context/`, como pide el entregable. Le faltan `isOperator` y `hasRole`; no existe `PermissionGate`, y el menú sigue mostrando "Auditoría" al OPERATOR |
+| `SEC-03` Permisos reactivos | `navigation.test.tsx` (3) | 🟡 Parcial | Existe `usePermissions()` en `src/hooks/`; la carpeta es válida y la prueba se ajustó (§5). Le faltan `isOperator` y `hasRole`; no existe `PermissionGate`, y el menú sigue mostrando "Auditoría" al OPERATOR |
 | `FIX-29` Complejidad de contraseña | `password-change`, `recover-password` | ❌ | Sin cambios: se valida `/[0-9]/` donde corresponde validar mayúsculas |
 | `FRN-17C` Cliente de eventos | `events-client.test.tsx` (3) | ❌ | No existe `useEvents`. El backend ya ofrece `/api/events/ticket` y `/api/events` (BAC-21C) |
 | `INF-08B` → `FIX-34` | `cierre_fase_base…` | 🟡 (ya en `terminado.md`) | `SMTP_USER` y `SMTP_PASS` siguen con valores de ejemplo |
@@ -97,7 +97,7 @@ Ninguno oculta un fallo. Todos alinean el test con lo que pide la tarea:
 | `passwordCandidates` toma la clave de "contraseña … es:" en el cuerpo sin limpiar | La clave temporal puede tener `@`, `*`, `<`, `=`, etc. El test la descartaba o la recortaba, así que fallaba según la clave que tocara |
 | La marca del código de recuperación pasa a `"código de seguridad es:"` (`main_test.go` y `login04-e2e.test.ts`) | `860b3c9` cambió el texto que imprime el `MockEmailService`. Es un detalle interno del mock, no un contrato. BAC-19, BAC-20, FIX-17 y el paso 8 de LOGIN-04 fallaban solo por eso |
 | La integración FIX-28 (`session_security…`) envía el logout con Bearer y cookie | Simulaba el frontend anterior (sin Bearer). Ahora replica lo que hace `cfb88f7`; que el frontend mande el header lo verifica `session-security.test.ts` |
-| El caso FIX-30 busca `usePermissions` en `src/context` **o** `src/hooks`, sin exigir `PermissionGate` | FIX-30 solo pide el helper `canOperateInstance`. La ubicación en `src/context`, `isOperator`, `hasRole` y `PermissionGate` los siguen exigiendo los casos de SEC-03 |
+| `navigation.test.tsx`: `usePermissions` se busca en `src/context` **o** `src/hooks`, y `PermissionGate` también en `src/components`. Los casos de SEC-03 y FIX-30 ya no exigen carpeta | El criterio de éxito de SEC-03 es de comportamiento y no fija carpeta; un hook sin Provider es válido. Exigir `src/context/` era un problema de la prueba (se descartó ese punto de `FIX-38`). Siguen exigiendo `isOperator`, `hasRole`, `PermissionGate` y el menú |
 | Caso nuevo `FIX-37…` en `resource_access…`: `GET /account/profile` debe informar `permisos [{ vmid, nivelAcceso }]` | La prueba de FIX-30 siembra la sesión a mano; este caso verifica que el backend real entregue el dato. Hoy falla |
 
 ---
@@ -106,8 +106,12 @@ Ninguno oculta un fallo. Todos alinean el test con lo que pide la tarea:
 
 - **Reclasificación (01/10/2026):**
   - Pasaron a `terminado.md`: `BAC-16B`, `FIX-27` y `FIX-28` (completas) y `FIX-30` (con problema).
-  - FIX nuevos en `futuro.md`: `FIX-36` (filtro "Acción", §2.1), `FIX-37` (`permisos` en el perfil) y `FIX-38` (lo ya hecho de `SEC-03`: ubicación del hook y "READ_ONLY" tratado como rol).
+  - FIX nuevos en `futuro.md`: `FIX-36` (filtro "Acción", §2.1), `FIX-37` (`permisos` en el perfil) y `FIX-38` (`READ_ONLY` usado como rol de usuario: el selector de rol de la ficha lo ofrece y el backend lo rechaza con 400).
   - `FIX-35` (Etapa 1) sigue en `actual.md`: el simulador no cambió.
+  - `LOGIN-04` pasó de `futuro.md` a `terminado.md`: los dos recorridos (Go y frontend ↔ backend, 10/10) cubren el entregable completo y los cinco tipos de rechazo del criterio de éxito.
+  - **`FIX-34` (verificado con las credenciales reales):** sigue sin implementar y queda en `futuro.md`.
+    - `backend/.env.example` sigue con valores de ejemplo, y el backend no tiene commits nuevos.
+    - Las credenciales reales quedaron en `test/back/smtp-brevo.env`, y el caso nuevo `FIX-34…` las prueba contra Brevo: **`525 5.7.1 Unauthorized IP address`**. La cuenta tiene restringidas las IP autorizadas, así que todavía no se puede confirmar la clave. Hay que autorizar las IP en Brevo antes del cambio en el backend (también afecta a `INF-08A`).
 - **Frontend:** quedan `SEC-03` (ubicación, `isOperator`, `hasRole`, `PermissionGate` y menú), `FIX-29` y `FRN-17C`.
 - **Backend:** quedan `BAC-18B`, `BAC-21B`, `FIX-31` y `FIX-34` (credenciales reales en `.env.example`).
 - **Seguridad:**

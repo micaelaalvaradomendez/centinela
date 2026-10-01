@@ -4,9 +4,9 @@
 
 | Métrica | Valor |
 |---|---:|
-| Casos | 44 |
+| Casos | 45 |
 | Aprueban | **37** |
-| Fallan | **7** |
+| Fallan | **8** |
 | Omitidos | 0 |
 
 ## Por caso
@@ -20,6 +20,7 @@
 | **FIX-31 TLS de Nginx versionado** | FIX-31 | ❌ |
 | INF-06A Redis local | regresión | ✅ |
 | **INF-08B credenciales SMTP** | INF-08B / FIX-34 | ❌ (valores de ejemplo) |
+| **FIX-34 credenciales de referencia contra Brevo** (nuevo) | FIX-34 | ❌ (`525 Unauthorized IP address`) |
 | BAC-16B envío por SMTP (STARTTLS obligatorio) | BAC-16B | ✅ **nuevo** |
 | BAC-17A adaptador de Redis, BAC-17B una sesión = un registro | regresión | ✅ 2/2 |
 | **BAC-18B índice parcial y particiones** | BAC-18B | ❌ |
@@ -37,6 +38,7 @@
 |---|---|
 | FIX-31 | No hay ninguna configuración de Nginx versionada con `listen 443 ssl` |
 | INF-08B | `SMTP_USER` y `SMTP_PASS` tienen valores de ejemplo en `backend/.env.example` |
+| FIX-34 | Brevo rechaza la IP de la máquina de pruebas (IP autorizadas activadas en la cuenta); además, `.env.example` no coincide con `smtp-brevo.env` |
 | BAC-18B | Sin índice parcial (sobre `jti_access`), sin particiones y sin índices compuestos |
 | FIX-37 | `UsuarioDetalleDTO` solo tiene `instanciasPermitidas`; falta `permisos [{ vmid, nivelAcceso }]` |
 | BAC-21B | Faltan los campos nuevos en `GET /instances`; `/status/:action` → 404; `DELETE /instances/:vmid` → 405 |
@@ -46,6 +48,7 @@
 - **Mailpit con STARTTLS obligatorio:** usa el certificado de `mailpit-tls/` y `backend-smtp` confía en esa CA mediante `SSL_CERT_FILE`.
 - **Extracción de la clave temporal:** se toma del cuerpo del correo sin limpiar, porque puede contener `@`, `*`, `<`, `=`, etc.
 - **Marca del código de recuperación:** ahora es `"código de seguridad es:"` (texto nuevo del mock).
+- **Caso nuevo `FIX-34`:** autentica contra Brevo con `smtp-brevo.env` (credenciales reales, versionadas a propósito) y compara `backend/.env.example` contra ese archivo.
 - **Caso nuevo `FIX-37`:** verifica que el perfil informe el nivel de acceso por instancia.
 - **Integración FIX-28:** el logout se envía con Bearer y cookie, como lo hace el frontend desde `cfb88f7`.
 

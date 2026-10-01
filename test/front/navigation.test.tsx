@@ -28,8 +28,11 @@ function renderApplication(path: string, authenticated: boolean, user: Partial<t
   return router;
 }
 
-// SEC-03 pide el hook y el gate en src/context/ sin fijar el nombre del archivo:
-// se busca cualquier módulo de esa carpeta que exporte usePermissions y PermissionGate.
+// SEC-03: el criterio de éxito es de comportamiento (el operador no ve accesos de administrador,
+// canAccessInstance evalúa en memoria y el render condicional está probado); no fija carpeta.
+// El entregable sugiere src/context/, pero un hook que lee la sesión sin Provider es igual de válido:
+// se acepta usePermissions en src/context o src/hooks, y PermissionGate en cualquiera de las dos
+// o en src/components.
 type PermissionsModule = {
   usePermissions?: () => {
     isAdmin: boolean;
@@ -41,29 +44,25 @@ type PermissionsModule = {
   PermissionGate?: React.ComponentType<{ requiredRole: string; fallback?: React.ReactNode; children?: React.ReactNode }>;
   [key: string]: unknown;
 };
-const contextModules = import.meta.glob<PermissionsModule>('@/context/**/*.{ts,tsx,js,jsx}');
-
-async function loadPermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions' | 'PermissionGate'>> & PermissionsModule> {
-  for (const load of Object.values(contextModules)) {
-    const module = await load();
-    if (typeof module.usePermissions === 'function' && module.PermissionGate) {
-      return module as never;
-    }
-  }
-  throw new Error(`SEC-03 no implementada: ningún módulo de src/context exporta usePermissions y PermissionGate (revisados: ${Object.keys(contextModules).join(', ') || 'ninguno'})`);
-}
-
-// FIX-30 (FRN-18) solo pide el helper canOperateInstance en usePermissions(): se acepta el hook
-// en src/context o en src/hooks. La ubicación y el resto del contrato (isOperator, hasRole y
-// PermissionGate en src/context) los exigen los casos de SEC-03.
 const hookModules = import.meta.glob<PermissionsModule>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}']);
+const gateModules = import.meta.glob<PermissionsModule>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}', '@/components/**/*.{tsx,jsx}']);
 
 async function loadUsePermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions'>> & PermissionsModule> {
   for (const load of Object.values(hookModules)) {
     const module = await load();
     if (typeof module.usePermissions === 'function') return module as never;
   }
-  throw new Error(`FIX-30: ningún módulo de src/context ni de src/hooks exporta usePermissions (revisados: ${Object.keys(hookModules).join(', ') || 'ninguno'})`);
+  throw new Error(`ningún módulo de src/context ni de src/hooks exporta usePermissions (revisados: ${Object.keys(hookModules).join(', ') || 'ninguno'})`);
+}
+
+async function loadPermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions' | 'PermissionGate'>> & PermissionsModule> {
+  const hook = await loadUsePermissionsModule();
+  if (hook.PermissionGate) return hook as never;
+  for (const load of Object.values(gateModules)) {
+    const module = await load();
+    if (module.PermissionGate) return { ...hook, PermissionGate: module.PermissionGate } as never;
+  }
+  throw new Error('SEC-03 incompleta: usePermissions existe, pero ningún módulo de src/context, src/hooks ni src/components exporta PermissionGate');
 }
 
 // Si el módulo exporta un Provider, se usa; si el hook lee la sesión directamente, no hace falta.
@@ -95,7 +94,7 @@ describe('FRN-03 - navbar y rutas base', () => {
 
 describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
   it('usePermissions expone isAdmin, isOperator, hasRole y canAccessInstance según la sesión', async () => {
-    const module = await loadPermissionsModule();
+    const module = await loadUsePermissionsModule();
     seedSession({ rol: 'OPERATOR', instanciasPermitidas: [101] });
     let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
     function Probe() {

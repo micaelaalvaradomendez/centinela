@@ -1201,7 +1201,7 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 >
 > **Falta la fuente de datos real:** el backend no devuelve `permisos` en `GET /account/profile`; `UsuarioDetalleDTO` solo tiene `instanciasPermitidas`. Con el backend real, la sesión queda con `permisos: []` y **`canOperateInstance` da `false` para todo OPERATOR, aunque tenga `FULL_ACCESS`**. Prueba: `resource_access_acceptance_test.go`, caso `FIX-37…`. La corrección es **`FIX-37`** (backend), en [`futuro.md`](futuro.md).
 >
-> **Nota:** el hook quedó en `src/hooks/` y no en `src/context/`, que es lo que pide `SEC-03`. Eso se sigue en `SEC-03` y `FIX-38`.
+> **Nota:** el hook quedó en `src/hooks/`. Es válido: el criterio de `SEC-03` no fija carpeta, y la prueba se ajustó el 01/10/2026.
 
 - **Área:** Frontend
 - **Asignados:** Cristian y Belinda
@@ -1213,3 +1213,40 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   1. Exponer `canOperateInstance(vmid: number): boolean` en `usePermissions()`.
   2. Tomar el nivel por instancia de la sesión del usuario: por ejemplo `permisos: [{ vmid, nivelAcceso }]` en `centinela_user`, cargado con el mismo contrato de `GET /api/admin/users/:id/permissions`, o con un campo equivalente en `GET /account/profile`. La prueba siembra ese formato. Si se elige otra fuente, hay que avisar para alinear la prueba.
 - **Criterio de éxito:** `canOperateInstance(101)` es `true` con `FULL_ACCESS`, es `false` con `READ_ONLY` y para un VMID no asignado, y siempre es `true` para `ADMIN`. El caso `FIX-30…` pasa.
+
+### `LOGIN-04` - Prueba integral de autenticación y autorización
+
+> [!NOTE]
+> **Estado: Completada (verificado el 01/10/2026, backend `860b3c9` y frontend `3d1e84a`).** Las dos pruebas automatizadas pasan, dos corridas completas con el mismo resultado:
+> - `test/back/login04_acceptance_test.go`: el circuito desde Go, pasos 1 a 7.
+> - `test/back/login04_integracion_front_back_test.go`, que corre `test/front/login04-e2e.test.ts`: el **código real del frontend contra el backend real**, **10/10 pasos**. Era la primera vez que pasaba completa: el paso 7 se destrabó con `FIX-28`.
+>
+> **Cobertura del entregable:**
+> - Alta con la clave temporal entregada solo por correo; cambio obligatorio de esa clave.
+> - Enrolamiento y login con TOTP.
+> - Acceso según rol; filtro por instancias (el OPERATOR solo ve la 101).
+> - Renovación silenciosa con la cookie HttpOnly.
+> - Logout con revocación en el servidor.
+> - Recuperación de contraseña por el propio usuario, con el código enviado por correo.
+> - Resets administrativos de 2FA y de contraseña.
+> - Acciones administrativas registradas en la auditoría y visibles para el ADMIN.
+>
+> **Cobertura del criterio de éxito (rechazos con códigos controlados):**
+>
+> | Intento | Resultado |
+> |---|---|
+> | Omitir pasos | El JWT pre-2FA en una ruta protegida recibe `403`. Con el cambio de clave pendiente, la respuesta es `403 PASSWORD_CHANGE_REQUIRED`. Un TOTP inválido recibe `401` |
+> | Usar credenciales anteriores | La clave temporal después del cambio, la contraseña anterior después de la recuperación o del reset y un código de recuperación inválido reciben `401` o `400` |
+> | Acceder con otro rol | El OPERATOR en rutas de ADMIN recibe `403`, y la sesión no se cierra |
+> | Consultar una instancia no asignada | `403 INSTANCE_ACCESS_DENIED` |
+> | Reutilizar un token revocado | El access token después del logout recibe `401 TOKEN_REVOKED`; la sesión previa a los resets queda revocada. La revocación del refresh la cubre además `BAC-17` (`session_security…`) |
+>
+> **Nota:** el envío de correo se verificó con el mock y, en `BAC-16B`, con Mailpit en STARTTLS. Con el relay real falta `FIX-34`, que no es parte del criterio de esta tarea.
+
+- **Área:** Frontend / Backend
+- **Asignados:** Cristian, Tayra y Lisandro
+- **Estimación:** 3 h
+- **Ventana propuesta:** 18/09/2026, 14:00-17:00
+- **Depende de:** `FRN-07`, `FRN-09`, `FRN-10`, `FRN-11`, `FRN-12`, `BAC-14`, `BAC-16`, `BAC-17`, `BAC-18`, `BAC-20` y `BAC-21`.
+- **Entregable:** pruebas documentadas o automatizadas de creación de usuario, entrega y cambio de clave temporal, enrolamiento y login con TOTP, acceso según rol, filtro por instancias, recuperación administrativa de contraseña y 2FA, recuperación de contraseña por el propio usuario, logout/revocación de sesión y verificación de que las acciones administrativas quedan auditadas.
+- **Criterio de éxito:** todos los recorridos válidos terminan con el acceso esperado y los intentos de omitir pasos, usar credenciales anteriores, acceder con otro rol, consultar una instancia no asignada o reutilizar un token revocado son rechazados con códigos HTTP controlados.

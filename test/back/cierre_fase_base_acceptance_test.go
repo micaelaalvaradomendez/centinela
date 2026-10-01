@@ -245,6 +245,25 @@ func TestCierreFaseBase(t *testing.T) {
 		}
 	})
 
+	t.Run("FIX-34 backend/.env.example tiene las credenciales SMTP de referencia y autentican contra el relay", func(t *testing.T) {
+		// test/back/smtp-brevo.env guarda las credenciales reales del relay (versionadas a propósito).
+		// Primero se verifica que funcionen; después, que backend/.env.example tenga esas mismas.
+		reference := parseEnvFile(string(readFile(t, "smtp-brevo.env")))
+		if err := smtpLogin(reference["SMTP_HOST"], reference["SMTP_PORT"], reference["SMTP_USER"], reference["SMTP_PASS"]); err != nil {
+			t.Fatalf("las credenciales de referencia (test/back/smtp-brevo.env) no autentican contra %s:%s: %v", reference["SMTP_HOST"], reference["SMTP_PORT"], err)
+		}
+		example := parseEnvFile(string(readFile(t, sourcePath("backend", ".env.example"))))
+		for _, variable := range []string{"EMAIL_PROVIDER", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
+			if got := strings.Trim(example[variable], `"`); got != reference[variable] {
+				shown := got
+				if variable == "SMTP_PASS" && !looksLikePlaceholder(got) {
+					shown = "(otro valor)"
+				}
+				t.Errorf("%s en backend/.env.example es %q; debe ser el de test/back/smtp-brevo.env", variable, shown)
+			}
+		}
+	})
+
 	t.Run("BAC-16B con EMAIL_PROVIDER=smtp las credenciales y el codigo OTP llegan por SMTP", func(t *testing.T) {
 		useBackend(t, envOrDefault("BACKEND_TEST_SMTP_API_URL", "http://127.0.0.1:18081/api"))
 		email := fmt.Sprintf("smtp.%d@elcentinela.com", time.Now().UnixNano())

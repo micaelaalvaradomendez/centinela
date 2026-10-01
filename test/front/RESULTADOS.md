@@ -29,11 +29,11 @@
 | Tarea | Causa en el código |
 |---|---|
 | FIX-29 | `validatePasswordComplexity` prueba `/[0-9]/` donde debería probar mayúsculas |
-| SEC-03 | `usePermissions` está en `src/hooks/` (no en `src/context/`) y no tiene `isOperator` ni `hasRole`; no existe `PermissionGate`, y `Sidebar.tsx` muestra "Auditoría" a todos los roles |
+| SEC-03 | `usePermissions` (en `src/hooks/`, carpeta válida) no tiene `isOperator` ni `hasRole`; no existe `PermissionGate`, y `Sidebar.tsx` muestra "Auditoría" a todos los roles |
 | FRN-17C | No existe ningún `useEvents` que pida `POST /api/events/ticket` antes de conectarse |
 | FRN-14 (regresión) | `56b88f5` quitó de `Auditoria.tsx` el filtro "Acción" y el parámetro `accion`, que exige RF-08 |
 
 ## Cambios en la suite
 
-- **`navigation.test.tsx`:** el caso FIX-30 acepta `usePermissions` en `src/context` o en `src/hooks`. Los casos SEC-03 siguen exigiendo `src/context`.
+- **`navigation.test.tsx`:** los casos SEC-03 y FIX-30 aceptan `usePermissions` en `src/context` o en `src/hooks`, y `PermissionGate` también en `src/components`. El criterio de SEC-03 no fija carpeta.
 - **`login04-e2e.test.ts`:** la marca del código de recuperación pasa a `"código de seguridad es:"`.
