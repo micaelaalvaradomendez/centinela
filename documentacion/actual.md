@@ -134,7 +134,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ### `FIX-37` - Informar el nivel de acceso por instancia en `GET /account/profile` (`FIX-30` / `FRN-18` / `SEC-04`) (Backend)
 
 - **Área:** Backend
-- **Asignado:** A definir
+- **Asignado:** Tayra
 - **Estimación:** 1 h
 - **Depende de:** `SEC-04` y `FIX-30`.
 - **Problema y evidencia:**

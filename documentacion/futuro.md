@@ -302,3 +302,24 @@ FIX DEL 21 AL 25 (en actual.md)
 - **Criterio de éxito:** en `test/back/puente_etapa1_acceptance_test.go`:
   - pasan *"GET /api/instances agrega campos…"* (con `nivelAcceso` real), *"las acciones de energía quedan en auditoria con el upid…"* y *"shutdown y reboot exigen FULL_ACCESS…"*;
   - siguen en verde *"las acciones de energía exigen FULL_ACCESS…"*, `BAC-14`, `FIX-14`/`FRN-07` y `SEC-04`.
+
+### `FIX-40` - Distinguir `504 PROXMOX_TIMEOUT` de `502 PROXMOX_UNAVAILABLE` (decisión D2 de `etapa1.md`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro (autor de `FIX-33`)
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-14` y `FIX-33` (en `terminado.md`).
+- **Origen:** decisión D2 del 01/10/2026, en `etapa1.md` §1: *"el backend distingue cada significado del resultado de una acción, y el frontend muestra un mensaje distinto para cada caso"*. Se registra como FIX porque cambia un contrato de código ya terminado.
+- **Problema y evidencia:** `mapearErrorProxmox` (`internal/adapters/primary/http/instance_handler.go:58`) responde el mismo `errorCode` para dos significados distintos:
+  - `ErrProxmoxNoDisponible` → `502 PROXMOX_UNAVAILABLE` (Proxmox no está disponible: la orden no llegó);
+  - `ErrProxmoxTimeout` → `504 PROXMOX_UNAVAILABLE` (Proxmox no respondió a tiempo: la orden puede haberse aplicado igual).
+
+  `docs/estandar_http.md:64-65` documenta los dos con el mismo código. El frontend lee `errorCode` (`FIX-07`), así que no puede mostrar un mensaje distinto para cada uno. La diferencia importa en las acciones de energía (`FRN-16`): ante un timeout, el operador tiene que revisar el estado antes de repetir la orden.
+- **Entregable:**
+  1. Mapear `ErrProxmoxTimeout` a `504 PROXMOX_TIMEOUT` ("Proxmox no respondió a tiempo; la acción puede haberse aplicado"), en todas las rutas que usan `mapearErrorProxmox`: listado, detalle y acciones de energía.
+  2. Mantener `502 PROXMOX_UNAVAILABLE` para el resto, **incluido el token rechazado** (`ErrProxmoxCredenciales`). Hacia el cliente se sigue respondiendo lo mismo que cuando Proxmox no está disponible: así se decidió y el motivo queda en el log.
+  3. Actualizar `docs/estandar_http.md`, Swagger, el inventario de `FIX-08` y las pruebas unitarias de `instance_handler_test.go` que hoy esperan `PROXMOX_UNAVAILABLE` en el `504`.
+- **Criterio de éxito:**
+  - Con Proxmox sin responder dentro del timeout del cliente: `504` con `errorCode: PROXMOX_TIMEOUT`.
+  - Con Proxmox caído o con el token rechazado: `502` con `PROXMOX_UNAVAILABLE`.
+  - `409 INSTANCE_BUSY` sigue igual (`FIX-33`), y `BAC-14`, `SEC-04` y `LOGIN-04` siguen en verde.

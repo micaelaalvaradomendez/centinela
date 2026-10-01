@@ -61,14 +61,16 @@
 7. **Diseño Antierror en Frontend:** Patrón "Operación en progreso": al confirmar una acción, los controles de esa instancia se bloquean con spinner hasta recibir `TASK_FINISHED` con el mismo `tareaId`.
 8. **VMIDs protegidos:** las acciones destructivas (`stop`, `shutdown`, `reboot`, `DELETE`) sobre los VMIDs de `PROXMOX_PROTECTED_VMIDS` responden `403 INSTANCE_PROTECTED` (`RejectProtectedInstance`, ya existe para `stop`).
 
-### Decisiones a confirmar por el equipo antes de cargar
+### Decisiones del equipo (tomadas el 01/10/2026)
 
-| # | Decisión | Propuesta | Afecta |
-|---|---|---|---|
-| D1 | ¿Quién puede ver `GET /api/node/status`? | Cualquier usuario autenticado (`RF-02` no lo restringe). El `instancesSummary` cuenta todas las instancias del nodo. | `BAC-22`, `BAC-22B`, `FRN-19B` |
-| D2 | Código para una acción incompatible con el estado actual (`start` sobre una instancia encendida, `DELETE` sobre una encendida) | `409 INSTANCE_INVALID_STATE` (distinto de `409 INSTANCE_BUSY`, que es "hay otra tarea en curso") | `BAC-24A`, `BAC-24B`, `FRN-16` |
-| D3 | Umbrales del semáforo de salud | `Saludable` < 80 % en CPU, RAM y disco; `Advertencia` ≥ 80 % en alguno; `Inaccesible` si el backend responde `502`/`504` o no responde | `FRN-19B` |
-| D4 | Timeout del seguimiento de UPID | `UPID_TIMEOUT` configurable, por defecto 3 min (hoy está fijo en 10 min) | `BAC-25B` |
+Cada decisión está aplicada en la tarea de esta etapa que la implementa. Si una decisión cambia código ya terminado, se registra un FIX en `futuro.md`. Hasta ahora, el único caso es `FIX-40`, por D2.
+
+| # | Decisión | Dónde se aplica |
+|---|---|---|
+| D1 | `GET /api/node/status` lo puede ver **solo un usuario autenticado**, con rol `ADMIN` u `OPERATOR`. Sin token, `401` | `BAC-22`, `BAC-29` |
+| D2 | **El backend distingue cada significado del resultado de una acción, y el frontend muestra un mensaje distinto para cada caso.** Respuesta inmediata:<br>• `409 INSTANCE_INVALID_STATE` (la acción no corresponde al estado de la instancia);<br>• `409 INSTANCE_BUSY` (hay otra tarea en curso);<br>• `403 INSTANCE_PROTECTED` (VMID protegido);<br>• `403 INSTANCE_ACCESS_DENIED` (sin permiso);<br>• `502 PROXMOX_UNAVAILABLE` (Proxmox no disponible);<br>• `504 PROXMOX_TIMEOUT` (Proxmox no respondió a tiempo).<br>Resultado asincrónico (`TASK_FINISHED`): `estado` más `detalles.motivo`, que puede ser `PROXMOX_ERROR` (Proxmox terminó la tarea con error) o `TIMEOUT` (venció el seguimiento) | `BAC-29`, `BAC-24A`, `BAC-24B`, `BAC-25B`, `FRN-16`, `FRN-17B`. Por código ya terminado: **`FIX-40`** (hoy `502` y `504` responden los dos `PROXMOX_UNAVAILABLE`) |
+| D3 | Semáforo de salud:<br>• `Saludable` si CPU, RAM y disco están por debajo del **70 %**;<br>• `Advertencia` si alguno llega al **70 %** o más;<br>• `Inaccesible` si el backend responde `502`/`504` o no responde.<br>El color de los medidores usa el mismo umbral | `FRN-19A`, `FRN-19B` |
+| D4 | El seguimiento de UPID corta a los **3 minutos** (`UPID_TIMEOUT`, por defecto `3m`). Hoy está fijo en 10 min | `BAC-25B`, `BAC-25C` |
 
 ---
 
@@ -102,6 +104,7 @@
 | Tarea de la fase base | Estado al 01/10 | Frena en la Etapa 1 | Tipo |
 |---|---|---|---|
 | `FIX-39` (completa `BAC-21B`) | ❌ (`BAC-21B` está en `terminado.md` con problema) | Cierre de `BAC-22B`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25C`, `BAC-27`, `FRN-16` y `FRN-20A` | Bloqueante |
+| `FIX-40` (D2: `504 PROXMOX_TIMEOUT`) | ❌ (nueva, en `futuro.md`) | Cierre de `FRN-16`. `BAC-22` la usa si ya está mergeada | Bloqueante |
 | `FIX-37` | ❌ | Cierre de `FRN-15`, `FRN-16` e `INT-02`, porque sin ella ningún OPERATOR puede operar | Bloqueante |
 | `SEC-03` | 🟡 | Cierre de `FRN-15` y `FRN-16` (`PermissionGate` oculta Delete al OPERATOR) | Bloqueante |
 | `FIX-38` | ❌ | Cierre de `FRN-15` (`canAccessInstance` no debe aceptar `READ_ONLY` como rol) | Bloqueante |
@@ -120,6 +123,7 @@ Las líneas continuas son dependencias bloqueantes. Las punteadas significan que
 flowchart TD
     subgraph Base [Fase base pendiente]
         FIX39[FIX-39: Campos, shutdown/reboot, auditoría]:::base
+        FIX40[FIX-40: 504 PROXMOX_TIMEOUT]:::base
         FIX37[FIX-37: permisos en /account/profile]:::base
         SEC03[SEC-03: PermissionGate]:::base
         FIX38[FIX-38: READ_ONLY no es rol]:::base
@@ -206,6 +210,7 @@ flowchart TD
     FRN15 --> FRN16
     BAC24A --> FRN16
     BAC24B --> FRN16
+    FIX40 --> FRN16
     FRN17C --> FRN17A
     FRN16 --> FRN17B
     FRN17A --> FRN17B
@@ -241,11 +246,13 @@ flowchart TD
 
 | Ola | Se carga y se empieza | Condición para empezar |
 |---|---|---|
-| **1** | `INF-07`, `INF-07B`, `BAC-29`, `BAC-22`, `BAC-23A`, `BAC-25A`, `FRN-19A`, `FRN-20A` (contra `BAC-14`/`BAC-29`), `FRN-17A` (junto con `FRN-17C`) | Ninguna pendiente. `FRN-20A` cierra cuando termina `BAC-21B` |
+| **1** | `INF-07`, `INF-07B`, `BAC-29`, `BAC-22`, `BAC-23A`, `BAC-25A`, `FRN-19A`, `FRN-20A` (contra `BAC-14`/`BAC-29`), `FRN-17A` (junto con `FRN-17C`) | Ninguna pendiente. `FRN-20A` cierra cuando termina `FIX-39`. `FRN-17A` se hace junto con `FRN-17C` (`actual.md`) |
 | **2** | `BAC-22B`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25B`, `FRN-19B`, `FRN-20B`, `FRN-15` (los modales se maquetan antes) | Tareas de la Ola 1 y `FIX-39`. `FRN-15` cierra con `SEC-03`, `FIX-37` y `FIX-38` |
 | **3** | `BAC-24C`, `BAC-25C`, `BAC-26`, `BAC-27`, `FRN-16`, `FRN-19C`, `FRN-20C` | Ola 2. `BAC-27` necesita además `BAC-18B` mergeada |
 | **4** | `FRN-16B`, `FRN-17B`, `INT-01` | Ola 3 |
 | **5** | `INT-02`, y después `INT-03` | Todo lo anterior. `INT-03` necesita además `INF-06B` e `INF-08A` |
+
+**De `futuro.md` se cargan junto con la Ola 1:** `FIX-39` (completa `BAC-21B`) y `FIX-40` (D2: `504 PROXMOX_TIMEOUT`).
 
 **Camino crítico:** `FIX-39` → `BAC-24A/B` → `FRN-16` → `FRN-17B` → `INT-02` → `INT-03`. En paralelo, `SEC-03`, `FIX-37` y `FIX-38` tienen que estar listas antes de que cierre `FRN-15`.
 
@@ -314,10 +321,13 @@ flowchart TD
   1. `GET /api/node/status`: `{ cpu: { usagePercent, cores }, ram: { usedGb, totalGb, usagePercent }, storage: { usedGb, totalGb, usagePercent }, uptimeSeconds, instancesSummary: { vms: { running, stopped, paused, total }, lxc: { … } }, stale, fetchedAt }`.
   2. `GET /api/instances`: lo de `BAC-14`, más `ip | null`, `cpuUsage | null` (0-100), `ramUsage | null`, `maxRam | null` (bytes), `nivelAcceso` y `activeTask: { tareaId, action, status } | null`.
   3. Las rutas de energía tal como queden con `FIX-39`. Pueden ser `/status/:action` o una por acción, como las actuales `/start` y `/stop`. Para `start`, `shutdown`, `stop` y `reboot`, y para el `DELETE /api/instances/:vmid` de `BAC-24B`: `202 { upid, tareaId }`.
-  4. Los `detalles` de `TASK_FINISHED`: `{ tareaId, accion, estado: COMPLETED|FAILED, exitstatus, error? }`.
-  5. La tabla de códigos de error de la etapa con su estado HTTP:
+  4. Los `detalles` de `TASK_FINISHED`: `{ tareaId, accion, estado: COMPLETED|FAILED, exitstatus, motivo?: PROXMOX_ERROR|TIMEOUT, error? }`. `motivo` va solo cuando `estado` es `FAILED` (D2).
+  5. Quién puede consultar cada endpoint: `GET /api/node/status`, cualquier usuario autenticado (D1).
+  6. La tabla de códigos de error de la etapa con su estado HTTP:
      - `INSTANCE_ACCESS_DENIED`, `INSTANCE_PROTECTED`, `INSTANCE_BUSY`, `INSTANCE_INVALID_STATE` (D2) e `INSTANCE_NOT_FOUND`;
-     - `PROXMOX_UNAVAILABLE` (`502`/`504`) e `INVALID_ACTION`.
+     - `PROXMOX_UNAVAILABLE` (`502`), `PROXMOX_TIMEOUT` (`504`, `FIX-40`) e `INVALID_ACTION`.
+
+     Cada código lleva una línea con su significado, para que el frontend arme un mensaje distinto para cada uno (D2).
 
      Se agregan también al inventario de `FIX-08`.
 - **Criterio de éxito:** el frontend puede maquetar `FRN-19B`, `FRN-20A`, `FRN-16` y `FRN-17B` solo con este documento, y Swagger muestra los endpoints con ejemplos. Si una tarea posterior cambia el contrato, actualiza este archivo y avisa al frontend.
@@ -327,15 +337,17 @@ flowchart TD
 - **Asignada:** Tayra
 - **Estimación:** 2.5 h
 - **Depende de:** `INF-06A` y `BAC-17A` (terminadas). Se desarrolla contra el simulador, que ya responde `/nodes/{node}/status`.
-- **Entregable:** endpoint `GET /api/node/status` (`RequireAuth`, según D1) que consume `/nodes/{node}/status` de Proxmox:
+- **Entregable:** endpoint `GET /api/node/status` que consume `/nodes/{node}/status` de Proxmox:
   - Agrega `ObtenerEstadoNodo` a `ProxmoxPort` y al cliente.
+  - Lo protege con `RequireAuth`: lo puede consultar cualquier usuario autenticado, `ADMIN` u `OPERATOR` (D1).
   - Normaliza el porcentaje y los núcleos de CPU, convierte de bytes a GB la RAM y el almacenamiento, y devuelve el uptime en segundos, con el formato de `BAC-29`.
   - Guarda el resultado en Redis con TTL de 5 a 10 s, y además el último estado conocido sin TTL.
-  - Si Proxmox no responde y hay un último estado conocido, responde `200` con `stale: true`. Si no hay ninguno, responde `502`/`504 PROXMOX_UNAVAILABLE`.
+  - Si Proxmox no responde y hay un último estado conocido, responde `200` con `stale: true`. Si no hay ninguno, responde `502 PROXMOX_UNAVAILABLE` o `504 PROXMOX_TIMEOUT` (D2, `FIX-40`).
 - **Criterio de éxito:**
   - Responde en menos de 50 ms con la caché vigente.
   - Al vencer el TTL consulta Proxmox, actualiza Redis y responde `200`.
   - Con el simulador detenido, responde el último estado con `stale: true`.
+  - Sin token responde `401`; con un token de `OPERATOR` responde `200` (D1).
 
 #### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP)
 - **Área:** Backend
@@ -469,15 +481,16 @@ flowchart TD
 - **Estimación:** 1.5 h
 - **Depende de:** `BAC-25A`.
 - **Entregable:**
-  1. Timeout configurable `UPID_TIMEOUT` (D4, por defecto 3 min) en lugar de los 10 min fijos. Al vencer: `FAILED` con un error controlado.
+  1. Cortar el seguimiento a los **3 minutos** (D4): `UPID_TIMEOUT` con valor por defecto `3m`, en lugar de los 10 min fijos de `limiteSeguimiento`. Al vencer, la tarea queda `FAILED` con `motivo: TIMEOUT`.
   2. Reintentos con retroceso cuando falla la consulta del estado, en lugar del reintento fijo cada 1 s.
   3. Completar los `detalles` del `TASK_FINISHED` según `BAC-29`:
      - agregar `exitstatus`;
+     - agregar `motivo` cuando la tarea falla (D2): `PROXMOX_ERROR` si Proxmox la terminó con un `exitstatus` distinto de `OK`, y `TIMEOUT` si venció el plazo. Cada caso con su propio `mensaje`;
      - agregar los textos de `shutdown`, `reboot` y `delete` en `nombresAccion`.
   4. Publicar el resultado por el bus existente (`eventosService.Publicar`) y exponerlo para `BAC-27` y `BAC-24C`, por ejemplo con un callback o un suscriptor interno.
 - **Criterio de éxito:**
-  - Una tarea que no termina se marca `FAILED` al vencer `UPID_TIMEOUT`.
-  - Todo `TASK_FINISHED` trae `tareaId`, `accion`, `estado` y `exitstatus`.
+  - Sin `UPID_TIMEOUT` configurado, una tarea que no termina se marca `FAILED` con `motivo: TIMEOUT` a los 3 minutos.
+  - Todo `TASK_FINISHED` trae `tareaId`, `accion`, `estado` y `exitstatus`. Los fallidos traen además `motivo`, y es distinto en cada uno de los dos casos.
   - `BAC-27` y `BAC-24C` reciben todos los resultados.
 
 #### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
@@ -487,7 +500,7 @@ flowchart TD
 - **Estimación:** 1.5 h
 - **Depende de:** `BAC-25A` y `FIX-39` (campo `activeTask`).
 - **Entregable:**
-  1. Al iniciar el backend, leer de `tareas_asincronas` las filas con `estado = 'RUNNING'` y volver a encolarlas en el pool de `BAC-25A`.
+  1. Al iniciar el backend, leer de `tareas_asincronas` las filas con `estado = 'RUNNING'` y volver a encolarlas en el pool de `BAC-25A`. El plazo de 3 minutos (D4) se cuenta desde `fecha_creacion`. Si ya venció, se consulta Proxmox una sola vez: si la tarea terminó, se registra su resultado; si no, se marca `FAILED` con `motivo: TIMEOUT`.
   2. Completar `activeTask: { tareaId, action, status } | null` en cada instancia de `GET /api/instances`, cruzando con las tareas `RUNNING`.
 - **Criterio de éxito:** si el backend se reinicia durante una tarea de Proxmox, al levantar retoma el sondeo, actualiza `tareas_asincronas` y `auditoria`, y emite `TASK_FINISHED`. Mientras tanto, `GET /api/instances` muestra la tarea en `activeTask`.
 
@@ -547,7 +560,7 @@ flowchart TD
   - barras o gauges de CPU (% y núcleos);
   - uso de RAM (GB usados sobre el total);
   - uso de almacenamiento (GB o TB usados sobre el total).
-- **Criterio de éxito:** los componentes son responsive y renderizan valores de 0 % a 100 %, con cambio de color según la saturación (D3). Tienen pruebas de componente.
+- **Criterio de éxito:** los componentes son responsive y renderizan valores de 0 % a 100 %, con cambio de color según la saturación: normal por debajo del 70 % y advertencia desde el 70 % (D3). Tienen pruebas de componente, incluidos los valores de borde 69 % y 70 %.
 
 #### `FRN-19B` (ex `FRN-13B`) - Semáforo de salud global e integración con `GET /api/node/status` (`RF-02`)
 - **Área:** Frontend
@@ -556,7 +569,11 @@ flowchart TD
 - **Depende de:** `FRN-19A`. Empieza con `BAC-29` (datos de prueba) y cierra con `BAC-22`.
 - **Entregable:** el Dashboard conecta los medidores a `GET /api/node/status` mediante un servicio en `features/dashboard/services`:
   - uptime legible (días, horas, minutos);
-  - semáforo de salud según D3 (`Saludable`, `Advertencia`, `Inaccesible`), y aviso de "datos desactualizados" si `stale: true`;
+  - semáforo de salud (D3):
+    - `Saludable` si CPU, RAM y disco están por debajo del 70 %;
+    - `Advertencia` si alguno llega al 70 % o más;
+    - `Inaccesible` si el backend responde `502`/`504` o no responde.
+  - Aviso de "datos desactualizados" si `stale: true`;
   - consulta automática cada 10 s, que se pausa con la pestaña oculta;
   - skeletons mientras carga y reintento visual ante una desconexión.
 - **Criterio de éxito:** los datos reales del nodo se ven en pantalla y se actualizan sin `F5`. Si el backend cae, la UI muestra `Inaccesible` sin romperse.
@@ -635,17 +652,19 @@ flowchart TD
 - **Área:** Frontend
 - **Asignado:** Cristian
 - **Estimación:** 2.5 h
-- **Depende de:** `FRN-15`. Empieza con `BAC-29` y cierra con `FIX-39`, `BAC-24A` y `BAC-24B`.
+- **Depende de:** `FRN-15`. Empieza con `BAC-29` y cierra con `FIX-39`, `FIX-40`, `BAC-24A` y `BAC-24B`.
 - **Entregable:**
   - Al confirmar el modal, enviar la orden de energía (con la ruta documentada en `BAC-29`) o `DELETE`, y guardar el `tareaId` del `202` en el estado de la fila (`transitioning`).
   - El botón accionado muestra un spinner, y se deshabilitan todos los botones de esa instancia.
-  - Ante un error, desbloquear la fila y mostrar un mensaje según el código:
-    - `409 INSTANCE_BUSY`: "La instancia está ejecutando otra tarea".
-    - `409 INSTANCE_INVALID_STATE`.
-    - `403 INSTANCE_PROTECTED`.
-    - `403 INSTANCE_ACCESS_DENIED`.
-    - `502`/`504 PROXMOX_UNAVAILABLE`.
-- **Criterio de éxito:** es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso, y cada error muestra su mensaje específico.
+  - Ante un error, desbloquear la fila y mostrar un mensaje distinto según el código (D2), con los significados de `BAC-29`:
+    - `409 INSTANCE_INVALID_STATE`: la acción no corresponde al estado actual (por ejemplo, "La instancia ya está encendida").
+    - `409 INSTANCE_BUSY`: "La instancia está ejecutando otra tarea. Esperá a que termine".
+    - `403 INSTANCE_PROTECTED`: la instancia es de infraestructura y no admite esa acción.
+    - `403 INSTANCE_ACCESS_DENIED`: no tenés permiso sobre la instancia.
+    - `502 PROXMOX_UNAVAILABLE`: Proxmox no está disponible.
+    - `504 PROXMOX_TIMEOUT`: Proxmox no respondió a tiempo, y la acción puede no haberse aplicado.
+    - Cualquier otro código: un mensaje genérico.
+- **Criterio de éxito:** es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso. Cada uno de los seis códigos muestra su propio mensaje, verificado con una prueba de componente por código.
 
 #### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
 - **Área:** Frontend
@@ -673,7 +692,9 @@ flowchart TD
   - Actualizar el badge de estado (`Running` / `Stopped`).
   - Mostrar un toast (`components/ui/toast.tsx`):
     - verde si `estado: COMPLETED`;
-    - rojo con `detalles.error` si `FAILED`.
+    - rojo si `FAILED`, con un mensaje distinto según `detalles.motivo` (D2):
+      - `PROXMOX_ERROR`: "Proxmox no pudo completar la acción", con `detalles.error`;
+      - `TIMEOUT`: "La acción no terminó en 3 minutos; revisá el estado de la instancia".
   - Si la acción fue `delete`, quitar la fila.
 - **Criterio de éxito:** la interfaz actualiza el estado y libera los botones sin `F5`.
 
@@ -771,7 +792,7 @@ flowchart TD
 | 3 | `BAC-25C` (BRG-04) | Backend | Lisandro | 1.5 h | — | `BAC-25A`, `FIX-39` |
 | 3 | `BAC-26` | Backend | Tayra | 1.0 h | — | `BAC-25B` |
 | 3 | `BAC-27` | Backend | Tayra | 2.0 h | — | `FIX-39`, `BAC-25B`, `BAC-18B` |
-| 3 | `FRN-16` | Frontend | Cristian | 2.5 h | `BAC-29` | `FRN-15`, `BAC-24A`, `BAC-24B` |
+| 3 | `FRN-16` | Frontend | Cristian | 2.5 h | `BAC-29` | `FRN-15`, `BAC-24A`, `BAC-24B`, `FIX-40` |
 | 3 | `FRN-19C` (BRG-05) | Frontend | Belinda | 1.0 h | — | `BAC-22B`, `FRN-19B`, `FRN-17A` |
 | 3 | `FRN-20C` (BRG-05, nueva) | Frontend | Luz | 1.5 h | — | `BAC-22B`, `FRN-20A`, `FRN-17A` |
 | 4 | `FRN-16B` (BRG-04) | Frontend | Cristian | 1.5 h | — | `BAC-25C`, `FRN-16`, `FRN-17C` |
