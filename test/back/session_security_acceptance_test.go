@@ -178,9 +178,10 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 			t.Fatalf("2fa/verify no emitió la cookie de refresh (SEC-01)")
 		}
 
-		logout := requestRaw(t, http.MethodPost, "/auth/logout", "", nil, session.RefreshCookie)
+		// Desde cfb88f7 el frontend envía el logout con Bearer y la cookie HttpOnly (sin skipAuthorization).
+		logout := requestRaw(t, http.MethodPost, "/auth/logout", session.AccessToken, nil, session.RefreshCookie)
 		if logout.Status != http.StatusNoContent {
-			t.Errorf("POST /auth/logout como lo envía el frontend (cookie, sin Authorization): esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
+			t.Errorf("POST /auth/logout como lo envía el frontend (Bearer + cookie): esperado 204, recibido %d: %s", logout.Status, logout.RawBody)
 		}
 		if status, _ := requestJSON(t, http.MethodGet, "/account/profile", session.AccessToken, nil); status != http.StatusUnauthorized {
 			t.Errorf("tras el logout desde la interfaz el access token debe quedar revocado: esperado 401, recibido %d (la sesión sigue activa en el servidor)", status)

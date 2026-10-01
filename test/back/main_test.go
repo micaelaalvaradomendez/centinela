@@ -264,7 +264,7 @@ func requestRaw(t *testing.T, method, path, token string, payload any, cookies .
 // Marcadores que imprime backend/internal/adapters/secondary/email/mock_email.go.
 const (
 	mailTemporaryPassword = "clave provisoria es:"
-	mailRecoveryCode      = "código de seguridad temporal es:"
+	mailRecoveryCode      = "código de seguridad es:"
 )
 
 var mailSecretPattern = regexp.MustCompile(`\*\* (\S+) \*\*`)

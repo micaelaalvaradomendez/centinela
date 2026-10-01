@@ -428,9 +428,16 @@ func waitForMail(t *testing.T, destinatario, previous string) string {
 func passwordCandidates(body string) []string {
 	cleaner := strings.NewReplacer("<", " ", ">", " ", "*", " ", "\"", " ", "'", " ", "`", " ")
 	var candidates []string
+	// Primero lo que sigue a "contraseña/clave … es:", tomado del cuerpo sin limpiar: la clave
+	// temporal puede llevar cualquier símbolo (*, <, =, ., etc.). Así se evitan logins fallidos.
+	for _, match := range regexp.MustCompile(`(?i)(?:contraseña|clave)[^:\n]*:[ \t]*(\S+)`).FindAllStringSubmatch(body, -1) {
+		candidates = append(candidates, match[1], strings.Trim(match[1], "*"))
+	}
+	// La clave temporal puede incluir '@' (p. ej. "tS@kh!5^3W%x"): solo se descartan direcciones de correo.
+	email := regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[a-z]{2,}$`)
 	for _, word := range strings.Fields(cleaner.Replace(body)) {
 		word = strings.Trim(word, ".,:;()[]")
-		if len(word) >= 8 && len(word) <= 16 && !strings.Contains(word, "@") && !strings.Contains(word, "=") {
+		if len(word) >= 8 && len(word) <= 16 && !email.MatchString(word) && !strings.Contains(word, "=") {
 			candidates = append(candidates, word)
 		}
 	}

@@ -3,10 +3,27 @@
     "allow": [
       "Bash(grep -n \"^#### \\\\`FIX-3[23]\\\\`\\\\|FIX-32\\\\` | Backend\" etapa1.md)",
       "Bash(sed -n '/^func RequireAuth/,/^}/p' internal/adapters/primary/http/middleware/auth_middleware.go | head -70; grep -n \"Sid\\\\|sid\\\\\"\" internal/infrastructure/crypto/jwt.go; grep -n \"func \\(s \\\\*authServiceImpl\\) ValidarSesion\\\\|func \\(s \\\\*authServiceImpl\\) SesionVigente\\\\|ValidarAccess\" -A30 internal/core/services/auth_service.go | head -50)",
-      "Bash(timeout 400 go test -count=1 -v -run 'TestHitoSeguridadDeSesionesYCookies' ./...)"
+      "Bash(timeout 400 go test -count=1 -v -run 'TestHitoSeguridadDeSesionesYCookies' ./...)",
+      "Bash(pnpm test *)",
+      "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/front1.log)",
+      "Bash(mkdir -p mailpit-tls)",
+      "Bash(openssl req *)",
+      "Bash(printf \"subjectAltName=DNS:mailpit\\\\n\")",
+      "Bash(openssl x509 *)",
+      "Bash(rm -f mailpit.csr ext.cnf ca.srl ca.key)",
+      "Bash(sed -i \"213s/código de seguridad temporal es:/código de seguridad es:/\" front/login04-e2e.test.ts && sed -n 213p front/login04-e2e.test.ts; grep -n \"FIX-28\" -A40 back/session_security_acceptance_test.go | sed -n 1,60p)",
+      "Bash(cd /home/micaela/centinela/test/back *)",
+      "Read(//home/micaela/front/**)",
+      "Bash(cd /home/micaela/centinela/frontend/centinela && cat src/hooks/usePermissions.ts; grep -rn \"PermissionGate\" src | head; grep -n -B2 -A10 \"SEC-03\\\\|FIX-30\" ../../documentacion/actual.md | grep -i \"context\\\\|hooks\\\\|PermissionGate\\\\|ubicaci\\\\|archivo\" | head)",
+      "Read(//home/micaela/documentacion/**)",
+      "Bash(pnpm vitest *)",
+      "Bash(go test *)",
+      "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/back2.log)",
+      "Bash(tee /tmp/claude-1000/-home-micaela-centinela/521ef231-cfb9-47d8-a899-67caba364434/scratchpad/front2.log)"
     ],
     "additionalDirectories": [
-      "/home/micaela/centinela/backend/internal/adapters/primary/http/middleware"
+      "/home/micaela/centinela/backend/internal/adapters/primary/http/middleware",
+      "/home/micaela/centinela/test/front"
     ]
   }
 }

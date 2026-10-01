@@ -53,6 +53,19 @@ async function loadPermissionsModule(): Promise<Required<Pick<PermissionsModule,
   throw new Error(`SEC-03 no implementada: ningún módulo de src/context exporta usePermissions y PermissionGate (revisados: ${Object.keys(contextModules).join(', ') || 'ninguno'})`);
 }
 
+// FIX-30 (FRN-18) solo pide el helper canOperateInstance en usePermissions(): se acepta el hook
+// en src/context o en src/hooks. La ubicación y el resto del contrato (isOperator, hasRole y
+// PermissionGate en src/context) los exigen los casos de SEC-03.
+const hookModules = import.meta.glob<PermissionsModule>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}']);
+
+async function loadUsePermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions'>> & PermissionsModule> {
+  for (const load of Object.values(hookModules)) {
+    const module = await load();
+    if (typeof module.usePermissions === 'function') return module as never;
+  }
+  throw new Error(`FIX-30: ningún módulo de src/context ni de src/hooks exporta usePermissions (revisados: ${Object.keys(hookModules).join(', ') || 'ninguno'})`);
+}
+
 // Si el módulo exporta un Provider, se usa; si el hook lee la sesión directamente, no hace falta.
 function withProvider(module: PermissionsModule, children: React.ReactNode) {
   const providerName = Object.keys(module).find((name) => /Provider$/.test(name));
@@ -100,7 +113,7 @@ describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
   });
 
   it('FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)', async () => {
-    const module = await loadPermissionsModule();
+    const module = await loadUsePermissionsModule();
     // La sesión del operador informa el nivel por instancia (contrato de GET /permissions).
     seedSession({
       rol: 'OPERATOR',

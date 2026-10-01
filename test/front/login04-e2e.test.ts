@@ -210,7 +210,7 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('LOGIN-04 - circuito integral 
   it('8. Recuperación de contraseña por el propio usuario, con el código enviado por correo (FRN-12, BAC-19, BAC-20)', { timeout: 30000 }, async () => {
     clearBrowserSession();
     await apiClient.post('/auth/password/forgot', { email });
-    const code = mailed(email, 'código de seguridad temporal es:');
+    const code = mailed(email, 'código de seguridad es:');
     await expectApiError(apiClient.post('/auth/password/reset', { email, codigo: code === '000000' ? '111111' : '000000', nuevaContrasena: 'Recupera04!' }), 400);
     await apiClient.post('/auth/password/reset', { email, codigo: code, nuevaContrasena: 'Recupera04!' });
     await expectApiError(submitLoginCredentials({ email, password } as never), 401); // credencial anterior

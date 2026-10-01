@@ -91,6 +91,10 @@ services:
       SMTP_USER: centinela
       SMTP_PASS: centinela
       SMTP_FROM: noreply@centinela.test
+      # BAC-16B exige STARTTLS: el backend confía en la CA de prueba que firmó el certificado de Mailpit.
+      SSL_CERT_FILE: /etc/centinela-test/ca.crt
+    volumes:
+      - ./mailpit-tls/ca.crt:/etc/centinela-test/ca.crt:ro
     ports:
       - "127.0.0.1:${BACKEND_TEST_SMTP_API_PORT:-18081}:8080"
     depends_on:
@@ -109,7 +113,12 @@ services:
     image: axllent/mailpit:v1.21
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      # STARTTLS obligatorio, como el relay real (587): si el backend enviara las credenciales sin cifrar, Mailpit lo rechaza.
+      MP_SMTP_TLS_CERT: /etc/mailpit-tls/mailpit.crt
+      MP_SMTP_TLS_KEY: /etc/mailpit-tls/mailpit.key
+      MP_SMTP_REQUIRE_STARTTLS: "1"
+    volumes:
+      - ./mailpit-tls:/etc/mailpit-tls:ro
     ports:
       - "127.0.0.1:${BACKEND_TEST_MAILPIT_PORT:-18025}:8025"
 
