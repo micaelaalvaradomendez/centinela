@@ -1,13 +1,15 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 02/10/2026. **Backend:** submódulo en `44a2339` (último commit de `main`, sin commits nuevos). **Comando:** `go test -v -count=1 ./...`. 3 corridas completas con el mismo resultado (~2 min) y sin contenedores residuales.
+**Fecha:** 02/10/2026, 2ª verificación. **Backend:** submódulo en `0167b96` (último commit de `main`; nuevo: **FIX-40**). **Comando:** `go test -v -count=1 ./...`. 2 corridas completas con el mismo resultado y sin contenedores residuales.
+
+Antes de estas corridas, Docker no podía crear redes: faltaba la cadena `DOCKER-FORWARD` de iptables. Se resolvió reiniciando el daemon.
 
 | Métrica | Valor |
 |---|---:|
 | Casos | 55 |
 | Aprueban | **43** |
-| Fallan | **11** |
-| Omitidos | 1 (DELETE de BAC-21B: el endpoint lo crea BAC-24B) |
+| Fallan | **10** |
+| Omitidos | 2: el DELETE de BAC-21B (lo crea BAC-24B), e INF-08B (Brevo rechazó la IP pública: `525 Unauthorized IP`; la prueba se omite a propósito en ese caso) |
 
 ## Por caso
 
@@ -15,7 +17,8 @@
 |---|---|---|
 | BAC-01 a BAC-12, BAC-09, BAC-05/06/06B, prefijo `/api/admin/users`, LOGIN-03 | regresión | ✅ 12/12 |
 | LOGIN-04 circuito desde Go y LOGIN-04 front ↔ back (10/10 pasos) | regresión | ✅ 2/2 |
-| INF-05 CORS, FIX-31, BAC-17A, INF-06A, INF-08B, BAC-16B, BAC-17B | regresión | ✅ 7/7 |
+| INF-05 CORS, FIX-31, BAC-17A, INF-06A, BAC-16B, BAC-17B | regresión | ✅ 6/6 |
+| INF-08B credenciales contra Brevo | regresión | ⏭️ omitido (IP no autorizada en Brevo) |
 | **BAC-18B** índice parcial y particiones; purga horaria | BAC-18B | ❌ 2 |
 | BAC-19, BAC-20, BAC-16, BAC-21, BAC-18, FIX-17, BAC-13, BAC-15 | regresión | ✅ 8/8 |
 | BAC-07, FIX-16/BAC-08, BAC-14, SEC-04 (2) | regresión | ✅ 5/5 |
@@ -24,7 +27,7 @@
 | **FIX-39** campos de `GET /instances`, `shutdown`/`reboot` y auditoría con upid | FIX-39 | ❌ 3 |
 | BAC-21B DELETE solo ADMIN | BAC-21B | ⏭️ omitido |
 | BAC-21C (2) | regresión | ✅ 2/2 |
-| **FIX-40** `504 PROXMOX_TIMEOUT` y `502 PROXMOX_UNAVAILABLE` (nuevo) | FIX-40 | ❌ (el 504 llega con `PROXMOX_UNAVAILABLE`; el 502 ya cumple) |
+| FIX-40 `504 PROXMOX_TIMEOUT` y `502 PROXMOX_UNAVAILABLE` | FIX-40 | ✅ → `terminado.md` |
 | INF-07B `/api/events` a través del borde | INF-07B | ✅ (`TASK_FINISHED` en ~1 s) |
 | **BAC-29** contrato de la etapa (nuevo) | BAC-29 | ❌ (no existe `docs/contrato-etapa1.md`) |
 | **BAC-22** `GET /api/node/status` (nuevo) | BAC-22 | ❌ (404) |
@@ -40,7 +43,6 @@
 | BAC-18B (2) | Sin índice parcial, sin particiones trimestrales ni índice `(fecha_hora, accion, resultado)`, y sin purga horaria |
 | FIX-37 | `UsuarioDetalleDTO` solo tiene `instanciasPermitidas` |
 | FIX-39 (3) | Faltan los campos nuevos en `GET /instances`; `shutdown` y `reboot` no existen (404); las acciones de energía no se auditan |
-| FIX-40 | `mapearErrorProxmox` responde `504 PROXMOX_UNAVAILABLE` ante un timeout |
 | BAC-29 | No existe `backend/docs/contrato-etapa1.md` |
 | BAC-22 | `GET /api/node/status` responde 404 |
 | BAC-23A | Ningún archivo del backend consulta `agent/network-get-interfaces` ni `lxc/{vmid}/interfaces`, y no hay pruebas unitarias de IP |

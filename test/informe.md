@@ -5,7 +5,7 @@
 
 | Componente | Revisión probada | Commits nuevos desde la verificación anterior |
 |---|---|---|
-| Backend | `44a2339` (último commit de `main`) | Ninguno |
+| Backend | `0167b96` (último commit de `main`) | 1: `0167b96` "fix: distinguiendo timeout de proxmox" (**FIX-40**) |
 | Frontend | `4e0e7b7` (último commit de `main`) | 6 (PR #71: `SEC-03` con `AuthContext`, `PermissionGate` e `InstanceGate`; `FIX-29`) |
 
 **Cómo se ejecutó:** cada submódulo se llevó al último commit de `origin/main`; ante un conflicto prevalece el remoto. El backend se corrió 3 veces, con el mismo resultado y sin contenedores residuales. El frontend se corrió 7 veces: 3 dieron el resultado de §1, y las otras 4, con la máquina sobrecargada, sumaron fallos por timeout en casos sin cambios (ver §4).
@@ -16,9 +16,9 @@
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 55 | **43** | **11** | 1 |
+| Backend (`test/back`) | 55 | **43** | **10** | 2 |
 | Frontend (`test/front`) | 113 | **79** | **24** | 10 |
-| **Total** | **168** | **122** | **35** | **11** |
+| **Total** | **168** | **122** | **34** | **12** |
 
 - **Avance del frontend:**
   - `FIX-29` pasa.
@@ -50,7 +50,7 @@
 | `BAC-18B` Índices, particiones y purga | `cierre_fase_base…` (2) | ❌ | Sin cambios |
 | `FIX-37` Nivel de acceso en el perfil | `resource_access…` (1) | ❌ | Sin cambios |
 | `FIX-39` Completar `BAC-21B` | `puente_etapa1…` (3) | ❌ | Faltan los campos, `shutdown`/`reboot` (404) y la auditoría de energía |
-| `FIX-40` `504 PROXMOX_TIMEOUT` | `puente_etapa1…` (1, **nuevo**) | ❌ | Con un Proxmox que no responde, llega `504` con `PROXMOX_UNAVAILABLE`. El `502` de la contraprueba ya cumple |
+| `FIX-40` `504 PROXMOX_TIMEOUT` | `puente_etapa1…` (1, **nuevo**) | ✅ → `terminado.md` | Backend `0167b96`: `504 PROXMOX_TIMEOUT` ante un timeout; `502` si Proxmox está caído. `BAC-14`, `SEC-04` y `LOGIN-04` siguen en verde |
 
 ### Etapa 1 (Ola 1)
 
@@ -108,9 +108,10 @@
   - `FIX-36`;
   - `FRN-17C` con `FRN-17A`, `FRN-19A` y `FRN-20A`.
 - **Backend:**
-  - `BAC-18B`, `FIX-37`, `FIX-39` y `FIX-40`;
+  - `BAC-18B`, `FIX-37` y `FIX-39`;
   - `BAC-29`, `BAC-22`, `BAC-23A` y `BAC-25A`.
 - **Documentación (hecho el 02/10/2026):**
+  - `FIX-40` pasó a `terminado.md`;
   - `FIX-29` pasó a `terminado.md`;
   - `SEC-03` pasó a `terminado.md` como implementada con problema, y su regresión es `FIX-41`, en `futuro.md`.
 - **Infraestructura:** aplicar `docker/nginx-edge.conf` en el CT 103 (`FIX-31` e `INF-07B`).
