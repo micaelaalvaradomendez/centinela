@@ -4,6 +4,7 @@ import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applicationRoutes } from '@/routes/applicationRoutes';
+import { withAppProviders } from './app-providers';
 import Auditoria from '@/pages/Auditoria';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -25,7 +26,7 @@ function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
     tiene2FA: true,
   }));
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
-  render(<RouterProvider router={router} />);
+  render(withAppProviders(<RouterProvider router={router} />));
   return router;
 }
 

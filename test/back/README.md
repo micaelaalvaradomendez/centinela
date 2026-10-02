@@ -10,6 +10,7 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `mailpit` | `axllent/mailpit` | Servidor SMTP de prueba; su API en `127.0.0.1:18025` permite leer los correos recibidos |
 | `redis` | `redis:7-alpine` | Redis con contraseña para BAC-17A, BAC-17B y BAC-21C |
 | `proxmox` | `nginx:1.27-alpine` + [`proxmox-stub/nginx.conf`](proxmox-stub/nginx.conf) | Stub de la API de Proxmox VE (exige API Token) con un inventario fijo: `101` qemu, `102` lxc, `103` qemu, más un nodo y un storage que el backend debe descartar. Toda tarea figura terminada con `exitstatus: OK`, así el seguimiento de UPID publica `TASK_FINISHED` |
+| `backend-lento` + `proxmox-lento` | misma imagen que `backend` + `busybox` | Backend en `127.0.0.1:18082` contra un Proxmox que acepta la conexión y nunca responde, para FIX-40 (`504 PROXMOX_TIMEOUT`) |
 | `edge` | `nginx:1.29-alpine` + [`docker/nginx-edge.conf`](../../docker/nginx-edge.conf) | Nginx del borde con TLS (certificado de [`edge-tls/`](edge-tls/)) delante de `backend`, en `127.0.0.1:18453` (HTTPS) y `127.0.0.1:18089` (HTTP). Lo usan FIX-31 e INF-07B |
 
 ## Principios
@@ -28,8 +29,15 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `resource_access_acceptance_test.go` | BAC-07, FIX-16/BAC-08, BAC-14, **SEC-04** |
 | `session_security_acceptance_test.go` | BAC-17, SEC-01, integración SEC-01/SEC-02, **integración del logout de FRN-13**, FIX-08 |
 | `cierre_fase_base_acceptance_test.go` | INF-05 (CORS), **FIX-31** (TLS de Nginx versionado), **INF-06A** (Redis local del compose del backend), **INF-08B** (credenciales SMTP que se autentican), **BAC-16B**, **BAC-17A**, **BAC-17B**, **BAC-18B** |
-| `puente_etapa1_acceptance_test.go` | **BAC-21B**/**FIX-39** (instancias extendidas, energía, `DELETE`), **BAC-21C** (tickets y `/api/events`), **INF-07B** (`/api/events` a través del borde Nginx) |
+| `puente_etapa1_acceptance_test.go` | **BAC-21B**/**FIX-39** (instancias extendidas, energía, `DELETE`), **BAC-21C** (tickets y `/api/events`), **FIX-40** (`504 PROXMOX_TIMEOUT`), **INF-07B** (`/api/events` a través del borde Nginx) |
+| `etapa1_acceptance_test.go` | Ola 1 de la Etapa 1: **BAC-29** (contrato), **BAC-22** (`/api/node/status`, caché y último estado), **BAC-23A** (adaptador de IP), **BAC-25A** (pool de UPID) |
 | `login04_integracion_front_back_test.go` | **LOGIN-04** con el código real del frontend (`test/front/login04-e2e.test.ts`) contra este backend |
+
+## Aislamiento de la red real
+
+Ninguna prueba puede llegar al Proxmox real.
+- Los backends de prueba tienen `dns_search: invalid`. Sin eso, un nombre de servicio que no resuelve dentro de Docker se completa con el dominio de búsqueda del host. En esta máquina ese dominio es Tailscale, y `proxmox.<tailnet>.ts.net` es el Proxmox real.
+- Para simular que Proxmox está caído no se detiene el contenedor del stub: se crea `/tmp/proxmox-caido` dentro de él (`stopProxmoxStub` / `startProxmoxStub`), y el stub responde `503` a todo.
 
 ## Requisitos
 

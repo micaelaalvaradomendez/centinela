@@ -5,6 +5,7 @@ import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { describe, expect, it } from 'vitest';
 import { applicationRoutes } from '@/routes/applicationRoutes';
+import { withAppProviders } from './app-providers';
 
 const storedUser = {
   id: 'user-1',
@@ -24,53 +25,61 @@ function seedSession(user: Partial<typeof storedUser> = {}) {
 function renderApplication(path: string, authenticated: boolean, user: Partial<typeof storedUser> = {}) {
   if (authenticated) seedSession(user);
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
-  render(<RouterProvider router={router} />);
+  render(withAppProviders(<RouterProvider router={router} />));
   return router;
 }
 
 // SEC-03: el criterio de éxito es de comportamiento (el operador no ve accesos de administrador,
-// canAccessInstance evalúa en memoria y el render condicional está probado); no fija carpeta.
-// El entregable sugiere src/context/, pero un hook que lee la sesión sin Provider es igual de válido:
-// se acepta usePermissions en src/context o src/hooks, y PermissionGate en cualquiera de las dos
-// o en src/components.
-type PermissionsModule = {
-  usePermissions?: () => {
-    isAdmin: boolean;
-    isOperator: boolean;
-    hasRole: (role: string) => boolean;
-    canAccessInstance: (vmid: number) => boolean;
-    canOperateInstance?: (vmid: number) => boolean;
-  };
-  PermissionGate?: React.ComponentType<{ requiredRole: string; fallback?: React.ReactNode; children?: React.ReactNode }>;
-  [key: string]: unknown;
+// canAccessInstance evalúa en memoria y el render condicional está probado); no fija nombres ni carpeta.
+// El entregable propone "usePermissions() / useAuthUser()" y "un contexto con Provider es opcional":
+// se acepta cualquiera de esos hooks o useAuth, en src/context o src/hooks, con los helpers como
+// booleanos (isAdmin) o como funciones (isAdmin()). PermissionGate puede ser export con nombre o el
+// export por defecto de un archivo PermissionGate.*. Los hooks se renderizan con los providers de la app.
+type Permissions = {
+  isAdmin?: boolean | (() => boolean);
+  isOperator?: boolean | (() => boolean);
+  hasRole?: (role: string) => boolean;
+  canAccessInstance?: (vmid: number) => boolean;
+  canOperateInstance?: (vmid: number) => boolean;
 };
-const hookModules = import.meta.glob<PermissionsModule>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}']);
-const gateModules = import.meta.glob<PermissionsModule>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}', '@/components/**/*.{tsx,jsx}']);
+type PermissionsHook = { name: string; use: () => Permissions };
+const HOOK_NAMES = /^use(Permissions|AuthUser|Auth)$/;
+const hookModules = import.meta.glob<Record<string, unknown>>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}']);
+const gateModules = import.meta.glob<Record<string, unknown>>(['@/context/**/*.{ts,tsx,js,jsx}', '@/hooks/**/*.{ts,tsx,js,jsx}', '@/components/**/*.{tsx,jsx}']);
 
-async function loadUsePermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions'>> & PermissionsModule> {
-  for (const load of Object.values(hookModules)) {
+async function loadPermissionHooks(): Promise<PermissionsHook[]> {
+  const hooks: PermissionsHook[] = [];
+  for (const [path, load] of Object.entries(hookModules)) {
     const module = await load();
-    if (typeof module.usePermissions === 'function') return module as never;
+    for (const [name, value] of Object.entries(module)) {
+      if (HOOK_NAMES.test(name) && typeof value === 'function') hooks.push({ name: `${name} (${path})`, use: value as () => Permissions });
+    }
   }
-  throw new Error(`ningún módulo de src/context ni de src/hooks exporta usePermissions (revisados: ${Object.keys(hookModules).join(', ') || 'ninguno'})`);
+  if (hooks.length === 0) throw new Error(`ningún módulo de src/context ni de src/hooks exporta usePermissions, useAuthUser ni useAuth (revisados: ${Object.keys(hookModules).join(', ') || 'ninguno'})`);
+  return hooks;
 }
 
-async function loadPermissionsModule(): Promise<Required<Pick<PermissionsModule, 'usePermissions' | 'PermissionGate'>> & PermissionsModule> {
-  const hook = await loadUsePermissionsModule();
-  if (hook.PermissionGate) return hook as never;
-  for (const load of Object.values(gateModules)) {
+async function loadPermissionGate(): Promise<React.ComponentType<{ requiredRole: string; fallback?: React.ReactNode; children?: React.ReactNode }>> {
+  for (const [path, load] of Object.entries(gateModules)) {
     const module = await load();
-    if (module.PermissionGate) return { ...hook, PermissionGate: module.PermissionGate } as never;
+    const gate = module.PermissionGate ?? (/\/PermissionGate\.[jt]sx?$/.test(path) ? module.default : undefined);
+    if (typeof gate === 'function') return gate as never;
   }
-  throw new Error('SEC-03 incompleta: usePermissions existe, pero ningún módulo de src/context, src/hooks ni src/components exporta PermissionGate');
+  throw new Error('SEC-03 incompleta: ningún módulo de src/context, src/hooks ni src/components exporta PermissionGate');
 }
 
-// Si el módulo exporta un Provider, se usa; si el hook lee la sesión directamente, no hace falta.
-function withProvider(module: PermissionsModule, children: React.ReactNode) {
-  const providerName = Object.keys(module).find((name) => /Provider$/.test(name));
-  const Provider = providerName ? module[providerName] as React.ComponentType<{ children: React.ReactNode }> : null;
-  return Provider ? React.createElement(Provider, null, children) : children;
+// Ejecuta el hook dentro de los providers de la app y devuelve lo que expone.
+function readHook(hook: PermissionsHook): Permissions {
+  let permissions: Permissions | undefined;
+  function Probe() {
+    permissions = hook.use();
+    return null;
+  }
+  render(withAppProviders(<Probe />));
+  return permissions!;
 }
+
+const flag = (value: boolean | (() => boolean) | undefined) => (typeof value === 'function' ? value() : value);
 
 describe('FRN-03 - navbar y rutas base', () => {
   it('redirige a login cuando no existe una sesión', async () => {
@@ -93,81 +102,88 @@ describe('FRN-03 - navbar y rutas base', () => {
 });
 
 describe('SEC-03 - Contexto y sistema reactivo de permisos en Frontend', () => {
-  it('usePermissions expone isAdmin, isOperator, hasRole y canAccessInstance según la sesión', async () => {
-    const module = await loadUsePermissionsModule();
+  it('un hook de permisos expone isAdmin, isOperator, hasRole y canAccessInstance según la sesión', async () => {
+    const hooks = await loadPermissionHooks();
     seedSession({ rol: 'OPERATOR', instanciasPermitidas: [101] });
-    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
-    function Probe() {
-      permissions = module.usePermissions();
-      return null;
+    const complete = hooks.filter((hook) => {
+      const permissions = readHook(hook);
+      return ['isAdmin', 'isOperator', 'hasRole', 'canAccessInstance'].every((helper) => helper in (permissions ?? {}));
+    });
+    expect(complete.map((hook) => hook.name), `ningún hook expone los cuatro helpers (revisados: ${hooks.map((h) => h.name).join(', ')})`).not.toHaveLength(0);
+
+    for (const hook of complete) {
+      const permissions = readHook(hook);
+      expect(flag(permissions.isAdmin), `${hook.name}: isAdmin`).toBe(false);
+      expect(flag(permissions.isOperator), `${hook.name}: isOperator`).toBe(true);
+      expect(permissions.hasRole!('OPERATOR'), `${hook.name}: hasRole('OPERATOR')`).toBe(true);
+      expect(permissions.hasRole!('ADMIN'), `${hook.name}: hasRole('ADMIN')`).toBe(false);
+      expect(permissions.canAccessInstance!(101), `${hook.name}: canAccessInstance(101)`).toBe(true);
+      expect(permissions.canAccessInstance!(999), `${hook.name}: canAccessInstance(999)`).toBe(false);
     }
-
-    render(<>{withProvider(module, <Probe />)}</>);
-
-    expect(permissions).toMatchObject({ isAdmin: false, isOperator: true });
-    expect(permissions!.hasRole('OPERATOR')).toBe(true);
-    expect(permissions!.hasRole('ADMIN')).toBe(false);
-    expect(permissions!.canAccessInstance(101)).toBe(true);
-    expect(permissions!.canAccessInstance(999)).toBe(false);
   });
 
   it('FIX-30 canOperateInstance distingue FULL_ACCESS de READ_ONLY (FRN-18)', async () => {
-    const module = await loadUsePermissionsModule();
+    const hooks = await loadPermissionHooks();
     // La sesión del operador informa el nivel por instancia (contrato de GET /permissions).
     seedSession({
       rol: 'OPERATOR',
       instanciasPermitidas: [101, 102],
       permisos: [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }, { vmid: 102, nivelAcceso: 'READ_ONLY' }],
     } as never);
-    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
-    function Probe() {
-      permissions = module.usePermissions();
-      return null;
+    const operating = hooks.filter((hook) => typeof readHook(hook)?.canOperateInstance === 'function');
+    expect(operating.map((hook) => hook.name), 'ningún hook de permisos expone canOperateInstance').not.toHaveLength(0);
+
+    for (const hook of operating) {
+      const permissions = readHook(hook);
+      expect(permissions.canOperateInstance!(101), `${hook.name}: canOperateInstance(101) con FULL_ACCESS`).toBe(true);
+      expect(permissions.canOperateInstance!(102), `${hook.name}: canOperateInstance(102) con READ_ONLY`).toBe(false);
+      expect(permissions.canOperateInstance!(999), `${hook.name}: canOperateInstance(999) sin asignar`).toBe(false);
     }
-
-    render(<>{withProvider(module, <Probe />)}</>);
-
-    expect(typeof permissions?.canOperateInstance, 'usePermissions no expone canOperateInstance').toBe('function');
-    expect(permissions!.canAccessInstance(102)).toBe(true);
-    expect(permissions!.canOperateInstance!(101)).toBe(true);
-    expect(permissions!.canOperateInstance!(102)).toBe(false);
-    expect(permissions!.canOperateInstance!(999)).toBe(false);
   });
 
-  it('FIX-38 un rol inexistente (READ_ONLY) no obtiene acceso a instancias: READ_ONLY es un nivel, no un rol', async () => {
-    const module = await loadUsePermissionsModule();
-    seedSession({
-      rol: 'READ_ONLY',
-      instanciasPermitidas: [101],
-      permisos: [{ vmid: 101, nivelAcceso: 'READ_ONLY' }],
-    } as never);
-    let permissions: ReturnType<NonNullable<PermissionsModule['usePermissions']>> | undefined;
-    function Probe() {
-      permissions = module.usePermissions();
-      return null;
+  // FIX-38 corrige usePermissions (hooks/usePermissions.ts:26, entregable 2). El mismo defecto en el
+  // useAuth() que agregó SEC-03 es FIX-42: cada caso evalúa solo el helper de su tarea.
+  const READ_ONLY_AS_ROLE = {
+    rol: 'READ_ONLY',
+    instanciasPermitidas: [101],
+    permisos: [{ vmid: 101, nivelAcceso: 'READ_ONLY' }],
+  } as never;
+
+  it('FIX-38 un rol inexistente (READ_ONLY) no obtiene acceso a instancias en usePermissions: READ_ONLY es un nivel, no un rol', async () => {
+    const hooks = (await loadPermissionHooks()).filter((hook) => hook.name.startsWith('usePermissions '));
+    expect(hooks, 'no existe usePermissions (FRN-18 / FIX-30)').not.toHaveLength(0);
+    seedSession(READ_ONLY_AS_ROLE);
+    for (const hook of hooks) {
+      expect(readHook(hook).canAccessInstance!(101), `${hook.name}: canAccessInstance(101) con rol READ_ONLY`).toBe(false);
     }
+  });
 
-    render(<>{withProvider(module, <Probe />)}</>);
-
-    expect(permissions!.canAccessInstance(101)).toBe(false);
+  it('FIX-42 un rol inexistente (READ_ONLY) no obtiene acceso a instancias en el resto de los hooks de permisos (useAuth de SEC-03)', async () => {
+    const hooks = (await loadPermissionHooks())
+      .filter((hook) => !hook.name.startsWith('usePermissions ') && typeof readHook(hook)?.canAccessInstance === 'function');
+    expect(hooks, 'no hay otro hook que exponga canAccessInstance (SEC-03)').not.toHaveLength(0);
+    seedSession(READ_ONLY_AS_ROLE);
+    for (const hook of hooks) {
+      expect(readHook(hook).canAccessInstance!(101), `${hook.name}: canAccessInstance(101) con rol READ_ONLY`).toBe(false);
+    }
   });
 
   it('PermissionGate muestra el contenido al ADMIN y el fallback al OPERATOR', async () => {
-    const { PermissionGate, ...module } = await loadPermissionsModule();
-    const gate = () => withProvider(module, (
+    const PermissionGate = await loadPermissionGate();
+    const gate = () => withAppProviders(
       <PermissionGate requiredRole="ADMIN" fallback={<p>Sin permiso</p>}>
         <button type="button">Eliminar usuario</button>
-      </PermissionGate>
-    ));
+      </PermissionGate>,
+    );
 
     seedSession({ rol: 'OPERATOR' });
-    const { unmount } = render(<>{gate()}</>);
+    const { unmount } = render(gate());
     expect(screen.queryByRole('button', { name: 'Eliminar usuario' })).not.toBeInTheDocument();
     expect(screen.getByText('Sin permiso')).toBeInTheDocument();
     unmount();
 
     seedSession({ rol: 'ADMIN' });
-    render(<>{gate()}</>);
+    render(gate());
     expect(screen.getByRole('button', { name: 'Eliminar usuario' })).toBeInTheDocument();
   });
 

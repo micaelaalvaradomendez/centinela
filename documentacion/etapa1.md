@@ -106,7 +106,7 @@ Cada decisión está aplicada en la tarea de esta etapa que la implementa. Si un
 | `FIX-39` (completa `BAC-21B`) | ❌ (`BAC-21B` está en `terminado.md` con problema) | Cierre de `BAC-22B`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25C`, `BAC-27`, `FRN-16` y `FRN-20A` | Bloqueante |
 | `FIX-40` (D2: `504 PROXMOX_TIMEOUT`) | ❌ (nueva, en `futuro.md`) | Cierre de `FRN-16`. `BAC-22` la usa si ya está mergeada | Bloqueante |
 | `FIX-37` | ❌ | Cierre de `FRN-15`, `FRN-16` e `INT-02`, porque sin ella ningún OPERATOR puede operar | Bloqueante |
-| `SEC-03` | 🟡 | Cierre de `FRN-15` y `FRN-16` (`PermissionGate` oculta Delete al OPERATOR) | Bloqueante |
+| `SEC-03` | ✅ con problema (en `terminado.md`, 02/10). `useAuth()` y `PermissionGate` funcionan; su regresión en la ficha del usuario es `FIX-41` | Ya no frena: `FRN-15` y `FRN-16` pueden usar `PermissionGate`. `FIX-41` no frena nada de la Etapa 1 | — |
 | `FIX-38` | ❌ | Cierre de `FRN-15` (`canAccessInstance` no debe aceptar `READ_ONLY` como rol) | Bloqueante |
 | `FRN-17C` | ❌ | `FRN-17A` y `FRN-16B`: es la conexión del mismo hook. Conviene hacerlas juntas | Bloqueante |
 | `BAC-18B` | ❌ | `BAC-27`: el particionamiento cambia el esquema de `auditoria`, así que tiene que estar mergeado antes de sumar los registros de la etapa | Bloqueante blanda |

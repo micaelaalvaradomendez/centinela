@@ -1353,3 +1353,63 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   3. Montar `POST /api/instances/:vmid/status/:action` manteniendo alias en `/start` y `/stop`, protegidos con `RequireInstanceAccess(repo, "vmid", "FULL_ACCESS")`. Proteger `DELETE /api/instances/:vmid` (`BAC-24B`) con `RequireRole("ADMIN")` y validación de estado `stopped` (409 Conflict si está encendida).
 - **Criterio de éxito:** `GET /api/instances` responde con los campos nuevos sin romper `FIX-14`; un operador `READ_ONLY` recibe 403 en acciones de energía; un `OPERATOR` recibe 403 en `DELETE`; todo se registra en `auditoria` y `tareas_asincronas`.
 - **Aclaración (01/10/2026, revisión de `etapa1.md`):** pasó a `FIX-39`, en [`futuro.md`](futuro.md), junto con lo que falta.
+
+
+---
+
+# Verificación del 02/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `44a2339` y frontend `4e0e7b7`.
+
+### `FIX-29` - Validar la mayúscula en `validatePasswordComplexity` (`FIX-20`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 02/10/2026, frontend `4e0e7b7`, commit `1156eaa`).** `validatePasswordComplexity` (`validateAuthenticationFields.ts`) separa las condiciones:
+> - `/[A-Z]/` con *"Debe contener al menos una letra mayúscula."*;
+> - `/[0-9]/` con *"Debe contener al menos un número."*;
+> - el largo, con *"Debe tener entre 8 y 12 caracteres."*.
+>
+> `RecoverPassword.tsx` muestra las mismas reglas. Pasan los 5 casos `FIX-29…` de `password-change.test.tsx` y el de `recover-password.test.tsx`, y siguen en verde `FRN-10`, `FRN-12` y `FIX-21`.
+
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 0,5 h
+- **Ventana propuesta:** A definir.
+- **Depende de:** `FIX-20`.
+- **Problema y evidencia:** en `frontend/centinela/src/components/features/auth/utils/validateAuthenticationFields.ts`, `validatePasswordComplexity` tiene tres condiciones. La segunda prueba `/[0-9]/` pero agrega el mensaje *"Debe contener al menos una letra mayúscula."*, y no hay ninguna condición que pruebe mayúsculas. El dígito se valida una sola vez y la mayúscula nunca, así que el cliente acepta claves como `nueva1234!` o `sinmayus1!`, que el backend rechaza con `400 PASSWORD_CHANGE_FAILED` (`crypto.ValidarComplejidadContrasena`). Además, el mensaje de largo dice *"Debe tener 8 y 12 caracteres."*.
+  - Pruebas que fallan:
+    - `test/front/password-change.test.tsx`: *"FIX-29 no llama a la API si la contraseña nueva no cumple la complejidad del backend (sin mayúscula)"*.
+    - `test/front/recover-password.test.tsx`: *"FIX-29 el paso 3 no envía una contraseña que no cumple la complejidad del backend"*.
+- **Entregable:**
+  1. Separar las condiciones: `/[A-Z]/` con el mensaje de mayúscula y `/[0-9]/` con el mensaje *"Debe contener al menos un número."*.
+  2. Corregir el mensaje de largo: *"Debe tener entre 8 y 12 caracteres."*.
+- **Criterio de éxito:** los casos `FIX-29…` pasan, y siguen en verde los de dígito, símbolo y largo, y los casos de `FRN-12` y `FIX-21`.
+
+### `SEC-03` - Contexto y sistema reactivo de permisos en Frontend (UI/UX RBAC + Resources)
+
+> [!WARNING]
+> **Estado: Implementado con problema (verificado el 02/10/2026, frontend `4e0e7b7`, commits `1156eaa`, `353f0f1`, `47e5c19` y `952b43c`).** Se evaluó contra el criterio de éxito; el entregable orienta, pero no fija nombres ni carpeta.
+>
+> **Cumple** (`test/front/navigation.test.tsx`, los casos de SEC-03 pasan):
+> - `useAuth()` en `src/context/AuthContext.ts`, con `AuthProvider` montado en `App.tsx`, expone `isAdmin()`, `isOperator()`, `hasRole(role)` y `canAccessInstance(vmid)`. La tarea propone `usePermissions()` / `useAuthUser()`, pero aclara que "un contexto con Provider es opcional": un hook con otro nombre cumple igual.
+> - `PermissionGate` (`src/context/PermissionGate.jsx`, export por defecto) muestra el contenido al ADMIN y el `fallback` al OPERATOR. También existe `InstanceGate`.
+> - El menú (`Sidebar.tsx`) oculta Usuarios y Auditoría al OPERATOR y se los muestra al ADMIN.
+> - `usePermissions().canOperateInstance` (`FIX-30`) sigue funcionando.
+>
+> **Problema:** al integrar el gate en la ficha del usuario rompió dos tareas terminadas. `detailsUserPage.tsx:224`, `:231` y `:256` usan `<PermissionGate requiredRole="Admin">`; como el rol es `ADMIN` y `hasRole` compara exacto, **el administrador deja de ver la pestaña "Roles y permisos" y el botón "Gestionar acceso"**. Fallan 4 casos de `FIX-14`/`FRN-07` y `FRN-18` en `admin-users.test.tsx`. La corrección es **`FIX-41`**, en [`futuro.md`](futuro.md).
+>
+> **Segundo problema:** el nuevo `useAuth().canAccessInstance` solo mira `instanciasPermitidas` y no revisa el rol, así que también acepta un rol `READ_ONLY`. La corrección es **`FIX-42`**, en [`futuro.md`](futuro.md). El mismo defecto en `usePermissions` es `FIX-38`, en `actual.md`.
+
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 2,5 h
+- **Ventana propuesta:** A definir (Fase Base / Bloque 2).
+- **Depende de:** `FRN-04`, `BAC-07` y `BAC-09`.
+- **Problema:** En el frontend actual, el control de roles y permisos está disperso y acoplado únicamente a los loaders de rutas (`loadAdminSession`). No existe un mecanismo reactivo a nivel de componentes (`usePermissions` / `PermissionGate`) para ocultar o deshabilitar condicionalmente acciones según el rol (`ADMIN` vs `OPERATOR`) o según las instancias asignadas al operador. Esto genera que en vistas como `UserDetail.tsx` o `Header.tsx` se muestren controles estáticos o se dependa de que el backend rechace con 403, en lugar de ofrecer una experiencia fluida y consistente.
+- **Entregable:**
+  1. Crear un hook `usePermissions()` / `useAuthUser()` (en `src/context/` o `src/hooks/`; un contexto con Provider es opcional) que exponga helpers como `isAdmin`, `isOperator`, `canAccessInstance(vmid: number)` y `hasRole(role: string)`.
+  2. Crear un componente wrapper `<PermissionGate requiredRole="ADMIN" fallback={...}>` para condicionar la renderización de botones y secciones administrativas (ej: botón "Eliminar usuario", accesos a auditoría, etc.).
+  3. Integrar la reactividad en el menú de navegación y en el header para que las opciones no permitidas a un operador no aparezcan en la interfaz.
+- **Criterio de éxito:** Si un operador inicia sesión, la interfaz no muestra accesos directos ni botones exclusivos de administrador; si intenta interactuar con un componente restringido, el helper `canAccessInstance` evalúa en memoria las instancias permitidas cargadas en la sesión; las pruebas unitarias de componentes verifican el render condicional.

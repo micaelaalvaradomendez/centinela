@@ -47,6 +47,9 @@ services:
       # BAC-16B: este backend usa el correo simulado por consola (lo leen las pruebas).
       EMAIL_PROVIDER: mock
     image: centinela-back-tests-backend:local
+    # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
+    # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
+    dns_search: invalid
     ports:
       - "127.0.0.1:${BACKEND_TEST_API_PORT:-18080}:8080"
     depends_on:
@@ -65,6 +68,9 @@ services:
   # BAC-16B: segundo backend (misma imagen y base) con EMAIL_PROVIDER=smtp contra Mailpit.
   backend-smtp:
     image: centinela-back-tests-backend:local
+    # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
+    # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
+    dns_search: invalid
     pull_policy: never
     environment:
       DB_DSN: host=db user=centinela_test password=centinela_test dbname=centinela_test port=5432 sslmode=disable TimeZone=UTC
@@ -107,6 +113,48 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # FIX-40: tercer backend (misma imagen y base) contra un Proxmox que acepta la conexión y nunca
+  # responde, para verificar 504 PROXMOX_TIMEOUT (el cliente corta a los 10 s).
+  backend-lento:
+    image: centinela-back-tests-backend:local
+    # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
+    # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
+    dns_search: invalid
+    pull_policy: never
+    environment:
+      DB_DSN: host=db user=centinela_test password=centinela_test dbname=centinela_test port=5432 sslmode=disable TimeZone=UTC
+      JWT_SECRET: test-only-jwt-secret-at-least-32-characters
+      JWT_ACCESS_TTL_HOURS: "1"
+      JWT_REFRESH_TTL_DAYS: "1"
+      TOTP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      APP_NAME: Centinela Test
+      PROXMOX_BASE_URL: http://proxmox-lento:80
+      PROXMOX_NODE: pve
+      PROXMOX_TOKEN_ID: stub@pve!tests
+      PROXMOX_TOKEN_SECRET: stub-secret
+      PROXMOX_PROTECTED_VMIDS: "103"
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: redis-test
+      ALLOWED_ORIGINS: http://front.centinela.test
+      EMAIL_PROVIDER: mock
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_SLOW_API_PORT:-18082}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+      proxmox-lento:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Proxmox que no responde: acepta cada conexión TCP y nunca contesta (FIX-40).
+  proxmox-lento:
+    image: busybox:1.36
+    command: ["sh", "-c", "while true; do sleep 3600 | nc -l -p 80 > /dev/null; done"]
 
   # INF-05 / FIX-31: Nginx del borde con TLS (docker/nginx-edge.conf, versionado en el repo
   # integrador) delante del backend real. Certificado de prueba firmado por edge-tls/ca.crt.

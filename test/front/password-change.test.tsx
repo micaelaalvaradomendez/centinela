@@ -4,6 +4,7 @@ import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applicationRoutes } from '@/routes/applicationRoutes';
+import { withAppProviders } from './app-providers';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -28,7 +29,7 @@ function seedPendingTwoFactor() {
 
 function renderApp(path: string) {
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
-  render(<RouterProvider router={router} />);
+  render(withAppProviders(<RouterProvider router={router} />));
   return router;
 }
 

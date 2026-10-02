@@ -19,6 +19,7 @@ import (
 //     (por /status/:action o por /start y /stop) registradas en tareas_asincronas y auditoria; DELETE
 //     solo ADMIN con 409 si está encendida (cuando exista, BAC-24B).
 //   - BAC-21C: tickets efímeros en Redis para /api/events y corte del stream al revocar la sesión.
+//   - FIX-40 (decisión D2): 504 PROXMOX_TIMEOUT distinto de 502 PROXMOX_UNAVAILABLE (backend-lento en compose.yaml).
 //   - INF-07B (BRG-03, etapa1.md): /api/events a través del Nginx del borde (docker/nginx-edge.conf)
 //     sin buffer ni corte por inactividad, con un TASK_FINISHED real de punta a punta.
 //
@@ -126,10 +127,13 @@ func TestPuenteEtapa1(t *testing.T) {
 		// Criterio: "todo se registra en auditoria". La forma (columnas accion/instancia_id o claves de
 		// detalles) es libre; se exige una fila de la 101 que lleve el upid de la acción. Se espera hasta
 		// 15 s por si se audita al terminar la tarea (TASK_FINISHED).
-		if status, body := requestJSON(t, http.MethodPost, energyPath(t, 101, "start"), operatorToken, nil); status != http.StatusAccepted {
+		status, body := requestJSON(t, http.MethodPost, energyPath(t, 101, "start"), operatorToken, nil)
+		if status != http.StatusAccepted {
 			t.Fatalf("start sobre la 101: esperado 202, recibido %d: %#v", status, body)
 		}
-		query := "SELECT count(*) FROM auditoria WHERE (instancia_id = '101' OR detalles::text LIKE '%101%') AND detalles::text LIKE '%UPID:pve:stub:start:101%';"
+		// El stub da un UPID distinto por tarea, como Proxmox: se busca el de esta respuesta.
+		upid := strings.ReplaceAll(requiredString(t, body, "upid"), "'", "''")
+		query := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE (instancia_id = '101' OR detalles::text LIKE '%%101%%') AND detalles::text LIKE '%%%s%%';", upid)
 		for attempt := 0; attempt < 30; attempt++ {
 			if queryDatabase(t, query) != "0" {
 				return
@@ -205,6 +209,33 @@ func TestPuenteEtapa1(t *testing.T) {
 		case <-closed:
 		case <-time.After(5 * time.Second):
 			t.Errorf("el stream de /events sigue abierto 5 s después del logout; debe cortarse inmediatamente")
+		}
+	})
+
+	t.Run("FIX-40 D2 un Proxmox que no responde da 504 PROXMOX_TIMEOUT y uno caído 502 PROXMOX_UNAVAILABLE", func(t *testing.T) {
+		// backend-lento (compose.yaml) apunta a proxmox-lento, que acepta la conexión y nunca contesta:
+		// el cliente corta a los 10 s (requestTimeout) y eso tiene que llegar como 504 con su propio código.
+		// El cliente de la prueba espera 20 s: más que los 10 s del backend, para que corte el backend.
+		request, _ := http.NewRequest(http.MethodGet, envOrDefault("BACKEND_TEST_SLOW_API_URL", "http://127.0.0.1:18082/api")+"/instances/101", nil)
+		request.Header.Set("Authorization", "Bearer "+adminToken)
+		started := time.Now()
+		response, err := (&http.Client{Timeout: 20 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatalf("GET /instances/101 en backend-lento falló sin respuesta HTTP: %v", err)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(response.Body).Decode(&body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusGatewayTimeout || body["errorCode"] != "PROXMOX_TIMEOUT" {
+			t.Errorf("Proxmox sin responder: esperado 504 PROXMOX_TIMEOUT, recibido %d %v (%v)", response.StatusCode, body["errorCode"], time.Since(started).Round(time.Second))
+		}
+
+		// Contraprueba: con el stub caído (la conexión falla enseguida) sigue siendo 502 PROXMOX_UNAVAILABLE.
+		stopProxmoxStub(t)
+		status, body := requestJSON(t, http.MethodGet, "/instances/101", adminToken, nil)
+		startProxmoxStub(t)
+		if status != http.StatusBadGateway || body["errorCode"] != "PROXMOX_UNAVAILABLE" {
+			t.Errorf("Proxmox caído: esperado 502 PROXMOX_UNAVAILABLE, recibido %d: %#v", status, body)
 		}
 	})
 

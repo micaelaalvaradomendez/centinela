@@ -1,3 +1,4 @@
+import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -143,98 +144,94 @@ describe('FRN-17C - Cliente de eventos con ticket efímero y reconexión segura'
 });
 
 describe('FRN-17A - Consumo de eventos en tiempo real y distribución por instancia', () => {
-  it('parsea mensajes válidos según RealtimeEvent y descarta los que no cumplen el contrato', async () => {
-    const useEvents = await loadUseEvents();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-parse' }));
-    vi.stubGlobal('fetch', fetchMock);
+  // La tarea no fija cómo se consumen los eventos ("por ejemplo con un provider"). Se acepta que el
+  // valor de useEvents exponga una función de suscripción (subscribe, onEvent, addListener, listen o
+  // subscribeToResource) que recibe un callback, o el estado `events` (lista) / `lastEvent`. Si no
+  // expone ninguna de esas formas, la prueba falla: no hay manera de que el Dashboard o la tabla reciban.
+  const SUBSCRIBE = ['subscribe', 'onEvent', 'addListener', 'listen', 'subscribeToResource'];
 
-    const received: unknown[] = [];
+  function collect(result: { current: unknown }) {
+    const received: Record<string, unknown>[] = [];
+    const value = result.current as Record<string, unknown> | null;
+    const subscribe = SUBSCRIBE.map((name) => value?.[name]).find((fn) => typeof fn === 'function') as
+      | ((callback: (event: Record<string, unknown>) => void) => unknown)
+      | undefined;
+    if (subscribe) act(() => { subscribe((event) => received.push(event)); });
+    const read = () => {
+      if (subscribe) return received;
+      const current = result.current as { events?: unknown; lastEvent?: unknown } | null;
+      if (Array.isArray(current?.events)) return current.events as Record<string, unknown>[];
+      if (current && 'lastEvent' in current) return current.lastEvent ? [current.lastEvent as Record<string, unknown>] : [];
+      throw new Error(`FRN-17A: useEvents no expone cómo recibir los eventos (${SUBSCRIBE.join(', ')}, events o lastEvent); expone: ${Object.keys(current ?? {}).join(', ') || 'nada'}`);
+    };
+    return read;
+  }
+
+  const taskFinished = (id: string, recursoId = '101') => ({
+    id, tipo: 'TASK_FINISHED', severidad: 'INFO', recursoTipo: 'VM', recursoId, mensaje: 'La tarea de encendido finalizó correctamente',
+    fechaHora: new Date().toISOString(), detalles: { tareaId: `tarea-${id}`, accion: 'start', estado: 'COMPLETED', exitstatus: 'OK' },
+  });
+
+  it('entrega los mensajes que cumplen RealtimeEvent y descarta los que no', async () => {
+    const useEvents = await loadUseEvents();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-parse' })));
+
     const { result } = renderHook(() => useEvents());
     await waitFor(() => expect(opened).toHaveLength(1));
+    const read = collect(result);
 
-    if (typeof (result.current as any)?.subscribe === 'function') {
-      (result.current as any).subscribe((ev: unknown) => received.push(ev));
-    }
-
-    // Mensaje inválido (sin campos requeridos de RealtimeEvent)
     act(() => {
       opened[0].instance.emitMessage({ invalid: 'payload' });
+      opened[0].instance.emitMessage('esto no es JSON');
+      opened[0].instance.emitMessage({ ...taskFinished('evt-sin-tipo'), tipo: undefined });
+      opened[0].instance.emitMessage(taskFinished('evt-valid-1'));
     });
 
-    const validEvent = {
-      id: 'evt-valid-1',
-      tipo: 'TASK_FINISHED',
-      severidad: 'INFO',
-      recursoTipo: 'VM',
-      recursoId: '101',
-      mensaje: 'Tarea finalizada exitosamente',
-      fechaHora: new Date().toISOString(),
-      detalles: { tareaId: 'task-101', estado: 'COMPLETED' },
-    };
-
-    act(() => {
-      opened[0].instance.emitMessage(validEvent);
-    });
-
-    if (typeof (result.current as any)?.subscribe === 'function') {
-      await waitFor(() => expect(received).toContainEqual(expect.objectContaining({ id: 'evt-valid-1' })));
-      expect(received).not.toContainEqual(expect.objectContaining({ invalid: 'payload' }));
-    } else {
-      expect((result.current as any)?.subscribe || (result.current as any)?.events || (result.current as any)?.lastEvent).toBeDefined();
-    }
+    await waitFor(() => expect(read()).toContainEqual(expect.objectContaining({ id: 'evt-valid-1', tipo: 'TASK_FINISHED' })));
+    expect(read().filter((event) => event.id !== 'evt-valid-1'), 'llegaron mensajes que no cumplen el contrato RealtimeEvent').toHaveLength(0);
   });
 
-  it('deduplica eventos recibidos con el mismo id', async () => {
+  it('un evento repetido (mismo id) se procesa una sola vez', async () => {
     const useEvents = await loadUseEvents();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-dedup' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const received: unknown[] = [];
-    const { result } = renderHook(() => useEvents());
-    await waitFor(() => expect(opened).toHaveLength(1));
-
-    if (typeof (result.current as any)?.subscribe === 'function') {
-      (result.current as any).subscribe((ev: unknown) => received.push(ev));
-    }
-
-    const event = {
-      id: 'evt-dup-1',
-      tipo: 'INSTANCE_STATE_CHANGED',
-      severidad: 'INFO',
-      recursoTipo: 'VM',
-      recursoId: '101',
-      mensaje: 'Instancia iniciada',
-      fechaHora: new Date().toISOString(),
-    };
-
-    act(() => {
-      opened[0].instance.emitMessage(event);
-      opened[0].instance.emitMessage(event);
-    });
-
-    if (typeof (result.current as any)?.subscribe === 'function') {
-      await waitFor(() => {
-        const matches = received.filter((e: any) => e.id === 'evt-dup-1');
-        expect(matches).toHaveLength(1);
-      });
-    } else {
-      expect((result.current as any)?.subscribe || (result.current as any)?.events).toBeDefined();
-    }
-  });
-
-  it('permite suscribirse por tipo y por recursoId con una sola conexión activa', async () => {
-    const useEvents = await loadUseEvents();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-sub' }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-dedup' })));
 
     const { result } = renderHook(() => useEvents());
     await waitFor(() => expect(opened).toHaveLength(1));
+    const read = collect(result);
 
-    expect(
-      typeof (result.current as any)?.subscribe === 'function' ||
-      typeof (result.current as any)?.subscribeToResource === 'function' ||
-      typeof (result.current as any)?.onEvent === 'function'
-    ).toBe(true);
+    act(() => {
+      opened[0].instance.emitMessage(taskFinished('evt-dup-1'));
+      opened[0].instance.emitMessage(taskFinished('evt-dup-1'));
+      opened[0].instance.emitMessage(taskFinished('evt-otro', '102'));
+    });
+
+    await waitFor(() => expect(read()).toContainEqual(expect.objectContaining({ id: 'evt-otro' })));
+    expect(read().filter((event) => event.id === 'evt-dup-1')).toHaveLength(1);
+  });
+
+  it('dos consumidores en la misma pestaña (Dashboard y tabla) comparten una sola conexión', async () => {
+    const useEvents = await loadUseEvents();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-compartido' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Si la conexión vive en un provider (como sugiere la tarea), se monta igual que en la app.
+    const providers = Object.values(await Promise.all(Object.values(candidates).map((load) => load().catch(() => ({}) as EventsModule))))
+      .flatMap((module) => Object.entries(module).filter(([name, value]) => /Provider$/.test(name) && typeof value === 'function'))
+      .map(([, value]) => value as React.ComponentType<{ children?: React.ReactNode }>);
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      providers.reduceRight<React.ReactElement>((inner, Provider) => React.createElement(Provider, null, inner), React.createElement(React.Fragment, null, children));
+
+    renderHook(() => [useEvents(), useEvents()], { wrapper });
+
+    await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(1));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(opened, 'cada consumidor abrió su propia conexión a /api/events').toHaveLength(1);
+    expect(ticketCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('se eliminó el hook vacío useWebSocket.js y notifications.ts ya no dice que el servidor no existe', () => {
+    expect(Object.keys(import.meta.glob('@/hooks/useWebSocket.*')), 'sigue existiendo hooks/useWebSocket').toHaveLength(0);
+    const notifications = Object.values(import.meta.glob<string>('@/types/notifications.ts', { query: '?raw', import: 'default', eager: true }))[0];
+    expect(notifications).not.toMatch(/todav[ií]a no existe/i);
   });
 });
-

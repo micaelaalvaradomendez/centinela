@@ -278,3 +278,48 @@ FIX DEL 21 AL 25 (en actual.md)
 ---
 
 ## 🛠️ Fixes detectados en la verificación del 01/10/2026
+
+---
+
+## 🛠️ Fixes detectados en la verificación del 02/10/2026
+
+### `FIX-41` - Regresión: `requiredRole="Admin"` oculta "Roles y permisos" al administrador (`SEC-03` / `FRN-07` / `FRN-18`) (Frontend)
+
+- **Área:** Frontend
+- **Asignada:** Luz (autora de `1156eaa`)
+- **Estimación:** 0,5 h
+- **Depende de:** `SEC-03` (en `terminado.md`).
+- **Problema y evidencia (verificado el 02/10/2026, frontend `4e0e7b7`):**
+  - En `src/pages/detailsUserPage.tsx`, el commit `1156eaa` envolvió en `PermissionGate` la pestaña "Roles y permisos" (`:224`), su contenido (`:231`) y el botón "Gestionar acceso" (`:256`) con `requiredRole="Admin"`.
+  - `useAuth().hasRole` compara exacto con el rol de la sesión, que es `ADMIN` (`RF-01`, `BAC-09`). El gate da `false` para todos, **también para el administrador**, y la ficha deja de mostrar la asignación de instancias y de niveles de acceso.
+  - Las líneas `:174` y `:180` del mismo archivo usan `"ADMIN"` y funcionan.
+  - Así se rompen dos tareas terminadas: `FRN-07`/`FIX-14` (selector de instancias) y `FRN-18` (nivel por instancia).
+  - Pruebas que fallan, en `test/front/admin-users.test.tsx` (bloque *"FIX-14 / FRN-07 - selector de asignación de instancias"*), todas con `Unable to find role="tab" and name /roles y permisos/i`:
+    - *"muestra marcadas las instancias ya asignadas…"*;
+    - *"seleccionar una instancia y guardar envía PUT…"*;
+    - los dos casos `FRN-18…`.
+- **Entregable:**
+  1. Usar `requiredRole="ADMIN"` en las tres líneas.
+  2. Opcional: que `PermissionGate` o `hasRole` rechacen un rol que no existe, por ejemplo con un tipo `'ADMIN' | 'OPERATOR'`, para que el error no se repita.
+- **Criterio de éxito:** el ADMIN ve "Roles y permisos" y "Gestionar acceso" en la ficha, y el OPERATOR no. Vuelven a pasar los 4 casos de `admin-users.test.tsx`, y siguen en verde los de `SEC-03`, `FRN-05` y `FRN-06B`.
+
+### `FIX-42` - `useAuth().canAccessInstance` no revisa el rol (`SEC-03`) (Frontend)
+
+- **Área:** Frontend
+- **Asignada:** Luz (autora de `1156eaa` y `47e5c19`)
+- **Estimación:** 0,5 h
+- **Depende de:** `SEC-03` (en `terminado.md`). Conviene hacerlo junto con `FIX-38`, que corrige el mismo defecto en `usePermissions`.
+- **Problema y evidencia (verificado el 02/10/2026, frontend `4e0e7b7`):**
+  - `SEC-03` agregó `useAuth()` en `src/context/AuthContext.ts`. Su `canAccessInstance(vmid)` devuelve `(user?.instanciasPermitidas ?? []).includes(vmid)`: no revisa el rol.
+  - Un usuario con un rol que no existe (por ejemplo `READ_ONLY`, que es un nivel por instancia y no un rol) obtiene acceso a las instancias de su sesión.
+  - Además, el ADMIN recibe `false` para cualquier instancia que no figure en `instanciasPermitidas`. `usePermissions` le da `true` a todas.
+  - Hoy hay **dos helpers de acceso** que deciden distinto: `usePermissions` (con `canOperateInstance`, `FIX-30`) y `useAuth` (con `hasRole`, `SEC-03`).
+  - Prueba que falla: `test/front/navigation.test.tsx`, caso *"FIX-42 un rol inexistente (READ_ONLY) no obtiene acceso a instancias en el resto de los hooks de permisos (useAuth de SEC-03)"*: `useAuth … canAccessInstance(101) con rol READ_ONLY: expected true to be false`.
+- **Entregable:**
+  1. En `useAuth().canAccessInstance`, dar `true` siempre al `ADMIN`, y al `OPERATOR` solo para sus instancias asignadas. Cualquier otro rol, `false`.
+  2. Unificar la regla con `usePermissions().canAccessInstance`, o dejar un solo helper (por ejemplo, que `useAuth` reutilice `usePermissions`), para que `FRN-15` y `FRN-16` no dependan de cuál se use.
+- **Criterio de éxito:**
+  - Pasa el caso `FIX-42…`.
+  - Siguen en verde los casos de `SEC-03` (hook, `PermissionGate` y menú) y el de `FIX-30`.
+  - El ADMIN obtiene `true` en `canAccessInstance` para cualquier VMID.
+

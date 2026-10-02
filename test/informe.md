@@ -1,14 +1,14 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 01/10/2026 (tercera verificación; cobertura integral de Etapa 1 agregada a las suites de aceptación)
-**Alcance:** las tareas de [documentacion/actual.md](../documentacion/actual.md) (Fase Base y Etapa 1), tras implementar las pruebas de aceptación que faltaban, y la regresión de [terminado.md](../documentacion/terminado.md) y [terminado-1.md](../documentacion/terminado-1.md).
+**Fecha de ejecución:** 02/10/2026
+**Alcance:** las tareas de [documentacion/actual.md](../documentacion/actual.md): las de la fase base, más `FIX-39`, `FIX-40` y la Ola 1 de la Etapa 1, con las decisiones D1 a D4 de `etapa1.md`. Se revisó si cada tarea tenía pruebas que evalúen su criterio de éxito, y se agregaron o corrigieron las que faltaban o estaban mal. También se corrió la regresión de [terminado.md](../documentacion/terminado.md) y [terminado-1.md](../documentacion/terminado-1.md).
 
 | Componente | Revisión probada | Commits nuevos desde la verificación anterior |
 |---|---|---|
-| Backend | `44a2339` (último commit de `main`) | Ninguno (`44a2339` "mas arreglos del simulador", **FIX-35**) |
-| Frontend | `4e0e7b7` (último commit de `main`) | 4 commits (PR #71 de Luz: refactor TypeScript de `AuthContext` y validación de `isAdmin` en `informationOfUser`) |
+| Backend | `44a2339` (último commit de `main`) | Ninguno |
+| Frontend | `4e0e7b7` (último commit de `main`) | 6 (PR #71: `SEC-03` con `AuthContext`, `PermissionGate` e `InstanceGate`; `FIX-29`) |
 
-**Cómo se ejecutó:** submódulos sincronizados con `origin/main`. Se agregaron las pruebas de aceptación automatizadas faltantes para validar todo el backlog activo de `actual.md`. Ambas suites se ejecutaron de punta a punta sin contenedores residuales.
+**Cómo se ejecutó:** cada submódulo se llevó al último commit de `origin/main`; ante un conflicto prevalece el remoto. El backend se corrió 3 veces, con el mismo resultado y sin contenedores residuales. El frontend se corrió 7 veces: 3 dieron el resultado de §1, y las otras 4, con la máquina sobrecargada, sumaron fallos por timeout en casos sin cambios (ver §4).
 
 ---
 
@@ -16,14 +16,20 @@
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 58 | **44** | **12** | 2 |
-| Frontend (`test/front`) | 111 | **75** | **26** | 10 |
-| **Total** | **169** | **119** | **38** | **12** |
+| Backend (`test/back`) | 55 | **43** | **11** | 1 |
+| Frontend (`test/front`) | 113 | **79** | **24** | 10 |
+| **Total** | **168** | **122** | **35** | **11** |
 
-- Los 10 omitidos del frontend son la prueba integral LOGIN-04, que corre desde `test/back` contra el backend real (pasa **10/10**).
-- Los 2 omitidos del backend son el `DELETE` de `BAC-21B` (espera a `BAC-24B`) y el relay SMTP Brevo de `INF-08B` (dependencia de red).
-- Se agregaron **19 casos de prueba nuevos** para cubrir el 100% de las tareas activas de `actual.md` que carecían de aceptación (§3).
-- **Hallazgo de integración:** el PR #71 de Frontend incorporó `useAuth()` dentro de `informationOfUser.tsx` e introdujo un bug de casing en `detailsUserPage.tsx` (`requiredRole="Admin"` con minúscula en lugar de `"ADMIN"`, lo que oculta las pestañas de administración).
+- **Avance del frontend:**
+  - `FIX-29` pasa.
+  - `SEC-03` cumple su criterio: hook, `PermissionGate` y menú.
+  - **Pero `SEC-03` rompió `FRN-07` y `FRN-18`**, que ya estaban terminadas: la ficha del usuario usa `requiredRole="Admin"` en lugar de `"ADMIN"` (§2).
+- **Las 9 tareas de la Ola 1 y `FIX-40` ya tienen pruebas.** `INF-07B` pasa; las demás fallan porque todavía no están implementadas.
+- **Se corrigieron pruebas que no evaluaban bien** (§3):
+  - tres casos de `FRN-17A` pasaban sin verificar nada;
+  - `FRN-19A` y `FRN-20A` fijaban nombres que la tarea no pide;
+  - las de `BAC-22`, `BAC-23A`, `BAC-25A` y `FIX-40` buscaban texto en archivos fijos.
+- **Hallazgo de seguridad en la suite, corregido:** en una corrida, el backend de pruebas llegó al Proxmox real a través del DNS de Tailscale. Solo recibió `401`; no se ejecutó ninguna acción (§4).
 
 ---
 
@@ -31,75 +37,94 @@
 
 **Leyenda:** ✅ cumplida · 🟡 parcial · ❌ no implementada.
 
-### Fase Base
+### Fase base y FIX
 
 | Tarea | Pruebas | Estado | Detalle |
 |---|---|---|---|
-| `SEC-03` Permisos reactivos | `navigation.test.tsx` (3) | 🟡 | `usePermissions` existe en `src/hooks/` con `isAdmin`, `canAccessInstance` y `canOperateInstance`. Faltan `isOperator`, `hasRole` y `PermissionGate`, y el menú sigue mostrando "Auditoría" al OPERATOR |
-| `FIX-29` Complejidad de contraseña | `password-change` (3), `recover-password` (1) | ✅ | Complejidad de contraseña con mayúscula validada y mensajes canónicos |
-| `FRN-17C` Cliente de eventos (ticket efímero) | `events-client.test.tsx` (4) | ❌ | No existe `useEvents` que pida ticket efímero ni aplique retroceso exponencial |
-| `FIX-36` Filtro "Acción" en Auditoría | `audit.test.tsx` (1) | ❌ | Falta restaurar el selector y parámetro reactivo de `accion` en `Auditoria.tsx` |
-| `FIX-38` `READ_ONLY` como rol | `admin-users` (1), `navigation` (1) | ❌ | El selector "Rol" de la ficha sigue ofreciendo `READ_ONLY` y el hook lo acepta como rol |
-| `BAC-18B` Índice parcial, particiones y purga | `cierre_fase_base…` (2) | ❌ | Faltan el índice parcial, las particiones trimestrales y la rutina de purga horaria |
-| `BAC-21B` / `FIX-39` Instancias extendidas y energía | `puente_etapa1…` (5) | 🟡 | Pasa `start`/`stop` con `FULL_ACCESS` y `tareas_asincronas`. Faltan campos en `GET /instances`, auditoría de órdenes de energía y `shutdown`/`reboot` |
-| `FIX-37` Nivel de acceso en el perfil | `resource_access…` (1) | ❌ | `GET /account/profile` sigue sin el campo `permisos: [{ vmid, nivelAcceso }]` |
-| `FIX-40` Distinguir 504 de 502 en Proxmox | `etapa1_core…` (1, **nuevo**) | ❌ | `instance_handler.go` sigue respondiendo `PROXMOX_UNAVAILABLE` en timeouts 504 en vez de `PROXMOX_TIMEOUT` |
+| `SEC-03` Permisos reactivos | `navigation.test.tsx` (4) | 🟡 | **Cumple su criterio:**<br>• `useAuth()` (en `AuthContext.ts`, con `AuthProvider`) expone `isAdmin()`, `isOperator()`, `hasRole` y `canAccessInstance`;<br>• `PermissionGate` funciona;<br>• el OPERATOR no ve Usuarios ni Auditoría en el menú.<br>**Regresión:** `detailsUserPage.tsx:224`, `:231` y `:256` usan `<PermissionGate requiredRole="Admin">`, así que el ADMIN tampoco ve "Roles y permisos" ni "Gestionar acceso". Fallan 4 casos de `FRN-07`/`FRN-18` en `admin-users.test.tsx` |
+| `FIX-29` Complejidad de contraseña | `password-change` (3), `recover-password` (1) | ✅ | Pasan todos sus casos y los de `FRN-12` y `FIX-21` |
+| `FRN-17C` Cliente de eventos | `events-client.test.tsx` (4) | ❌ | No existe `useEvents` |
+| `FIX-36` Filtro "Acción" | `audit.test.tsx` (1) | ❌ | Sin cambios |
+| `FIX-38` `READ_ONLY` como rol | `admin-users` (1), `navigation` (1) | ❌ | El selector "Rol" sigue ofreciendo `READ_ONLY`, y `usePermissions` lo acepta como rol |
+| `FIX-42` (nuevo, en `futuro.md`) `useAuth` sin revisar el rol | `navigation` (1, **nuevo**) | ❌ | `useAuth().canAccessInstance`, de `SEC-03`, solo mira `instanciasPermitidas` |
+| `BAC-18B` Índices, particiones y purga | `cierre_fase_base…` (2) | ❌ | Sin cambios |
+| `FIX-37` Nivel de acceso en el perfil | `resource_access…` (1) | ❌ | Sin cambios |
+| `FIX-39` Completar `BAC-21B` | `puente_etapa1…` (3) | ❌ | Faltan los campos, `shutdown`/`reboot` (404) y la auditoría de energía |
+| `FIX-40` `504 PROXMOX_TIMEOUT` | `puente_etapa1…` (1, **nuevo**) | ❌ | Con un Proxmox que no responde, llega `504` con `PROXMOX_UNAVAILABLE`. El `502` de la contraprueba ya cumple |
 
-### Etapa 1
+### Etapa 1 (Ola 1)
 
 | Tarea | Pruebas | Estado | Detalle |
 |---|---|---|---|
-| `INF-07B` Nginx SSE en el borde | `puente_etapa1…` (1) | ✅ | El Nginx de borde entrega `TASK_FINISHED` por HTTPS sin buffer ni cortes |
-| `BAC-29` Contrato HTTP y eventos Etapa 1 | `etapa1_core…` (1, **nuevo**) | ❌ | No existe aún `backend/docs/contrato-etapa1.md` ni sus anotaciones Swagger |
-| `BAC-22` Telemetría del nodo con caché Redis | `etapa1_core…` (1, **nuevo**) | ❌ | No existe el endpoint `GET /api/node/status` (responde 404) |
-| `BAC-23A` Normalización inventario QEMU/LXC/IP | `etapa1_core…` (1, **nuevo**) | ❌ | Falta resolución de interfaces y consolidación de VMs/LXC en `proxmox/client.go` |
-| `BAC-25A` Worker pool acotado para UPID | `etapa1_core…` (1, **nuevo**) | ❌ | `seguimiento_tareas.go` sigue usando goroutines libres sin worker pool (`UPID_WORKERS`) |
-| `FRN-19A` Medidores de recursos del Host | `dashboard-metrics.test.tsx` (4, **nuevo**) | ❌ | Faltan componentes en `features/dashboard` con gauges de CPU/RAM/Disco y umbral al 70% |
-| `FRN-20A` Tabla interactiva con badges e IP | `instances-table.test.tsx` (4, **nuevo**) | ❌ | `Instances.tsx` sigue siendo una maqueta estática ("Sin instancias") |
-| `FRN-17A` Consumo de eventos y distribución | `events-client.test.tsx` (3, **nuevo**) | ❌ | Falta parseo tipado de `RealtimeEvent`, deduplicación por ID y suscripción por recurso |
+| `INF-07B` Nginx para SSE | `puente_etapa1…` (1) | ✅ (referencia local) | `TASK_FINISHED` por HTTPS en ~1 s. Falta aplicarlo en el CT 103 (`INT-03`) |
+| `BAC-29` Contrato de la etapa | `etapa1_acceptance…` (1, **nuevo**) | ❌ | No existe `backend/docs/contrato-etapa1.md` |
+| `BAC-22` Telemetría del nodo | `etapa1_acceptance…` (1, **nuevo**) | ❌ | `GET /api/node/status` responde 404 |
+| `BAC-23A` Adaptador de IP | `etapa1_acceptance…` (1, **nuevo**) | ❌ | No se consultan los endpoints de IP |
+| `BAC-25A` Pool de UPID | `etapa1_acceptance…` (1, **nuevo**) | ❌ | Falta `UPID_WORKERS`. No se pierden tareas: de 20 órdenes, las 20 quedan `COMPLETED` |
+| `FRN-19A` Medidores del host | `dashboard-metrics.test.tsx` (3, **reescrito**) | ❌ | `features/dashboard` solo tiene `DashCard.jsx`, vacío |
+| `FRN-20A` Tabla de inventario | `instances-table.test.tsx` (5, **reescrito**) | ❌ | `Instances.tsx` es una maqueta que no consulta la API |
+| `FRN-17A` Consumo de eventos | `events-client.test.tsx` (4, **reescrito**) | ❌ | No existe `useEvents` |
 
 ---
 
-## 3. Pruebas que faltaban (creadas en esta verificación)
+## 3. Pruebas revisadas: qué faltaba y qué estaba mal
 
-Se construyeron e incorporaron pruebas de aceptación formales para todas las tareas que no tenían cobertura en `actual.md`:
+| Tarea | Problema | Corrección |
+|---|---|---|
+| `SEC-03` (`navigation`) | Buscaba solo `usePermissions` con booleanos y `PermissionGate` como export con nombre; además renderizaba sin el `AuthProvider` que `App.tsx` sí monta. El frontend usó `useAuth()` con funciones y un export por defecto, y la tarea lo permite | Acepta `usePermissions`, `useAuthUser` o `useAuth`, con booleanos o funciones, y `PermissionGate` con export por defecto. Nuevo `app-providers.tsx` con los providers de `src/context`. `FIX-38` evalúa `usePermissions` y el caso nuevo `FIX-42`, los demás hooks |
+| `FRN-17A` (`events-client`) | 3 casos con `if (subscribe) … else expect(definido)`: pasaban sin verificar | Verifican la entrega y el descarte, la deduplicación, una sola conexión con dos consumidores, y la limpieza de `useWebSocket.js` y `notifications.ts` |
+| `FRN-20A` (`instances-table`) | Tipo `qemu` en el mock (la API devuelve `vm`), un `if (copyButton)`, `AuthProvider` importado de forma fija y un nombre accesible exigido para la tabla. No verificaba los colores, la columna Tipo, el `Bearer` ni la botonera | Reescrita contra el contrato de `BAC-14` y el entregable |
+| `FRN-19A` (`dashboard-metrics`) | Exigía `CpuGauge`, `usagePercent` y clases como `.text-warning` | Detecta los medidores por lo que renderizan; compara el aspecto en 20, 69 y 70 % (D3); busca las pruebas del frontend con 69 y 70 |
+| `BAC-22`, `BAC-23A`, `BAC-25A`, `BAC-29`, `FIX-40` (`etapa1_core…`, eliminado) | Buscaban texto en archivos fijos (`"lxc"`, `"workers"`, una expresión regular); `BAC-22` pedía `instancesSummary` (de `BAC-22B`) y no probaba ni la caché ni `stale` | `etapa1_acceptance_test.go` y el caso `FIX-40` de `puente…`, por comportamiento (detalle en [`back/RESULTADOS.md`](back/RESULTADOS.md)) |
+| `BAC-21B` (auditoría) | Buscaba un UPID fijo del stub | Usa el `upid` de la respuesta |
 
-| Área | Archivo | Casos nuevos | Qué valida |
-|---|---|---:|---|
-| Backend | `test/back/etapa1_core_acceptance_test.go` | 5 | **BAC-29:** existencia de `contrato-etapa1.md` con esquemas de status, instances, energía y códigos de error.<br>**FIX-40:** mapeo de `ErrProxmoxTimeout` a `504 PROXMOX_TIMEOUT` vs `502 PROXMOX_UNAVAILABLE`.<br>**BAC-22:** `GET /api/node/status` exige auth (401 sin token, 200 con OPERATOR/ADMIN) y devuelve telemetría normalizada.<br>**BAC-23A:** resolución de interfaces QEMU y LXC con IP unificada.<br>**BAC-25A:** worker pool acotado para seguimiento de tareas UPID |
-| Frontend | `test/front/dashboard-metrics.test.tsx` | 4 | **FRN-19A:** componentes de métricas de host en `features/dashboard`, comportamiento responsive 0-100%, y cambio de estado a advertencia exactamente a partir del 70% (valores de borde 69% y 70%) |
-| Frontend | `test/front/instances-table.test.tsx` | 4 | **FRN-20A:** tabla dinámica de inventario con VMs y LXC en la misma grilla, badges de estado (`Running` verde / `Stopped` gris), IP con botón de copia o "No detectada", y tolerancia a campos en null |
-| Frontend | `test/front/events-client.test.tsx` | 3 | **FRN-17A:** parseo y validación de `RealtimeEvent` descartando payloads inválidos, deduplicación por `id`, y suscripción selectiva por tipo y `recursoId` |
+**Contrapruebas del frontend:** contra una copia temporal con implementaciones mínimas correctas pasan 16 de 16. Con 8 defectos introducidos (umbral corrido, sin deduplicar, una conexión por consumidor, badges sin color, entre otros), cada vez falla exactamente la prueba que corresponde. Las del backend no se pudieron contrastar contra una implementación, porque las tareas no existen todavía.
 
 ---
 
-## 4. Adaptaciones y Hallazgos de Integración
+## 4. Hallazgos
 
-1. **Adaptación a PR #71 (`AuthContext` tipado en Frontend):**
-   - El commit `952b43c` introdujo `const { isAdmin } = useAuth()` en `informationOfUser.tsx`.
-   - Se actualizó el fixture de prueba `renderUserDetail` en `test/front/admin-users.test.tsx` envolviéndolo con `<AuthProvider>` y poblando la sesión en `localStorage` (`centinela_user`), permitiendo que el componente monte limpiamente sin violar el contexto.
-
-2. **Detección de Defecto en `detailsUserPage.tsx`:**
-   - En el commit `1156eaa0` de Luz, las pestañas de "Roles y permisos" en `detailsUserPage.tsx` fueron envueltas con `<PermissionGate requiredRole="Admin">`.
-   - Dado que los roles del sistema son estrictamente en mayúsculas (`ADMIN` / `OPERATOR`), la comparación `user.rol === role` evalúa a `false`, provocando que las pestañas queden ocultas incluso para administradores. Queda documentado para su corrección por el equipo de frontend.
+1. **Regresión de `SEC-03` en la ficha del usuario** (frontend `1156eaa`): `requiredRole="Admin"` en `detailsUserPage.tsx:224`, `:231` y `:256`. El rol del sistema es `ADMIN`, y `hasRole` compara exacto. Se puede registrar como FIX o resolver dentro de `SEC-03`, que sigue en `actual.md`.
+2. **La suite pudo llegar al Proxmox real (corregido).**
+   - **Qué pasó:** con el contenedor del stub detenido, el nombre `proxmox` no resolvía en Docker. El backend lo completó con el dominio de búsqueda del host, `tail6bb3f3.ts.net` (Tailscale), y se conectó a `100.81.49.19`, el Proxmox real, con el token falso del stub.
+   - **Impacto:** todas las respuestas fueron `401` y no se ejecutó ninguna acción.
+   - **Corrección:** la suite ya no detiene el stub (simula la caída con un `503`), y los backends de prueba tienen `dns_search: invalid`.
+3. **Duplicación en el frontend:** hay dos helpers de permisos, `usePermissions` (con `canOperateInstance`) y `useAuth` (con `hasRole` y su propio `canAccessInstance`), y deciden distinto. `FIX-38` corrige `usePermissions` y `FIX-42`, `useAuth`. Conviene que el equipo elija uno antes de `FRN-15`/`FRN-16`.
+4. **Estabilidad del frontend:** con la máquina sin memoria disponible y carga de 15 a 41 (procesos ajenos: `k3s server` y un `docker buildx` de otro proyecto), algunas corridas sumaron de 2 a 13 timeouts en casos sin cambios. El resultado de §1 se repitió en 3 corridas.
 
 ---
 
 ## 5. Prueba integral LOGIN-04
 
-**10 de 10 pasos en verde** (frontend real ejecutado por Vitest contra el backend real en Docker Compose).
+**10 de 10 pasos en verde** (frontend real contra backend real).
 
 ---
 
-## 6. Cómo reproducir
+## 6. Pendientes
+
+- **Frontend:**
+  - `FIX-41`, la regresión de `SEC-03` (`requiredRole="Admin"`);
+  - `FIX-38` y `FIX-42` (el mismo defecto en `usePermissions` y en `useAuth`);
+  - `FIX-36`;
+  - `FRN-17C` con `FRN-17A`, `FRN-19A` y `FRN-20A`.
+- **Backend:**
+  - `BAC-18B`, `FIX-37`, `FIX-39` y `FIX-40`;
+  - `BAC-29`, `BAC-22`, `BAC-23A` y `BAC-25A`.
+- **Documentación (hecho el 02/10/2026):**
+  - `FIX-29` pasó a `terminado.md`;
+  - `SEC-03` pasó a `terminado.md` como implementada con problema, y su regresión es `FIX-41`, en `futuro.md`.
+- **Infraestructura:** aplicar `docker/nginx-edge.conf` en el CT 103 (`FIX-31` e `INF-07B`).
+
+---
+
+## 7. Cómo reproducir
 
 ```bash
-# 1. Asegurar últimas revisiones de los submódulos
-git submodule update --init --recursive
-
-# 2. Correr suite completa de Backend (incluye Docker Compose, LOGIN-04 front↔back y simulador Proxmox)
-cd test/back && go test -v -count=1 ./...
-
-# 3. Correr suite completa de Frontend
-pnpm --dir test/front test --run
+for s in backend frontend; do
+  git -C $s fetch origin --prune && git -C $s checkout -B main origin/main --force && git -C $s reset --hard origin/main
+done
+(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)   # incluye LOGIN-04 front ↔ back y el simulador
+pnpm --dir test/front test                                        # con la máquina cargada: pnpm --dir test/front vitest run --no-file-parallelism
 ```
+
+Detalle por suite: [test/back/RESULTADOS.md](back/RESULTADOS.md) y [test/front/RESULTADOS.md](front/RESULTADOS.md).
