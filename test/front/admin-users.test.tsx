@@ -10,6 +10,7 @@ import { apiClient } from '@/services/apiClient';
 import Users from '@/pages/Users';
 import CrearUsuarios from '@/pages/CrearUsuarios';
 import UserDetail from '@/pages/detailsUserPage';
+import { AuthProvider } from '@/context/AuthContext';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -70,14 +71,25 @@ function detailBackend({ profilePut, permisos = [{ vmid: 101, nivelAcceso: 'FULL
 
 function renderUserDetail(userId = 'u2') {
   window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+  window.localStorage.setItem('centinela_user', JSON.stringify({
+    id: 'user-admin',
+    organizacionId: 'org-1',
+    nombreCompleto: 'Admin',
+    email: 'admin@centinela.local',
+    rol: 'ADMIN',
+    instanciasPermitidas: [],
+    tiene2FA: true,
+  }));
   return render(
-    <Toaster>
-      <MemoryRouter initialEntries={[`/users/${userId}`]}>
-        <Routes>
-          <Route path="/users/:userId" element={<UserDetail />} />
-        </Routes>
-      </MemoryRouter>
-    </Toaster>,
+    <AuthProvider>
+      <Toaster>
+        <MemoryRouter initialEntries={[`/users/${userId}`]}>
+          <Routes>
+            <Route path="/users/:userId" element={<UserDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </Toaster>
+    </AuthProvider>,
   );
 }
 
@@ -93,7 +105,7 @@ function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
     tiene2FA: true,
   }));
   const router = createMemoryRouter(applicationRoutes, { initialEntries: [path] });
-  render(<Toaster><RouterProvider router={router} /></Toaster>);
+  render(<AuthProvider><Toaster><RouterProvider router={router} /></Toaster></AuthProvider>);
   return router;
 }
 

@@ -165,6 +165,51 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Quitar el caso `READ_ONLY` de `formatRole` y la condición de rol `READ_ONLY` de `canAccessInstance`. Solo `ADMIN` y `OPERATOR` son roles; el nivel se evalúa en `permisos`.
 - **Criterio de éxito:** el selector de rol muestra solo "Operador" y "Administrador"; "Solo lectura" sigue disponible por instancia; un usuario con un rol desconocido no obtiene acceso a ninguna instancia. Los casos de `FRN-05`, `FRN-06B`, `FRN-18` y `FIX-30` siguen en verde.
 
+### `FIX-39` - Completar `BAC-21B`: campos de `GET /api/instances`, auditoría de energía, y `shutdown` y `reboot` (Backend)
+
+- **Área:** Backend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-21B` (en `terminado.md`).
+- **Problema y evidencia (verificado el 01/10/2026, backend `44a2339`):** `BAC-21B` cumple la parte de energía con `FULL_ACCESS` y `tareas_asincronas`, pero le faltan tres puntos de su criterio de éxito y de la aclaración del 01/10/2026:
+  1. **`GET /api/instances`** sigue con los 5 campos de `BAC-14` (`ports.InstanciaListadaDTO`). Faltan `ip`, `cpuUsage`, `ramUsage`, `maxRam`, `nivelAcceso` y `activeTask`. Prueba que falla: `puente_etapa1…`, caso *"GET /api/instances agrega campos sin romper el contrato de BAC-14"*.
+  2. **Auditoría de energía:** ninguna acción de energía se escribe en `auditoria`. `instance_handler.go` responde con `upid` y `tareaId` sin auditar, y `eventos_service.go` solo audita la apertura y el cierre del stream. El criterio dice *"todo se registra en `auditoria` y `tareas_asincronas`"*. Prueba que falla: *"las acciones de energía quedan en auditoria con el upid de la tarea"*.
+  3. **`shutdown` y `reboot`:** solo existen `start` y `stop`.
+- **Aclaración (01/10/2026, revisión de `etapa1.md`; antes estaba en `BAC-21B`):**
+  - **Campos nuevos:** `ip`, `cpuUsage`, `ramUsage`, `maxRam` y `activeTask` se agregan **en `null`**; solo `nivelAcceso` lleva su valor real. Los completan tareas de la Etapa 1: `BAC-23B` (IP), `BAC-22B` (CPU y RAM) y `BAC-25C` (`activeTask`). Así esta corrección no depende de ellas.
+  - **`instancesSummary`** no va en cada instancia sino en `GET /api/node/status` (`BAC-22B`); queda fuera de este FIX.
+  - **Energía:** se suman `shutdown` y `reboot`, que se agregan a `ProxmoxPort`. La ruta puede ser `/status/:action` o una por acción, como `/start` y `/stop`: lo que se exige es `FULL_ACCESS` y el registro.
+  - **Auditoría:** el registro de esta tarea es la orden despachada (`PENDING`). El resultado lo registra `BAC-27`.
+  - **Pendiente para la Etapa 1:** la validación de estado previo y los VMIDs protegidos en las acciones nuevas (`BAC-24A`/`BAC-24B`), y la regla de `DELETE` (`BAC-24B`).
+- **Entregable:**
+  1. Extender `ports.InstanciaListadaDTO` con `ip`, `cpuUsage`, `ramUsage`, `maxRam` y `activeTask` (en `null` por ahora) y con `nivelAcceso`, tomado de `permisos_instancia` (`FULL_ACCESS` o `READ_ONLY`; para el ADMIN, `FULL_ACCESS`). Los 5 campos actuales no cambian.
+  2. Auditar cada acción de energía despachada en `auditoria`: `accion`, `instancia_id`, `resultado` (`PENDING`) y el `upid` en `detalles`. Los nombres de las claves de `detalles` son libres.
+  3. Agregar `shutdown` y `reboot` a `ProxmoxPort` y exponerlos con `RequireInstanceAccess(..., FULL_ACCESS)`, con el mismo seguimiento en `tareas_asincronas`.
+- **Criterio de éxito:** en `test/back/puente_etapa1_acceptance_test.go`:
+  - pasan *"GET /api/instances agrega campos…"* (con `nivelAcceso` real), *"las acciones de energía quedan en auditoria con el upid…"* y *"shutdown y reboot exigen FULL_ACCESS…"*;
+  - siguen en verde *"las acciones de energía exigen FULL_ACCESS…"*, `BAC-14`, `FIX-14`/`FRN-07` y `SEC-04`.
+
+### `FIX-40` - Distinguir `504 PROXMOX_TIMEOUT` de `502 PROXMOX_UNAVAILABLE` (decisión D2 de `etapa1.md`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro (autor de `FIX-33`)
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-14` y `FIX-33` (en `terminado.md`).
+- **Origen:** decisión D2 del 01/10/2026, en `etapa1.md` §1: *"el backend distingue cada significado del resultado de una acción, y el frontend muestra un mensaje distinto para cada caso"*. Se registra como FIX porque cambia un contrato de código ya terminado.
+- **Problema y evidencia:** `mapearErrorProxmox` (`internal/adapters/primary/http/instance_handler.go:58`) responde el mismo `errorCode` para dos significados distintos:
+  - `ErrProxmoxNoDisponible` → `502 PROXMOX_UNAVAILABLE` (Proxmox no está disponible: la orden no llegó);
+  - `ErrProxmoxTimeout` → `504 PROXMOX_UNAVAILABLE` (Proxmox no respondió a tiempo: la orden puede haberse aplicado igual).
+
+  `docs/estandar_http.md:64-65` documenta los dos con el mismo código. El frontend lee `errorCode` (`FIX-07`), así que no puede mostrar un mensaje distinto para cada uno. La diferencia importa en las acciones de energía (`FRN-16`): ante un timeout, el operador tiene que revisar el estado antes de repetir la orden.
+- **Entregable:**
+  1. Mapear `ErrProxmoxTimeout` a `504 PROXMOX_TIMEOUT` ("Proxmox no respondió a tiempo; la acción puede haberse aplicado"), en todas las rutas que usan `mapearErrorProxmox`: listado, detalle y acciones de energía.
+  2. Mantener `502 PROXMOX_UNAVAILABLE` para el resto, **incluido el token rechazado** (`ErrProxmoxCredenciales`). Hacia el cliente se sigue respondiendo lo mismo que cuando Proxmox no está disponible: así se decidió y el motivo queda en el log.
+  3. Actualizar `docs/estandar_http.md`, Swagger, el inventario de `FIX-08` y las pruebas unitarias de `instance_handler_test.go` que hoy esperan `PROXMOX_UNAVAILABLE` en el `504`.
+- **Criterio de éxito:**
+  - Con Proxmox sin responder dentro del timeout del cliente: `504` con `errorCode: PROXMOX_TIMEOUT`.
+  - Con Proxmox caído o con el token rechazado: `502` con `PROXMOX_UNAVAILABLE`.
+  - `409 INSTANCE_BUSY` sigue igual (`FIX-33`), y `BAC-14`, `SEC-04` y `LOGIN-04` siguen en verde.
+
 
 ---
 # ETAPA 1
@@ -173,3 +218,131 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 > `FIX-35` se completó el 01/10/2026 y pasó a [`terminado-1.md`](terminado-1.md). No quedan tareas de la Etapa 1 en curso en este archivo.
 
+#### `INF-07B` (`BRG-03`) - Configuración de Nginx para SSE en el servidor (`RNF-06`)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-31` y `BAC-21C`, las dos terminadas. No depende de `BAC-26`: el stream ya emite `TASK_FINISHED` para `start` y `stop`.
+- **Problema:** sin configuración específica, Nginx corta las conexiones de `/api/events` a los 60 s o retiene en buffer los mensajes SSE.
+- **Referencia:** `docker/nginx-edge.conf` en el repositorio integrador (`FIX-31`). Su `location /api/` ya tiene `proxy_http_version 1.1`, `proxy_buffering off` y `proxy_read_timeout 1h`, y la suite de pruebas lo usa delante del backend. La configuración del servidor (CT 103) no está en los submódulos.
+- **Entregable:**
+  1. Llevar al Nginx del CT 103 la configuración de `docker/nginx-edge.conf`, con los certificados reales en `/etc/nginx/tls/`. Es el pendiente para infraestructura de `FIX-31`.
+  2. Confirmar que `/api/events` queda sin buffer ni corte por inactividad: `proxy_buffering off`, `proxy_cache off` y `proxy_read_timeout` ≥ 1 h. Si en el servidor hace falta algo más, como `gzip off` o `proxy_set_header Connection ''`, agregarlo también en `docker/nginx-edge.conf`, para que la referencia y el servidor no se separen.
+- **Verificación local (01/10/2026):** `test/back/puente_etapa1_acceptance_test.go`, caso *"INF-07B BRG-03 /api/events a través del borde Nginx…"*, **pasa** con la referencia. Verifica:
+  - en `docker/nginx-edge.conf`: `proxy_http_version 1.1`, `proxy_buffering off` y `proxy_read_timeout` ≥ 5 min;
+  - por el servicio `edge` en HTTPS: ticket, stream y `start`, con el `TASK_FINISHED` llegando en ~1 s.
+
+  Queda pendiente aplicarlo en el CT 103, que se valida en `INT-03`.
+- **Criterio de éxito:** a través de Nginx (HTTPS), un cliente conectado a `/api/events?ticket=…` recibe el `TASK_FINISHED` de un `start` sobre una instancia de prueba sin demora visible, y la conexión sigue abierta después de 5 minutos sin tráfico.
+
+
+#### `BAC-29` - Contrato HTTP y de eventos de la Etapa 1 (nueva)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.0 h
+- **Depende de:** ninguna. Se hace primero, para que el frontend no espere a la implementación.
+- **Entregable:** `backend/docs/contrato-etapa1.md` y las anotaciones Swagger (sin implementación) de:
+  1. `GET /api/node/status`: `{ cpu: { usagePercent, cores }, ram: { usedGb, totalGb, usagePercent }, storage: { usedGb, totalGb, usagePercent }, uptimeSeconds, instancesSummary: { vms: { running, stopped, paused, total }, lxc: { … } }, stale, fetchedAt }`.
+  2. `GET /api/instances`: lo de `BAC-14`, más `ip | null`, `cpuUsage | null` (0-100), `ramUsage | null`, `maxRam | null` (bytes), `nivelAcceso` y `activeTask: { tareaId, action, status } | null`.
+  3. Las rutas de energía tal como queden con `FIX-39`. Pueden ser `/status/:action` o una por acción, como las actuales `/start` y `/stop`. Para `start`, `shutdown`, `stop` y `reboot`, y para el `DELETE /api/instances/:vmid` de `BAC-24B`: `202 { upid, tareaId }`.
+  4. Los `detalles` de `TASK_FINISHED`: `{ tareaId, accion, estado: COMPLETED|FAILED, exitstatus, motivo?: PROXMOX_ERROR|TIMEOUT, error? }`. `motivo` va solo cuando `estado` es `FAILED` (D2).
+  5. Quién puede consultar cada endpoint: `GET /api/node/status`, cualquier usuario autenticado (D1).
+  6. La tabla de códigos de error de la etapa con su estado HTTP:
+     - `INSTANCE_ACCESS_DENIED`, `INSTANCE_PROTECTED`, `INSTANCE_BUSY`, `INSTANCE_INVALID_STATE` (D2) e `INSTANCE_NOT_FOUND`;
+     - `PROXMOX_UNAVAILABLE` (`502`), `PROXMOX_TIMEOUT` (`504`, `FIX-40`) e `INVALID_ACTION`.
+
+     Cada código lleva una línea con su significado, para que el frontend arme un mensaje distinto para cada uno (D2).
+
+     Se agregan también al inventario de `FIX-08`.
+- **Criterio de éxito:** el frontend puede maquetar `FRN-19B`, `FRN-20A`, `FRN-16` y `FRN-17B` solo con este documento, y Swagger muestra los endpoints con ejemplos. Si una tarea posterior cambia el contrato, actualiza este archivo y avisa al frontend.
+
+#### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.5 h
+- **Depende de:** `INF-06A` y `BAC-17A` (terminadas). Se desarrolla contra el simulador, que ya responde `/nodes/{node}/status`.
+- **Entregable:** endpoint `GET /api/node/status` que consume `/nodes/{node}/status` de Proxmox:
+  - Agrega `ObtenerEstadoNodo` a `ProxmoxPort` y al cliente.
+  - Lo protege con `RequireAuth`: lo puede consultar cualquier usuario autenticado, `ADMIN` u `OPERATOR` (D1).
+  - Normaliza el porcentaje y los núcleos de CPU, convierte de bytes a GB la RAM y el almacenamiento, y devuelve el uptime en segundos, con el formato de `BAC-29`.
+  - Guarda el resultado en Redis con TTL de 5 a 10 s, y además el último estado conocido sin TTL.
+  - Si Proxmox no responde y hay un último estado conocido, responde `200` con `stale: true`. Si no hay ninguno, responde `502 PROXMOX_UNAVAILABLE` o `504 PROXMOX_TIMEOUT` (D2, `FIX-40`).
+- **Criterio de éxito:**
+  - Responde en menos de 50 ms con la caché vigente.
+  - Al vencer el TTL consulta Proxmox, actualiza Redis y responde `200`.
+  - Con el simulador detenido, responde el último estado con `stale: true`.
+  - Sin token responde `401`; con un token de `OPERATOR` responde `200` (D1).
+
+#### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP)
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-14`, `BAC-28` y `FIX-35` (terminadas). Se desarrolla contra el simulador. Toca los mismos archivos que `FIX-39` (`proxmox/client.go`, `InstanciaListadaDTO`): hay que coordinarse con quien la haga.
+- **Entregable:** servicio en Go que:
+  - unifica VMs y LXC en una estructura común, desde `/cluster/resources` (como hoy) o desde `/nodes/{node}/qemu` + `/nodes/{node}/lxc`;
+  - incluye `cpu`, `mem` y `maxmem` crudos para `BAC-22B`;
+  - resuelve la IP con `qemu/{vmid}/agent/network-get-interfaces` (`prefix` numérico) y `lxc/{vmid}/interfaces` (`prefix` string; `data: null` si el contenedor está apagado).
+  - Para la IP: primera IPv4 que no sea loopback; si no hay, la primera IPv6 global.
+- **Criterio de éxito:**
+  - Función interna con pruebas unitarias que devuelve la lista consolidada.
+  - Las instancias apagadas o sin guest agent devuelven `ip: null` sin error.
+  - Cada consulta de IP tiene un timeout propio (≤ 2 s) y se hacen en paralelo con concurrencia acotada.
+ 
+ #### `BAC-25A` - Worker pool acotado para el seguimiento de UPID
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** ninguna pendiente. Parte de `services/seguimiento_tareas.go` (`BAC-21C`). El pool no depende de qué acción originó el UPID.
+- **Contexto:** hoy cada tarea lanza su propia goroutine, sin límite.
+- **Entregable:**
+  1. Reemplazar la goroutine por tarea con un pool de N workers (`UPID_WORKERS`, por defecto 8) que lee de un canal con buffer.
+  2. `Seguir` sigue siendo no bloqueante: si el canal está lleno, la tarea queda en `tareas_asincronas` como `RUNNING` y no se pierde, porque `BAC-25C` la retoma.
+  3. Cerrar ordenadamente con el contexto del proceso.
+  4. Pruebas unitarias con un Proxmox falso.
+- **Criterio de éxito:**
+  - Con 50 tareas simultáneas nunca hay más de N consultas a Proxmox en paralelo.
+  - El fin de cada tarea se detecta en menos de 2 s.
+  - Las pruebas de `seguimiento_tareas_test.go` siguen en verde.
+
+  
+#### `FRN-19A` (ex `FRN-13A`) - Maquetado y medidores de recursos del Host (CPU / RAM / Almacenamiento)
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** ninguna (datos de prueba). Puede partir de la maqueta de `pages/Dashboard.tsx`.
+- **Entregable:** componentes reutilizables en `features/dashboard`, con Tailwind y shadcn:
+  - barras o gauges de CPU (% y núcleos);
+  - uso de RAM (GB usados sobre el total);
+  - uso de almacenamiento (GB o TB usados sobre el total).
+- **Criterio de éxito:** los componentes son responsive y renderizan valores de 0 % a 100 %, con cambio de color según la saturación: normal por debajo del 70 % y advertencia desde el 70 % (D3). Tienen pruebas de componente, incluidos los valores de borde 69 % y 70 %.
+
+#### `FRN-20A` (ex `FRN-14A`) - Tabla interactiva de inventario con badges de estado e IP (`RF-03`)
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.5 h
+- **Depende de:** empieza ya contra `GET /api/instances` (`BAC-14`: `id`, `name`, `type`, `node` y `status`) y `BAC-29`. Cierra con `FIX-39` (campos nuevos).
+- **Entregable:** tabla en `pages/Instances.tsx` con su servicio y su hook en `features/intances`. Reemplaza la maqueta y los archivos vacíos. Columnas:
+  - ID, Nombre, Tipo (`VM` / `LXC`);
+  - Estado (`Running` en verde, `Stopped` en gris);
+  - IP con botón para copiar al portapapeles;
+  - botonera de acciones (solo la estructura; los botones los conecta `FRN-15`).
+- **Criterio de éxito:** VMs y LXC se ven en la misma tabla. Si la IP es `null`, se muestra `No detectada`. La tabla tolera que los campos nuevos vengan en `null`.
+
+
+#### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-17C` (fase base: conexión con ticket y reconexión del mismo hook `useEvents`). Conviene hacerlas juntas. En el backend, `BAC-21C` ya está terminada.
+- **Entregable:**
+  - Sobre la conexión de `FRN-17C`:
+    - parsear cada mensaje como `RealtimeEvent` (`types/notifications.ts`) y descartar los que no cumplen el contrato;
+    - deduplicar por `id`;
+    - exponer una suscripción por tipo y por `recursoId`, por ejemplo con un provider montado una sola vez en el layout protegido.
+  - Eliminar el archivo vacío `hooks/useWebSocket.js` y actualizar el comentario desactualizado de `notifications.ts`.
+- **Criterio de éxito:**
+  - El Dashboard y la tabla reciben los `TASK_FINISHED` del backend en tiempo real con una sola conexión abierta por pestaña.
+  - Un evento repetido se procesa una sola vez.
+  - Las pruebas de `events-client.test.tsx` pasan.

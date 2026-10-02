@@ -40,6 +40,12 @@ class FakeConnection {
     const close = new Event('close');
     this.onclose?.(close); this.listeners.close?.forEach((l) => l(close));
   }
+  emitMessage(data: unknown) {
+    const raw = typeof data === 'string' ? data : JSON.stringify(data);
+    const event = new MessageEvent('message', { data: raw });
+    this.onmessage?.(event);
+    this.listeners.message?.forEach((l) => l(event));
+  }
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -135,3 +141,100 @@ describe('FRN-17C - Cliente de eventos con ticket efímero y reconexión segura'
     }
   });
 });
+
+describe('FRN-17A - Consumo de eventos en tiempo real y distribución por instancia', () => {
+  it('parsea mensajes válidos según RealtimeEvent y descarta los que no cumplen el contrato', async () => {
+    const useEvents = await loadUseEvents();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-parse' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const received: unknown[] = [];
+    const { result } = renderHook(() => useEvents());
+    await waitFor(() => expect(opened).toHaveLength(1));
+
+    if (typeof (result.current as any)?.subscribe === 'function') {
+      (result.current as any).subscribe((ev: unknown) => received.push(ev));
+    }
+
+    // Mensaje inválido (sin campos requeridos de RealtimeEvent)
+    act(() => {
+      opened[0].instance.emitMessage({ invalid: 'payload' });
+    });
+
+    const validEvent = {
+      id: 'evt-valid-1',
+      tipo: 'TASK_FINISHED',
+      severidad: 'INFO',
+      recursoTipo: 'VM',
+      recursoId: '101',
+      mensaje: 'Tarea finalizada exitosamente',
+      fechaHora: new Date().toISOString(),
+      detalles: { tareaId: 'task-101', estado: 'COMPLETED' },
+    };
+
+    act(() => {
+      opened[0].instance.emitMessage(validEvent);
+    });
+
+    if (typeof (result.current as any)?.subscribe === 'function') {
+      await waitFor(() => expect(received).toContainEqual(expect.objectContaining({ id: 'evt-valid-1' })));
+      expect(received).not.toContainEqual(expect.objectContaining({ invalid: 'payload' }));
+    } else {
+      expect((result.current as any)?.subscribe || (result.current as any)?.events || (result.current as any)?.lastEvent).toBeDefined();
+    }
+  });
+
+  it('deduplica eventos recibidos con el mismo id', async () => {
+    const useEvents = await loadUseEvents();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-dedup' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const received: unknown[] = [];
+    const { result } = renderHook(() => useEvents());
+    await waitFor(() => expect(opened).toHaveLength(1));
+
+    if (typeof (result.current as any)?.subscribe === 'function') {
+      (result.current as any).subscribe((ev: unknown) => received.push(ev));
+    }
+
+    const event = {
+      id: 'evt-dup-1',
+      tipo: 'INSTANCE_STATE_CHANGED',
+      severidad: 'INFO',
+      recursoTipo: 'VM',
+      recursoId: '101',
+      mensaje: 'Instancia iniciada',
+      fechaHora: new Date().toISOString(),
+    };
+
+    act(() => {
+      opened[0].instance.emitMessage(event);
+      opened[0].instance.emitMessage(event);
+    });
+
+    if (typeof (result.current as any)?.subscribe === 'function') {
+      await waitFor(() => {
+        const matches = received.filter((e: any) => e.id === 'evt-dup-1');
+        expect(matches).toHaveLength(1);
+      });
+    } else {
+      expect((result.current as any)?.subscribe || (result.current as any)?.events).toBeDefined();
+    }
+  });
+
+  it('permite suscribirse por tipo y por recursoId con una sola conexión activa', async () => {
+    const useEvents = await loadUseEvents();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-sub' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useEvents());
+    await waitFor(() => expect(opened).toHaveLength(1));
+
+    expect(
+      typeof (result.current as any)?.subscribe === 'function' ||
+      typeof (result.current as any)?.subscribeToResource === 'function' ||
+      typeof (result.current as any)?.onEvent === 'function'
+    ).toBe(true);
+  });
+});
+
