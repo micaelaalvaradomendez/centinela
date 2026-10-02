@@ -1,14 +1,16 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 02/10/2026
-**Alcance:** las tareas de [documentacion/actual.md](../documentacion/actual.md): las de la fase base, más `FIX-39`, `FIX-40` y la Ola 1 de la Etapa 1, con las decisiones D1 a D4 de `etapa1.md`. Se revisó si cada tarea tenía pruebas que evalúen su criterio de éxito, y se agregaron o corrigieron las que faltaban o estaban mal. También se corrió la regresión de [terminado.md](../documentacion/terminado.md) y [terminado-1.md](../documentacion/terminado-1.md).
+**Fecha de actualización:** 02/10/2026
+**Alcance:** comparación de los commits de `backend` y `frontend` con `origin/main`, y nueva ejecución de las suites de [test/back](back/README.md) y [test/front](front/package.json). El estado de tareas de las secciones siguientes corresponde a la verificación previa contra los últimos commits remotos documentados.
 
 | Componente | Revisión probada | Commits nuevos desde la verificación anterior |
 |---|---|---|
-| Backend | `0167b96` (último commit de `main`) | 1: `0167b96` "fix: distinguiendo timeout de proxmox" (**FIX-40**) |
-| Frontend | `4e0e7b7` (último commit de `main`) | 6 (PR #71: `SEC-03` con `AuthContext`, `PermissionGate` e `InstanceGate`; `FIX-29`) |
+| Backend | Checkout y `origin/main` en `0167b96` | 0. No hubo commits nuevos |
+| Frontend | Checkout y `origin/main` en `6fd2c7c` | 14: PR #72 corrige el rol `ADMIN`; PR #73 corrige el uso de `READ_ONLY` como rol |
 
-**Cómo se ejecutó:** cada submódulo se llevó al último commit de `origin/main`; ante un conflicto prevalece el remoto. El backend se corrió 3 veces, con el mismo resultado y sin contenedores residuales. El frontend se corrió 7 veces: 3 dieron el resultado de §1, y las otras 4, con la máquina sobrecargada, sumaron fallos por timeout en casos sin cambios (ver §4).
+**Actualización de submódulos:** backend ya estaba en `0167b96`; frontend avanzó de `4e0e7b7` a `6fd2c7c`. Ambos quedaron limpios y alineados con `origin/main`. El gitlink de frontend en el repositorio principal queda actualizado.
+
+**Comandos ejecutados sobre esos commits:** `(cd test/back && go test -v -count=1 ./...)` y `pnpm --dir test/front test` en frontend `6fd2c7c` (segunda corrida con `--reporter=verbose` para identificar fallos).
 
 ---
 
@@ -16,20 +18,14 @@
 
 | Suite | Casos | Aprueban | Fallan | Omitidos |
 |---|---:|---:|---:|---:|
-| Backend (`test/back`) | 55 | **43** | **10** | 2 |
-| Frontend (`test/front`) | 113 | **79** | **24** | 10 |
-| **Total** | **168** | **122** | **34** | **12** |
+| Backend (`test/back`, checkout `0167b96`) | 55 | **42** | **11** | 2 |
+| Frontend (`test/front`, checkout `6fd2c7c`) | 113 | **86** | **17** | 10 |
+| **Total** | **168** | **128** | **28** | **12** |
 
-- **Avance del frontend:**
-  - `FIX-29` pasa.
-  - `SEC-03` cumple su criterio: hook, `PermissionGate` y menú.
-  - **Pero `SEC-03` rompió `FRN-07` y `FRN-18`**, que ya estaban terminadas: la ficha del usuario usa `requiredRole="Admin"` en lugar de `"ADMIN"` (§2).
-- **Las 9 tareas de la Ola 1 y `FIX-40` ya tienen pruebas.** `INF-07B` pasa; las demás fallan porque todavía no están implementadas.
-- **Se corrigieron pruebas que no evaluaban bien** (§3):
-  - tres casos de `FRN-17A` pasaban sin verificar nada;
-  - `FRN-19A` y `FRN-20A` fijaban nombres que la tarea no pide;
-  - las de `BAC-22`, `BAC-23A`, `BAC-25A` y `FIX-40` buscaban texto en archivos fijos.
-- **Hallazgo de seguridad en la suite, corregido:** en una corrida, el backend de pruebas llegó al Proxmox real a través del DNS de Tailscale. Solo recibió `401`; no se ejecutó ninguna acción (§4).
+- En backend pasaron LOGIN-04, el recorrido front ↔ back, FIX-40 (`504 PROXMOX_TIMEOUT`), eventos SSE y el simulador. Los 10 fallos funcionales se concentran en BAC-18B, FIX-37, FIX-39 y las tareas BAC-29, BAC-22, BAC-23A y BAC-25A aún no implementadas.
+- El fallo restante de backend es ambiental: INF-06A no pudo iniciar Redis porque Docker reportó el nombre `centinela-redis` ocupado por el contenedor `3832f9021f5f` (estado `Created`). No se retiró ese contenedor.
+- En frontend fallaron 17 casos en 4 archivos; la salida de error detalla fallos de `instances-table.test.tsx`. La suite aprobó 86 casos y omitió los 10 de LOGIN-04, que se ejercitan desde backend. Las correcciones de permisos de PR #72/#73 ya están incorporadas.
+- El backend omitió INF-08B (IP no autorizada por Brevo) y el DELETE aún no implementado.
 
 ---
 
@@ -41,12 +37,12 @@
 
 | Tarea | Pruebas | Estado | Detalle |
 |---|---|---|---|
-| `SEC-03` Permisos reactivos | `navigation.test.tsx` (4) | 🟡 | **Cumple su criterio:**<br>• `useAuth()` (en `AuthContext.ts`, con `AuthProvider`) expone `isAdmin()`, `isOperator()`, `hasRole` y `canAccessInstance`;<br>• `PermissionGate` funciona;<br>• el OPERATOR no ve Usuarios ni Auditoría en el menú.<br>**Regresión:** `detailsUserPage.tsx:224`, `:231` y `:256` usan `<PermissionGate requiredRole="Admin">`, así que el ADMIN tampoco ve "Roles y permisos" ni "Gestionar acceso". Fallan 4 casos de `FRN-07`/`FRN-18` en `admin-users.test.tsx` |
+| `SEC-03` Permisos reactivos | `navigation.test.tsx` | ✅ | `useAuth()`, `PermissionGate` y el menú cumplen el criterio. La regresión por `requiredRole="Admin"` fue corregida en PR #72; ya no aparece en los fallos de esta corrida. |
 | `FIX-29` Complejidad de contraseña | `password-change` (3), `recover-password` (1) | ✅ | Pasan todos sus casos y los de `FRN-12` y `FIX-21` |
 | `FRN-17C` Cliente de eventos | `events-client.test.tsx` (4) | ❌ | No existe `useEvents` |
 | `FIX-36` Filtro "Acción" | `audit.test.tsx` (1) | ❌ | Sin cambios |
-| `FIX-38` `READ_ONLY` como rol | `admin-users` (1), `navigation` (1) | ❌ | El selector "Rol" sigue ofreciendo `READ_ONLY`, y `usePermissions` lo acepta como rol |
-| `FIX-42` (nuevo, en `futuro.md`) `useAuth` sin revisar el rol | `navigation` (1, **nuevo**) | ❌ | `useAuth().canAccessInstance`, de `SEC-03`, solo mira `instanciasPermitidas` |
+| `FIX-38` `READ_ONLY` como rol | `admin-users`, `navigation` | ✅ | PR #73 corrige el uso de `READ_ONLY` en permisos y pantallas de usuario. |
+| `FIX-42` (nuevo, en `futuro.md`) `useAuth` sin revisar el rol | `navigation` | ✅ | PR #73 corrige el tratamiento de `READ_ONLY` en `AuthContext` y la validación de autenticación. |
 | `BAC-18B` Índices, particiones y purga | `cierre_fase_base…` (2) | ❌ | Sin cambios |
 | `FIX-37` Nivel de acceso en el perfil | `resource_access…` (1) | ❌ | Sin cambios |
 | `FIX-39` Completar `BAC-21B` | `puente_etapa1…` (3) | ❌ | Faltan los campos, `shutdown`/`reboot` (404) y la auditoría de energía |
@@ -84,13 +80,13 @@
 
 ## 4. Hallazgos
 
-1. **Regresión de `SEC-03` en la ficha del usuario** (frontend `1156eaa`): `requiredRole="Admin"` en `detailsUserPage.tsx:224`, `:231` y `:256`. El rol del sistema es `ADMIN`, y `hasRole` compara exacto. Se puede registrar como FIX o resolver dentro de `SEC-03`, que sigue en `actual.md`.
+1. **Regresión de `SEC-03` en la ficha del usuario, corregida** (PR #72): se normalizó `requiredRole` a `ADMIN` en la ficha y los controles relacionados. La prueba ya no figura entre los fallos de la ejecución actual.
 2. **La suite pudo llegar al Proxmox real (corregido).**
    - **Qué pasó:** con el contenedor del stub detenido, el nombre `proxmox` no resolvía en Docker. El backend lo completó con el dominio de búsqueda del host, `tail6bb3f3.ts.net` (Tailscale), y se conectó a `100.81.49.19`, el Proxmox real, con el token falso del stub.
    - **Impacto:** todas las respuestas fueron `401` y no se ejecutó ninguna acción.
    - **Corrección:** la suite ya no detiene el stub (simula la caída con un `503`), y los backends de prueba tienen `dns_search: invalid`.
-3. **Duplicación en el frontend:** hay dos helpers de permisos, `usePermissions` (con `canOperateInstance`) y `useAuth` (con `hasRole` y su propio `canAccessInstance`), y deciden distinto. `FIX-38` corrige `usePermissions` y `FIX-42`, `useAuth`. Conviene que el equipo elija uno antes de `FRN-15`/`FRN-16`.
-4. **Estabilidad del frontend:** con la máquina sin memoria disponible y carga de 15 a 41 (procesos ajenos: `k3s server` y un `docker buildx` de otro proyecto), algunas corridas sumaron de 2 a 13 timeouts en casos sin cambios. El resultado de §1 se repitió en 3 corridas.
+3. **Helpers de permisos duplicados:** siguen existiendo `usePermissions` y `useAuth`; PR #73 corrige el tratamiento de `READ_ONLY`, pero no elimina la duplicación. Conviene unificar su responsabilidad antes de ampliar los controles de operación.
+4. **Nueva ejecución del 02/10 sobre los últimos commits:** frontend `6fd2c7c` terminó con 17 fallos y backend `0167b96` con 11; FIX-40 pasó. INF-06A volvió a chocar con el contenedor existente `centinela-redis`, que se dejó intacto. Fue una ejecución por suite, no una medición de estabilidad.
 
 ---
 
@@ -103,9 +99,8 @@
 ## 6. Pendientes
 
 - **Frontend:**
-  - `FIX-41`, la regresión de `SEC-03` (`requiredRole="Admin"`);
-  - `FIX-38` y `FIX-42` (el mismo defecto en `usePermissions` y en `useAuth`);
   - `FIX-36`;
+  - `FRN-20A` sigue fallando en las pruebas de inventario;
   - `FRN-17C` con `FRN-17A`, `FRN-19A` y `FRN-20A`.
 - **Backend:**
   - `BAC-18B`, `FIX-37` y `FIX-39`;
@@ -113,7 +108,7 @@
 - **Documentación (hecho el 02/10/2026):**
   - `FIX-40` pasó a `terminado.md`;
   - `FIX-29` pasó a `terminado.md`;
-  - `SEC-03` pasó a `terminado.md` como implementada con problema, y su regresión es `FIX-41`, en `futuro.md`.
+  - PR #72 corrige la regresión de `SEC-03`; PR #73 corrige los hallazgos `FIX-38` y `FIX-42`.
 - **Infraestructura:** aplicar `docker/nginx-edge.conf` en el CT 103 (`FIX-31` e `INF-07B`).
 
 ---
@@ -121,11 +116,14 @@
 ## 7. Cómo reproducir
 
 ```bash
-for s in backend frontend; do
-  git -C $s fetch origin --prune && git -C $s checkout -B main origin/main --force && git -C $s reset --hard origin/main
-done
-(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)   # incluye LOGIN-04 front ↔ back y el simulador
-pnpm --dir test/front test                                        # con la máquina cargada: pnpm --dir test/front vitest run --no-file-parallelism
+git -C backend fetch origin --prune
+git -C frontend/centinela fetch origin --prune
+git -C backend status --short --branch
+git -C frontend/centinela status --short --branch
+(cd test/back && go test -v -count=1 ./... | tee /tmp/back.log)  # incluye LOGIN-04 front ↔ back y el simulador
+pnpm --dir test/front test
 ```
+
+El procedimiento solo actualiza referencias remotas y conserva los checkouts locales. Si se necesita probar el `origin/main` remoto en lugar del commit local, hacerlo en worktrees/copias aisladas; no usar `checkout --force` ni `reset --hard` sobre submódulos con cambios.
 
 Detalle por suite: [test/back/RESULTADOS.md](back/RESULTADOS.md) y [test/front/RESULTADOS.md](front/RESULTADOS.md).
