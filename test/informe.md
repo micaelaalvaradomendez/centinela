@@ -41,8 +41,8 @@
 | `FIX-29` Complejidad de contraseña | `password-change` (3), `recover-password` (1) | ✅ | Pasan todos sus casos y los de `FRN-12` y `FIX-21` |
 | `FRN-17C` Cliente de eventos | `events-client.test.tsx` (4) | ❌ | No existe `useEvents` |
 | `FIX-36` Filtro "Acción" | `audit.test.tsx` (1) | ❌ | Sin cambios |
-| `FIX-38` `READ_ONLY` como rol | `admin-users`, `navigation` | ✅ | PR #73 corrige el uso de `READ_ONLY` en permisos y pantallas de usuario. |
-| `FIX-42` (nuevo, en `futuro.md`) `useAuth` sin revisar el rol | `navigation` | ✅ | PR #73 corrige el tratamiento de `READ_ONLY` en `AuthContext` y la validación de autenticación. |
+| `FIX-38` `READ_ONLY` como rol | `admin-users`, `navigation` | ✅ → `terminado.md` | PR #73 corrige el uso de `READ_ONLY` en permisos y pantallas de usuario. |
+| `FIX-42` `useAuth` sin revisar el rol | `navigation` | ✅ → `terminado.md` | PR #73 corrige el tratamiento de `READ_ONLY` en `AuthContext` y la validación de autenticación. |
 | `BAC-18B` Índices, particiones y purga | `cierre_fase_base…` (2) | ❌ | Sin cambios |
 | `FIX-37` Nivel de acceso en el perfil | `resource_access…` (1) | ❌ | Sin cambios |
 | `FIX-39` Completar `BAC-21B` | `puente_etapa1…` (3) | ❌ | Faltan los campos, `shutdown`/`reboot` (404) y la auditoría de energía |

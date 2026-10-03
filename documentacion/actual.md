@@ -4,33 +4,23 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!NOTE]
-> **Estado al 02/10/2026** (backend `0167b96`, frontend `4e0e7b7`; detalle en [test/informe.md](../test/informe.md)).
+> **Estado al 02/10/2026, 2ª verificación** (backend `0167b96`, frontend `6fd2c7c`; detalle en [test/informe.md](../test/informe.md)).
 > - **Pasaron a [`terminado.md`](terminado.md):**
->   - `FIX-29`, completa;
->   - `FIX-40`, completa (backend `0167b96`);
->   - `SEC-03`, implementada con problema. Sus correcciones son `FIX-41` (rompió la ficha del usuario) y `FIX-42` (`useAuth` no revisa el rol), en [`futuro.md`](futuro.md).
-> - Las demás tareas no tuvieron commits. Todas tienen pruebas automatizadas, y hoy fallan porque no están implementadas.
+>   - `FIX-29` y `FIX-40`, completas (1ª verificación);
+>   - `SEC-03`, implementada con problema (1ª verificación). Sus dos correcciones, `FIX-41` y `FIX-42`, quedaron resueltas por las PR #72 y #73 del frontend;
+>   - `FIX-38`, completa (PR #73, frontend `6fd2c7c`).
+> - El backend no tuvo commits nuevos. Las demás tareas siguen sin implementar: se revisó el código y no hay avance parcial. Todas tienen pruebas automatizadas, y hoy fallan.
 >
 > | Tarea | Área | Estado | Pruebas |
 > |---|---|---|---|
 > | `FRN-17C` | Frontend | No implementada: no existe `useEvents` | `events-client.test.tsx` (4) |
-> | `FIX-36` | Frontend | No implementado: el filtro "Acción" de Auditoría | `audit.test.tsx` (1) |
-> | `FIX-38` | Frontend | No implementado: el selector de rol ofrece `READ_ONLY`, y `usePermissions` lo acepta como rol (el mismo defecto en `useAuth` es `FIX-42`, en `futuro.md`) | `admin-users` (1), `navigation` (1) |
-> | `BAC-18B` | Backend | No implementada: faltan el índice parcial, las particiones y la purga horaria | `cierre_fase_base…` (2) |
-> | `FIX-37` | Backend | No implementado: falta `permisos` en `GET /account/profile` | `resource_access…` (1) |
-> | `FIX-39` | Backend | No implementado: campos de `GET /instances`, `shutdown`/`reboot` y auditoría de energía | `puente_etapa1…` (3) |
-> | `INF-07B` | Infraestructura | Referencia local verificada (`docker/nginx-edge.conf`); falta aplicarla en el CT 103 | `puente_etapa1…` (1, pasa) |
-> | `BAC-29`, `BAC-22`, `BAC-23A`, `BAC-25A` | Backend | No implementadas | `etapa1_acceptance…` (4) |
-> | `FRN-19A`, `FRN-20A`, `FRN-17A` | Frontend | No implementadas | `dashboard-metrics` (3), `instances-table` (5), `events-client` (4) |
-
----|---|---|---|
-> | `SEC-03` | Frontend | Parcial: `usePermissions` existe en `src/hooks/`; faltan `isOperator`, `hasRole`, `PermissionGate` y el menú | `navigation.test.tsx` (3) |
-> | `FIX-29` | Frontend | No implementado: la mayúscula, el mensaje de dígito y el mensaje de largo | `password-change` (3), `recover-password` (1) |
-> | `FRN-17C` | Frontend | No implementada: no existe `useEvents` | `events-client.test.tsx` (4) |
-> | `FIX-36` | Frontend | No implementado: el filtro "Acción" de Auditoría | `audit.test.tsx` (1) |
-> | `FIX-38` | Frontend | No implementado: el selector de rol ofrece `READ_ONLY`, y el hook lo acepta como rol | `admin-users` (1), `navigation` (1) |
+> | `FIX-36` | Frontend | No implementado: `Auditoria.tsx` no tiene el filtro "Acción" | `audit.test.tsx` (1) |
 > | `BAC-18B` | Backend | No implementada: faltan el índice parcial, las particiones y la purga horaria. El índice `(usuario_id, fecha_hora)` ya existe (`idx_auditoria_usuario_fecha`) | `cierre_fase_base…` (2) |
 > | `FIX-37` | Backend | No implementado: falta `permisos` en `GET /account/profile` | `resource_access…` (1) |
+> | `FIX-39` | Backend | No implementado: campos de `GET /instances`, `shutdown`/`reboot` (404) y auditoría de energía | `puente_etapa1…` (3) |
+> | `INF-07B` | Infraestructura | Referencia local verificada (`docker/nginx-edge.conf`); falta aplicarla en el CT 103 | `puente_etapa1…` (1, pasa) |
+> | `BAC-29`, `BAC-22`, `BAC-23A`, `BAC-25A` | Backend | No implementadas (`BAC-25A`: sigue una goroutine por tarea y `limiteSeguimiento` fijo en 10 min) | `etapa1_acceptance…` (4) |
+> | `FRN-19A`, `FRN-20A`, `FRN-17A` | Frontend | No implementadas: no existen `features/dashboard` ni `features/intances`, e `Instances.tsx` sigue sin consultar la API | `dashboard-metrics` (3), `instances-table` (5), `events-client` (4) |
 
 ---
 
@@ -119,22 +109,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - El caso `FIX-37…` pasa: con la 101 en `FULL_ACCESS` y la 102 en `READ_ONLY`, el perfil del OPERATOR informa esos niveles.
   - En el frontend, `canOperateInstance(101)` da `true` y `canOperateInstance(102)` da `false` con datos reales.
   - BAC-14, SEC-04 y LOGIN-04 siguen en verde.
-
-### `FIX-38` - "Solo lectura" (`READ_ONLY`) usado como rol de usuario (`SEC-03` / `FRN-18` / `BAC-09`) (Frontend)
-
-- **Área:** Frontend
-- **Asignados:** Cristian y Belinda
-- **Estimación:** 0,5 h
-- **Depende de:** `BAC-09`, `SEC-04` y `FRN-18`.
-- **Revisión (01/10/2026):** la versión anterior de este FIX también pedía mover `usePermissions()` a `src/context/`. **Ese punto se descartó: era un problema de la prueba.** El criterio de éxito de `SEC-03` es de comportamiento y no fija carpeta, y un hook que lee la sesión sin Provider (`useSyncExternalStore`) es válido. `navigation.test.tsx` ahora acepta el hook en `src/context/` o en `src/hooks/`, y `PermissionGate` también en `src/components/`.
-- **Problema y evidencia:** los roles de usuario son solo `ADMIN` y `OPERATOR` (`RF-01`, `BAC-09`). `READ_ONLY` es un **nivel de acceso por instancia** (`SEC-04`); `Users.tsx` incluso lo aclara en un comentario. En tres lugares del frontend se lo trata como rol:
-  1. `components/features/users/components/informationOfUser.tsx:56`: el selector **"Rol"** de la ficha del usuario ofrece `<option value="READ_ONLY">Solo lectura</option>`. Si el administrador lo elige y guarda, `PUT /api/admin/users/:id` envía `rol: "READ_ONLY"`, y el backend lo rechaza con `400`, porque valida `binding:"omitempty,oneof=ADMIN OPERATOR"` (`backend/internal/core/ports/user_port.go:119`). La UI ofrece una opción que nunca puede guardarse.
-  2. `pages/detailsUserPage.tsx:348`, en `formatRole`, traduce el rol `READ_ONLY` a "Solo lectura".
-  3. `hooks/usePermissions.ts:26`, en `canAccessInstance`, acepta `user.rol` en `['OPERATOR', 'READ_ONLY']`. Hoy es código muerto, porque el backend nunca emite ese rol, pero mantiene la confusión entre rol y nivel.
-- **Entregable:**
-  1. Quitar la opción `READ_ONLY` del selector de rol de `informationOfUser.tsx`. "Solo lectura" se asigna **por instancia**, en `rolesAndPermissions.tsx`, que ya lo hace bien.
-  2. Quitar el caso `READ_ONLY` de `formatRole` y la condición de rol `READ_ONLY` de `canAccessInstance`. Solo `ADMIN` y `OPERATOR` son roles; el nivel se evalúa en `permisos`.
-- **Criterio de éxito:** el selector de rol muestra solo "Operador" y "Administrador"; "Solo lectura" sigue disponible por instancia; un usuario con un rol desconocido no obtiene acceso a ninguna instancia. Los casos de `FRN-05`, `FRN-06B`, `FRN-18` y `FIX-30` siguen en verde.
 
 ### `FIX-39` - Completar `BAC-21B`: campos de `GET /api/instances`, auditoría de energía, y `shutdown` y `reboot` (Backend)
 

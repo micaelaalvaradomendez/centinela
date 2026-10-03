@@ -1400,6 +1400,8 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 > **Problema:** al integrar el gate en la ficha del usuario rompió dos tareas terminadas. `detailsUserPage.tsx:224`, `:231` y `:256` usan `<PermissionGate requiredRole="Admin">`; como el rol es `ADMIN` y `hasRole` compara exacto, **el administrador deja de ver la pestaña "Roles y permisos" y el botón "Gestionar acceso"**. Fallan 4 casos de `FIX-14`/`FRN-07` y `FRN-18` en `admin-users.test.tsx`. La corrección es **`FIX-41`**, en [`futuro.md`](futuro.md).
 >
 > **Segundo problema:** el nuevo `useAuth().canAccessInstance` solo mira `instanciasPermitidas` y no revisa el rol, así que también acepta un rol `READ_ONLY`. La corrección es **`FIX-42`**, en [`futuro.md`](futuro.md). El mismo defecto en `usePermissions` es `FIX-38`, en `actual.md`.
+>
+> **Actualización (02/10/2026, 2ª verificación, frontend `6fd2c7c`):** los dos problemas quedaron resueltos. `FIX-41` (PR #72) y `FIX-42` y `FIX-38` (PR #73) están al final de este archivo.
 
 
 - **Área:** Frontend
@@ -1442,3 +1444,69 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   - Con Proxmox sin responder dentro del timeout del cliente: `504` con `errorCode: PROXMOX_TIMEOUT`.
   - Con Proxmox caído o con el token rechazado: `502` con `PROXMOX_UNAVAILABLE`.
   - `409 INSTANCE_BUSY` sigue igual (`FIX-33`), y `BAC-14`, `SEC-04` y `LOGIN-04` siguen en verde.
+
+---
+
+# Verificación del 02/10/2026 (2ª): tareas movidas desde `actual.md` y `futuro.md`
+
+Evidencia en [test/informe.md](../test/informe.md). Revisiones probadas: backend `0167b96` y frontend `6fd2c7c` (14 commits nuevos, PR #72 y #73). Además de las pruebas, se revisó el diff `4e0e7b7..6fd2c7c`: `tsc -b` y `eslint` sobre los archivos tocados no informan errores, y no queda ningún uso de `READ_ONLY` como rol ni de `requiredRole="Admin"`.
+
+### `FIX-38` - "Solo lectura" (`READ_ONLY`) usado como rol de usuario (`SEC-03` / `FRN-18` / `BAC-09`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 02/10/2026, frontend `6fd2c7c`, PR #73: commits `369fc05`, `b2a5161`, `f65fa67`, `1da04a1`, `7d9e33a`, `fb60cb2`, `8a111cb` y `6377790`).**
+> - Se quitó la opción `READ_ONLY` de los selectores de rol de `informationOfUser.tsx` y `rolesAndPermissions.tsx`, y la tarjeta "Solo lectura" de los roles de `CrearUsuarios.tsx`. "Solo lectura" sigue disponible **por instancia**, en `rolesAndPermissions.tsx`.
+> - `formatRole` (`detailsUserPage.tsx`) ya no traduce un rol `READ_ONLY`.
+> - `usePermissions().canAccessInstance` exige el rol `OPERATOR` (o `ADMIN`) y evalúa el nivel en `permisos`.
+> - Va más allá del entregable: un tipo `UserRole = 'ADMIN' | 'OPERATOR'` (`authentication.ts`) y un guard `isUserRole`, que se aplica al perfil, al detalle del usuario y al `PUT /api/admin/users/:id`. Un rol desconocido se rechaza antes de llegar al backend.
+> - **Pruebas:** pasan los casos `FIX-38…` de `navigation.test.tsx` y `admin-users.test.tsx` (*"el selector Rol de la ficha ofrece solo ADMIN y OPERATOR"*), y siguen en verde `FRN-05`, `FRN-06B`, `FRN-18` y `FIX-30`. Las dos suites pasan 29/29.
+
+- **Área:** Frontend
+- **Asignados:** Cristian y Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-09`, `SEC-04` y `FRN-18`.
+- **Problema y evidencia:** los roles de usuario son solo `ADMIN` y `OPERATOR` (`RF-01`, `BAC-09`). `READ_ONLY` es un **nivel de acceso por instancia** (`SEC-04`). En tres lugares del frontend se lo trataba como rol: el selector "Rol" de `informationOfUser.tsx` (el backend rechaza ese valor con `400`), `formatRole` en `detailsUserPage.tsx`, y `usePermissions().canAccessInstance`, que aceptaba `user.rol` en `['OPERATOR', 'READ_ONLY']`.
+- **Entregable:**
+  1. Quitar la opción `READ_ONLY` del selector de rol de `informationOfUser.tsx`.
+  2. Quitar el caso `READ_ONLY` de `formatRole` y la condición de rol `READ_ONLY` de `canAccessInstance`.
+- **Criterio de éxito:** el selector de rol muestra solo "Operador" y "Administrador"; "Solo lectura" sigue disponible por instancia; un usuario con un rol desconocido no obtiene acceso a ninguna instancia. Los casos de `FRN-05`, `FRN-06B`, `FRN-18` y `FIX-30` siguen en verde.
+
+### `FIX-41` - Regresión: `requiredRole="Admin"` oculta "Roles y permisos" al administrador (`SEC-03` / `FRN-07` / `FRN-18`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 02/10/2026, frontend `6fd2c7c`, PR #72: commits `3269dbd`, `f5e3c61`, `a351564` y `88f31b6`).**
+> - `detailsUserPage.tsx` usa `requiredRole="ADMIN"` en la pestaña "Roles y permisos", su contenido y el botón "Gestionar acceso".
+> - También cumple el entregable opcional: `PermissionGate.jsx` pasó a `PermissionGate.tsx`, y `requiredRole` y `hasRole` usan el tipo `UserRole`. Un rol inexistente como `"Admin"` ahora es un error de compilación.
+> - **Pruebas:** vuelven a pasar los 4 casos de `FIX-14`/`FRN-07` y `FRN-18` en `admin-users.test.tsx`, y siguen en verde `SEC-03`, `FRN-05` y `FRN-06B`.
+
+- **Área:** Frontend
+- **Asignada:** Luz (autora de `1156eaa`)
+- **Estimación:** 0,5 h
+- **Depende de:** `SEC-03`.
+- **Problema y evidencia:** el commit `1156eaa` envolvió en `PermissionGate` la pestaña "Roles y permisos", su contenido y el botón "Gestionar acceso" de `detailsUserPage.tsx` con `requiredRole="Admin"`. Como `hasRole` compara exacto con `ADMIN`, el gate daba `false` también para el administrador, y se rompían `FRN-07`/`FIX-14` y `FRN-18`.
+- **Entregable:**
+  1. Usar `requiredRole="ADMIN"` en las tres líneas.
+  2. Opcional: que `PermissionGate` o `hasRole` rechacen un rol que no existe, por ejemplo con un tipo `'ADMIN' | 'OPERATOR'`.
+- **Criterio de éxito:** el ADMIN ve "Roles y permisos" y "Gestionar acceso" en la ficha, y el OPERATOR no. Vuelven a pasar los 4 casos de `admin-users.test.tsx`, y siguen en verde los de `SEC-03`, `FRN-05` y `FRN-06B`.
+
+### `FIX-42` - `useAuth().canAccessInstance` no revisa el rol (`SEC-03`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 02/10/2026, frontend `6fd2c7c`, PR #73, commit `fb60cb2`).**
+> - `useAuth().canAccessInstance` da `true` al `ADMIN` para cualquier VMID, y al `OPERATOR` solo para sus instancias (`instanciasPermitidas` o `permisos` con `FULL_ACCESS`/`READ_ONLY`). Cualquier otro rol obtiene `false`.
+> - **Pruebas:** pasa el caso `FIX-42…` de `navigation.test.tsx`, y siguen en verde los de `SEC-03` y `FIX-30`.
+>
+> **Observación (no bloquea):** el entregable 2 pedía unificar la regla o dejar un solo helper. Las dos reglas ahora deciden igual, pero siguen siendo dos implementaciones: `useAuth().canAccessInstance` y `usePermissions().canAccessInstance`, y `canOperateInstance` solo existe en `usePermissions`. No es un error, pero conviene que `FRN-15` y `FRN-16` usen siempre el mismo helper.
+
+- **Área:** Frontend
+- **Asignada:** Luz (autora de `1156eaa` y `47e5c19`)
+- **Estimación:** 0,5 h
+- **Depende de:** `SEC-03`.
+- **Problema y evidencia:** `useAuth().canAccessInstance(vmid)` devolvía `(user?.instanciasPermitidas ?? []).includes(vmid)` sin revisar el rol: un rol inexistente como `READ_ONLY` obtenía acceso, y el ADMIN recibía `false` para las instancias que no figuraban en `instanciasPermitidas`.
+- **Entregable:**
+  1. En `useAuth().canAccessInstance`, dar `true` siempre al `ADMIN`, y al `OPERATOR` solo para sus instancias asignadas. Cualquier otro rol, `false`.
+  2. Unificar la regla con `usePermissions().canAccessInstance`, o dejar un solo helper.
+- **Criterio de éxito:**
+  - Pasa el caso `FIX-42…`.
+  - Siguen en verde los casos de `SEC-03` (hook, `PermissionGate` y menú) y el de `FIX-30`.
+  - El ADMIN obtiene `true` en `canAccessInstance` para cualquier VMID.

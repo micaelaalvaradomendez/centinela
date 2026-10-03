@@ -106,8 +106,8 @@ Cada decisión está aplicada en la tarea de esta etapa que la implementa. Si un
 | `FIX-39` (completa `BAC-21B`) | ❌ (`BAC-21B` está en `terminado.md` con problema) | Cierre de `BAC-22B`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25C`, `BAC-27`, `FRN-16` y `FRN-20A` | Bloqueante |
 | `FIX-40` (D2: `504 PROXMOX_TIMEOUT`) | ✅ (en `terminado.md`, 02/10, backend `0167b96`) | Ya no frena: `FRN-16` y `BAC-22` pueden usar `PROXMOX_TIMEOUT` | — |
 | `FIX-37` | ❌ | Cierre de `FRN-15`, `FRN-16` e `INT-02`, porque sin ella ningún OPERATOR puede operar | Bloqueante |
-| `SEC-03` | ✅ con problema (en `terminado.md`, 02/10). `useAuth()` y `PermissionGate` funcionan; su regresión en la ficha del usuario es `FIX-41` | Ya no frena: `FRN-15` y `FRN-16` pueden usar `PermissionGate`. `FIX-41` no frena nada de la Etapa 1 | — |
-| `FIX-38` | ❌ | Cierre de `FRN-15` (`canAccessInstance` no debe aceptar `READ_ONLY` como rol) | Bloqueante |
+| `SEC-03` | ✅ (en `terminado.md`, 02/10). `useAuth()` y `PermissionGate` funcionan; su regresión (`FIX-41`) y `FIX-42` se resolvieron en el frontend `6fd2c7c` | Ya no frena: `FRN-15` y `FRN-16` pueden usar `PermissionGate` | — |
+| `FIX-38` | ✅ (en `terminado.md`, 02/10, frontend `6fd2c7c`) | Ya no frena `FRN-15` | — |
 | `FRN-17C` | ❌ | `FRN-17A` y `FRN-16B`: es la conexión del mismo hook. Conviene hacerlas juntas | Bloqueante |
 | `BAC-18B` | ❌ | `BAC-27`: el particionamiento cambia el esquema de `auditoria`, así que tiene que estar mergeado antes de sumar los registros de la etapa | Bloqueante blanda |
 | `INF-06B`, `INF-08A` | En `terminado.md` sin verificar | `INT-03` | Bloqueante |
