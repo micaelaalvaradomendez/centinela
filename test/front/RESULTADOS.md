@@ -1,24 +1,22 @@
 # Resultados de las pruebas frontend
 
-**Fecha:** 02/10/2026. **Frontend:** submódulo en `4e0e7b7` (último commit de `main`, 6 commits nuevos: PR #71 con `SEC-03` y `FIX-29`). **Comando:** `pnpm test`.
-
-**Estabilidad:** de 7 corridas, el resultado de abajo se repitió en 3. Durante la verificación, la máquina tenía la memoria agotada (0 GB disponibles) y una carga de 15 a 41 por procesos ajenos a la suite (`k3s server` y un `docker buildx` de otro proyecto). Otras corridas sumaron entre 2 y 13 fallos por **timeout** (5 s), siempre en casos que no se modificaron. Si se repite, conviene correr con la máquina libre o con `pnpm vitest run --no-file-parallelism`.
+**Fecha:** 03/10/2026. **Frontend:** submódulo en `070e96b` (último commit de `main`, incluye PR #72 a #77: `SEC-03`, `FIX-38`, `FIX-42`, `FIX-36` y niveles de acceso a instancias). **Comando:** `pnpm test`.
 
 | Métrica | Valor |
 |---|---:|
 | Pruebas | 113 |
-| Aprueban | 79 |
-| Fallan | **24** |
+| Aprueban | **87** |
+| Fallan | **16** |
 | Omitidas | 10 (`login04-e2e.test.ts`: se ejecuta desde `test/back`) |
 
 ## Por archivo
 
 | Archivo | Pruebas | Fallan | Tareas |
 |---|---:|---:|---|
-| `admin-users.test.tsx` | 20 | 5 | FRN-05, FRN-06, FRN-06B, FIX-25, FIX-27 ✅; **FIX-14/FRN-07 y FRN-18** ❌ (4, regresión de `SEC-03`); **FIX-38** ❌ |
-| `navigation.test.tsx` | 9 | 2 | FRN-03, **SEC-03** (hook, `PermissionGate` y menú), FIX-30 ✅; **FIX-38** ❌ (`usePermissions`); **FIX-42** ❌ (`useAuth`, nuevo) |
-| `password-change.test.tsx`, `recover-password.test.tsx` | 19 | 0 | FRN-10, FRN-12, FIX-21, **FIX-29** ✅ (pasa desde `4e0e7b7`) |
-| `audit.test.tsx` | 7 | 1 | FRN-14 / FIX-22 ✅; **FIX-36** ❌ |
+| `admin-users.test.tsx` | 20 | 0 | FRN-05, FRN-06, FRN-06B, FIX-25, FIX-27, SEC-03 (PR #72), FIX-38 (PR #73) ✅ |
+| `navigation.test.tsx` | 9 | 0 | FRN-03, SEC-03, FIX-30, FIX-38, FIX-42 ✅ |
+| `password-change.test.tsx`, `recover-password.test.tsx` | 19 | 0 | FRN-10, FRN-12, FIX-21, FIX-29 ✅ |
+| `audit.test.tsx` | 7 | 0 | FRN-14 / FIX-22, FIX-36 (PR #77) ✅ |
 | `events-client.test.tsx` | 8 | 8 | **FRN-17C** ❌ (4) y **FRN-17A** ❌ (4): no existe `useEvents` |
 | `dashboard-metrics.test.tsx` | 3 | 3 | **FRN-19A** ❌: no hay medidores en `features/dashboard` |
 | `instances-table.test.tsx` | 5 | 5 | **FRN-20A** ❌: `Instances.tsx` es una maqueta estática |
@@ -28,13 +26,9 @@
 
 | Tarea | Causa en el código |
 |---|---|
-| **Regresión de SEC-03** en FRN-07 / FRN-18 | `detailsUserPage.tsx:224`, `:231` y `:256` usan `<PermissionGate requiredRole="Admin">`. El rol es `ADMIN`, así que la pestaña "Roles y permisos" y "Gestionar acceso" quedan ocultas también para el administrador. Las líneas 174 y 180 usan `"ADMIN"` y funcionan |
-| FIX-38 | `informationOfUser.tsx` sigue ofreciendo `READ_ONLY` en el selector "Rol", y `usePermissions().canAccessInstance` lo acepta como rol |
-| FIX-42 | `useAuth().canAccessInstance` (de `SEC-03`) solo mira `instanciasPermitidas`, sin revisar el rol |
-| FIX-36 | `Auditoria.tsx` no tiene el filtro "Acción" |
 | FRN-17C / FRN-17A | No existe `useEvents`; `hooks/useWebSocket.js` sigue vacío |
 | FRN-19A | `features/dashboard` solo tiene `DashCard.jsx`, vacío |
-| FRN-20A | `Instances.tsx` no consulta `GET /api/instances` |
+| FRN-20A | `Instances.tsx` no consulta `GET /api/instances` ni renderiza filas interactivas |
 
 ## Cambios en la suite (02/10/2026)
 

@@ -30,6 +30,13 @@ function renderAppAs(rol: 'ADMIN' | 'OPERATOR', path: string) {
   return router;
 }
 
+// Auditoria usa useGuardiaRol (useNavigate + sesión en sessionStorage): necesita router y una sesión de ADMIN.
+function renderAuditoria() {
+  window.sessionStorage.setItem('centinela_user', JSON.stringify({ id: 'user-admin', rol: 'ADMIN' }));
+  const router = createMemoryRouter([{ path: '/auditoria', element: <Auditoria /> }], { initialEntries: ['/auditoria'] });
+  return render(withAppProviders(<RouterProvider router={router} />));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -44,7 +51,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<Auditoria />);
+    renderAuditoria();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -73,7 +80,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<Auditoria />);
+    renderAuditoria();
 
     const table = await screen.findByRole('table');
     expect(await within(table).findByText('Ada Lovelace')).toBeVisible();
@@ -93,12 +100,16 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<Auditoria />);
+    renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     // Cambiar filtro de acción
     const accionInput = screen.getByLabelText(/acción/i);
-    await user.type(accionInput, 'LOGIN');
+    if (accionInput instanceof HTMLSelectElement) {
+      await user.selectOptions(accionInput, 'LOGIN');
+    } else {
+      await user.type(accionInput, 'LOGIN');
+    }
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls as [string, RequestInit][];
@@ -113,7 +124,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<Auditoria />);
+    renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     await user.selectOptions(screen.getByLabelText('Resultado'), 'FALLA');
@@ -139,7 +150,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<Auditoria />);
+    renderAuditoria();
     await screen.findByRole('table');
     await user.click(screen.getByRole('button', { name: 'Página siguiente' }));
 
@@ -160,7 +171,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
-    render(<Auditoria />);
+    renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     const exportButton = await screen.findByRole('button', { name: /exportar/i });

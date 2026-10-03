@@ -1510,3 +1510,72 @@ Evidencia en [test/informe.md](../test/informe.md). Revisiones probadas: backend
   - Pasa el caso `FIX-42…`.
   - Siguen en verde los casos de `SEC-03` (hook, `PermissionGate` y menú) y el de `FIX-30`.
   - El ADMIN obtiene `true` en `canAccessInstance` para cualquier VMID.
+
+### `FIX-36` - Regresión: restaurar el filtro "Acción" en Auditoría (`FRN-14` / RF-08) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 03/10/2026, frontend `070e96b`, PR #77, commits `2057fc0` y `fc27ba2`).**
+> - `Auditoria.tsx` restaura el selector de filtro por acción con `aria-label="Acción"`, sincronizando el estado reactivo `accion`, el parámetro `accion` en la consulta `GET /api/admin/audit` y la exportación a CSV.
+> - **Pruebas:** `test/front/audit.test.tsx` pasa 7/7 en verde.
+
+- **Área:** Frontend
+- **Asignado:** Belinda y Luz (PR #77)
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-14` y `BAC-18`.
+- **Problema y evidencia:** el commit `56b88f5` quitó de `Auditoria.tsx` el estado `accion`, el campo `aria-label="Acción"` y el `params.set('accion', …)` de la consulta. RF-08 exige filtros por acción y el backend lo soporta.
+- **Entregable:** Restaurar en `Auditoria.tsx` el filtro "Acción" con su estado y parámetros en consulta y exportación CSV.
+- **Criterio de éxito:** `audit.test.tsx` pasa 7/7 en verde.
+
+### `FIX-37` - Informar el nivel de acceso por instancia en `GET /account/profile` (`FIX-30` / `FRN-18` / `SEC-04`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 03/10/2026, backend `4e204f1`, commit `4e204f1`).**
+> - `ports.UsuarioDetalleDTO` incluye `Permisos []PermisoInstanciaDTO` (`internal/core/ports/user_port.go`), proyectando `permisos: [{ vmid, nivelAcceso }]` leído desde `permisos_instancia` para `GET /account/profile` y manteniendo retrocompatibilidad con `instanciasPermitidas: []int`.
+> - **Pruebas:** en `test/back/resource_access_acceptance_test.go`, el caso *"FIX-37 FRN-18 GET /account/profile expone el nivel de acceso por instancia para canOperateInstance"* pasa en verde. `canOperateInstance` en el frontend recibe datos reales para discriminar `FULL_ACCESS` y `READ_ONLY`.
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1 h
+- **Depende de:** `SEC-04` y `FIX-30`.
+- **Problema y evidencia:** `GET /account/profile` solo enviaba `instanciasPermitidas: []int`. `canOperateInstance(vmid)` en frontend requería `perfil.permisos: [{ vmid, nivelAcceso }]`, por lo que devolvía `false` para todo `OPERATOR` aunque tuviera `FULL_ACCESS`.
+- **Entregable:**
+  1. Agregar a la respuesta de `GET /account/profile` el campo `permisos: [{ vmid, nivelAcceso: "FULL_ACCESS" | "READ_ONLY" }]`.
+  2. Mantener `instanciasPermitidas`.
+- **Criterio de éxito:** el caso `FIX-37…` pasa y el perfil informa los niveles de acceso.
+
+### `FIX-39` - Completar `BAC-21B`: campos de `GET /api/instances`, auditoría de energía, y `shutdown` y `reboot` (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 03/10/2026, backend `4e204f1`, commits `b8d2631` y `42e94ca`).**
+> - `ports.InstanciaListadaDTO` extiende los campos con `ip`, `cpuUsage`, `ramUsage`, `maxRam` y `activeTask` (inicialmente en `null`) y `nivelAcceso` calculado en tiempo real.
+> - Se implementaron `shutdown` y `reboot` en `ProxmoxPort`, `client.go` e `instance_handler.go`, protegidos con `FULL_ACCESS` y registrados en `tareas_asincronas`.
+> - Cada orden de ciclo de vida se audita en la tabla `auditoria` con resultado `PENDING` y el `upid` en los detalles.
+> - **Pruebas:** en `test/back/puente_etapa1_acceptance_test.go`, pasan en verde *"BAC-21B GET /api/instances agrega campos sin romper el contrato de BAC-14"*, *"FIX-39 BAC-21B shutdown y reboot exigen FULL_ACCESS y quedan en tareas_asincronas"* y *"BAC-21B las acciones de energía quedan en auditoria con el upid de la tarea"*.
+
+- **Área:** Backend
+- **Asignados:** Tayra y Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-21B`.
+- **Entregable:**
+  1. Extender `ports.InstanciaListadaDTO` con campos nuevos de telemetría y `nivelAcceso`.
+  2. Auditar cada acción de energía en `auditoria` con estado `PENDING` y `upid`.
+  3. Agregar `shutdown` y `reboot` a `ProxmoxPort` con `RequireInstanceAccess(..., FULL_ACCESS)`.
+- **Criterio de éxito:** pasan los 3 casos de prueba en `puente_etapa1_acceptance_test.go`.
+
+### `BAC-18B` - Índice parcial y purga en `sesiones_activas`, y particionamiento trimestral en `auditoria` (PostgreSQL)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 03/10/2026, backend `4e204f1`, commit `96106a6`).**
+> - **Completado exitosamente:**
+>   - Particionamiento declarativo trimestral por rango de `fecha_hora` sobre la tabla `auditoria` (`PARTITION BY RANGE (fecha_hora)`) implementado en `internal/adapters/secondary/postgres/db.go`, creando las particiones `auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1` y `auditoria_default`, con índices compuestos `(fecha_hora DESC, accion, resultado)` y `(usuario_id, fecha_hora DESC)`.
+>   - Rutina de purga periódica implementada mediante `PurgaWorker` (`internal/adapters/secondary/postgres/purga_worker.go`) que ejecuta `DELETE FROM sesiones_activas WHERE activa = false OR fecha_expiracion < NOW()`.
+> - **Problemas detectados (se corrigen en `FIX-44` en `futuro.md`):**
+>   1. El índice parcial `idx_sesiones_activas_vigentes` se creó sobre `(usuario_id, fecha_expiracion) WHERE activa = true`, omitiendo la columna `jti_access`. Como el middleware de autenticación busca las sesiones por su `jti_access`, el índice no cubre la consulta crítica del sistema.
+>   2. `PurgaWorker` recibe el intervalo como parámetro configurable (`w.intervalo`), mientras que la verificación estática de la suite de pruebas busca que el ticker horario (`time.Hour`) se instancie directamente en el worker.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2 h
+- **Depende de:** `BAC-17B`, `FIX-23`.
+- **Criterio de éxito original:** sesiones inactivas purgadas automáticamente; tabla `auditoria` particionada por rangos trimestrales conservando inmutabilidad append-only.
+

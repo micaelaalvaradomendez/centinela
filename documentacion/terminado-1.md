@@ -111,3 +111,44 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
   2. Para un LXC apagado, responder `200` con `{"data": null}`.
   3. Agregar ambos casos a `cmd/proxmox-simulador/simulador_test.go`.
 - **Criterio de éxito:** la comparación contra el Proxmox real de `lxc/{vmid}/interfaces` no muestra diferencias de tipos, y un contenedor apagado responde igual en los dos.
+
+---
+
+# Verificación del 03/10/2026
+
+#### `INF-07B` (`BRG-03`) - Configuración de Nginx para SSE en el servidor (`RNF-06`)
+
+> [!NOTE]
+> **Estado: Referencia local completada (verificado el 03/10/2026, backend `4e204f1`).**
+> - La configuración en `docker/nginx-edge.conf` establece `proxy_http_version 1.1`, `proxy_buffering off` y `proxy_read_timeout 1h`.
+> - **Pruebas:** en `test/back/puente_etapa1_acceptance_test.go`, el caso *"INF-07B BRG-03 /api/events a través del borde Nginx entrega TASK_FINISHED sin buffer"* pasa en verde (entrega en ~1.0 s).
+> - **Pendiente operacional:** aplicar esta configuración en el contenedor Nginx del CT 103 en Proxmox con certificados reales, lo cual se validará en `INT-03`.
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-31` y `BAC-21C`.
+- **Entregable:**
+  1. Llevar al Nginx del CT 103 la configuración de `docker/nginx-edge.conf` con certificados TLS.
+  2. Confirmar que `/api/events` no retiene buffer y tolera conexiones abiertas sin tráfico.
+- **Criterio de éxito:** un cliente conectado a `/api/events` recibe `TASK_FINISHED` sin retardo y la conexión no se cierra por inactividad.
+
+#### `FRN-20A` (ex `FRN-14A`) - Tabla interactiva de inventario con badges de estado e IP (`RF-03`) (Frontend)
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 03/10/2026, frontend `070e96b`, PR #74, commit `52cd282`).**
+> - **Completado:**
+>   - Reemplaza la maqueta estática de `Instances.tsx` con integración reactiva a `useInstances.ts` y `instanceService.ts`, consultando dinámicamente `GET /instances` con el token Bearer del usuario autenticado.
+>   - Filtra instancias por permisos con `canAccessInstance(instance.id)` y monta `InstanceAction.tsx` con modales de confirmación para `start` y `stop`.
+> - **Problemas detectados (se corrigen en `FIX-43` en `futuro-1.md`):**
+>   1. La celda de nombre renderiza `{instance.name} ({instance.id})` en un único bloque de texto, lo que rompe las consultas de prueba y la separación semántica entre nombre e identificador numérico.
+>   2. La columna de IP renderiza un guión fijo `—` en lugar de mostrar la IP de la instancia o `"No detectada"` cuando viene en `null`, y no cuenta con botón para copiar al portapapeles.
+>   3. El estado de la instancia se muestra como texto simple `{instance.status}` sin badge ni clases visuales diferenciadas (verde para Running, gris para Stopped).
+>   4. La estructura de la fila no provee la botonera de acciones completa cuando no hay acciones inmediatas o falta la IP.
+> - **Pruebas:** `test/front/instances-table.test.tsx` falla 5/5 casos debido a estas discrepancias de maquetado e interfaz.
+
+- **Área:** Frontend
+- **Asignada:** Luz (implementación inicial de Cristian en PR #74)
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-14`, `BAC-29`, `FIX-39`.
+- **Criterio de éxito original:** VMs y LXC en la misma tabla; IP null muestra "No detectada"; tolera campos nuevos en null; badges de estado diferenciados.
