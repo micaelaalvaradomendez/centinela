@@ -3,7 +3,7 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!NOTE]
-> **Estado al 03/10/2026** (backend `4e204f1`, frontend `070e96b`; detalle en [test/informe.md](../test/informe.md)).
+> **Estado al 03/10/2026** (backend `4e204f1`, frontend `907efe5`; detalle en [test/informe.md](../test/informe.md)).
 > - **Pasaron a [`terminado.md`](terminado.md):**
 >   - `FIX-29` y `FIX-40`, completas;
 >   - `SEC-03`, `FIX-41`, `FIX-42` y `FIX-38`, completas;
@@ -12,7 +12,8 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 >   - `BAC-18B`, implementada con problemas en backend `4e204f1` (particionamiento trimestral OK, purga periódica OK; falta indexar `jti_access`, derivado a `FIX-44` en `futuro.md`).
 > - **Pasaron a [`terminado-1.md`](terminado-1.md):**
 >   - `INF-07B`, referencia local verificada (pendiente despliegue CT 103 en `INT-03`);
->   - `FRN-20A`, implementada con problemas en frontend `070e96b` (integración a la API y modales implementados; maquetado, IP y badges derivados a `FIX-43` en `futuro-1.md`).
+>   - `FRN-20A`, implementada con problemas en frontend `070e96b` (integración a la API y modales implementados; maquetado, IP y badges derivados a `FIX-43` en `futuro-1.md`);
+>   - `FRN-19A`, completa (PR #78, frontend `907efe5`, medidores de host en `ResourceMeter.tsx`).
 > - **Tareas que permanecen en este archivo (sin implementar en los submódulos):**
 >
 > | Tarea | Área | Estado | Pruebas |
@@ -22,7 +23,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > | `BAC-22` | Backend | No implementada: falta `GET /api/node/status` y telemetría en Redis | `etapa1_acceptance…` (1) |
 > | `BAC-23A` | Backend | No implementada: falta resolución de IP por guest agent / LXC | `etapa1_acceptance…` (1) |
 > | `BAC-25A` | Backend | No implementada: falta pool acotado de workers (`UPID_WORKERS`) | `etapa1_acceptance…` (1) |
-> | `FRN-19A` | Frontend | No implementada: medidores de host en `features/dashboard` vacíos | `dashboard-metrics` (3) |
 > | `FRN-17A` | Frontend | No implementada: consumo y distribución de eventos en front | `events-client` (4) |
 
 ---
@@ -126,17 +126,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - Con 50 tareas simultáneas nunca hay más de N consultas a Proxmox en paralelo.
   - El fin de cada tarea se detecta en menos de 2 s.
   - Las pruebas de `seguimiento_tareas_test.go` siguen en verde.
-
-#### `FRN-19A` (ex `FRN-13A`) - Maquetado y medidores de recursos del Host (CPU / RAM / Almacenamiento)
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.0 h
-- **Depende de:** ninguna (datos de prueba). Puede partir de la maqueta de `pages/Dashboard.tsx`.
-- **Entregable:** componentes reutilizables en `features/dashboard`, con Tailwind y shadcn:
-  - barras o gauges de CPU (% y núcleos);
-  - uso de RAM (GB usados sobre el total);
-  - uso de almacenamiento (GB o TB usados sobre el total).
-- **Criterio de éxito:** los componentes son responsive y renderizan valores de 0 % a 100 %, con cambio de color según la saturación: normal por debajo del 70 % y advertencia desde el 70 % (D3). Tienen pruebas de componente, incluidos los valores de borde 69 % y 70 %.
 
 #### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
 - **Área:** Frontend

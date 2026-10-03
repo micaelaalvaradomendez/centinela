@@ -1,12 +1,12 @@
 # Resultados de las pruebas frontend
 
-**Fecha:** 03/10/2026. **Frontend:** submódulo en `070e96b` (último commit de `main`, incluye PR #72 a #77: `SEC-03`, `FIX-38`, `FIX-42`, `FIX-36` y niveles de acceso a instancias). **Comando:** `pnpm test`.
+**Fecha:** 03/10/2026. **Frontend:** submódulo en `907efe5` (último commit de `main`, incluye PR #78: `FRN-19A`, maquetado y medidores de recursos del Host). **Comando:** `pnpm test`.
 
 | Métrica | Valor |
 |---|---:|
 | Pruebas | 113 |
-| Aprueban | **87** |
-| Fallan | **16** |
+| Aprueban | **90** |
+| Fallan | **13** |
 | Omitidas | 10 (`login04-e2e.test.ts`: se ejecuta desde `test/back`) |
 
 ## Por archivo
@@ -17,9 +17,9 @@
 | `navigation.test.tsx` | 9 | 0 | FRN-03, SEC-03, FIX-30, FIX-38, FIX-42 ✅ |
 | `password-change.test.tsx`, `recover-password.test.tsx` | 19 | 0 | FRN-10, FRN-12, FIX-21, FIX-29 ✅ |
 | `audit.test.tsx` | 7 | 0 | FRN-14 / FIX-22, FIX-36 (PR #77) ✅ |
+| `dashboard-metrics.test.tsx` | 3 | 0 | **FRN-19A** (PR #78) ✅ |
 | `events-client.test.tsx` | 8 | 8 | **FRN-17C** ❌ (4) y **FRN-17A** ❌ (4): no existe `useEvents` |
-| `dashboard-metrics.test.tsx` | 3 | 3 | **FRN-19A** ❌: no hay medidores en `features/dashboard` |
-| `instances-table.test.tsx` | 5 | 5 | **FRN-20A** ❌: `Instances.tsx` es una maqueta estática |
+| `instances-table.test.tsx` | 5 | 5 | **FRN-20A** 🟡: integración reactiva implementada; discrepancias de maquetado en IP, badges y nombres (cubierto por `FIX-43`) |
 | `session-security`, `admin-recovery`, `login-form`, `authentication-contract`, `two-factor-*`, `api-client` | 32 | 0 | regresión ✅ |
 
 ## Fallos y causa
@@ -27,8 +27,7 @@
 | Tarea | Causa en el código |
 |---|---|
 | FRN-17C / FRN-17A | No existe `useEvents`; `hooks/useWebSocket.js` sigue vacío |
-| FRN-19A | `features/dashboard` solo tiene `DashCard.jsx`, vacío |
-| FRN-20A | `Instances.tsx` no consulta `GET /api/instances` ni renderiza filas interactivas |
+| FRN-20A | Discrepancias de maquetado e interfaz en `Instances.tsx` (`FIX-43`: IP, badges de estado y separación de nombre/VMID) |
 
 ## Cambios en la suite (02/10/2026)
 
