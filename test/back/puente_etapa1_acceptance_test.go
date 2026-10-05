@@ -90,12 +90,14 @@ func TestPuenteEtapa1(t *testing.T) {
 	}
 
 	t.Run("BAC-21B las acciones de energía exigen FULL_ACCESS y quedan en tareas_asincronas", func(t *testing.T) {
+		// Desde BAC-24A el backend valida el estado previo: en el stub la 101 está running, así que la orden
+		// válida con FULL_ACCESS es stop (start respondería 409 INSTANCE_INVALID_STATE, y eso lo prueba BAC-24A).
 		tasksBefore := queryDatabase(t, "SELECT count(*) FROM tareas_asincronas;")
+		path := energyPath(t, 101, "stop")
+		if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusAccepted {
+			t.Errorf("FULL_ACCESS sobre la 101, stop (%s): esperado 202, recibido %d: %#v", path, status, body)
+		}
 		for _, action := range []string{"start", "stop"} {
-			path := energyPath(t, 101, action)
-			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusAccepted {
-				t.Errorf("FULL_ACCESS sobre la 101, %s (%s): esperado 202, recibido %d: %#v", action, path, status, body)
-			}
 			path = energyPath(t, 102, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
 				t.Errorf("READ_ONLY sobre la 102, %s (%s): esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", action, path, status, body)
@@ -127,9 +129,10 @@ func TestPuenteEtapa1(t *testing.T) {
 		// Criterio: "todo se registra en auditoria". La forma (columnas accion/instancia_id o claves de
 		// detalles) es libre; se exige una fila de la 101 que lleve el upid de la acción. Se espera hasta
 		// 15 s por si se audita al terminar la tarea (TASK_FINISHED).
-		status, body := requestJSON(t, http.MethodPost, energyPath(t, 101, "start"), operatorToken, nil)
+		// La 101 está running en el stub: stop es la orden válida (BAC-24A valida el estado previo).
+		status, body := requestJSON(t, http.MethodPost, energyPath(t, 101, "stop"), operatorToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("start sobre la 101: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("stop sobre la 101: esperado 202, recibido %d: %#v", status, body)
 		}
 		// El stub da un UPID distinto por tarea, como Proxmox: se busca el de esta respuesta.
 		upid := strings.ReplaceAll(requiredString(t, body, "upid"), "'", "''")

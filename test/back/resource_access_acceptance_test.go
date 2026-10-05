@@ -223,8 +223,9 @@ func TestHitoControlDeAccesoBasadoEnRecursos(t *testing.T) {
 				t.Errorf("READ_ONLY sobre la 102 no debe permitir %s: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", action, status, body)
 			}
 		}
-		if status, body := requestJSON(t, http.MethodPost, "/instances/101/start", operatorToken, nil); status != http.StatusAccepted {
-			t.Errorf("FULL_ACCESS sobre la 101 debe permitir start: esperado 202, recibido %d: %#v", status, body)
+		// La 101 está running en el stub: desde BAC-24A la orden válida es stop (start daría 409 por estado).
+		if status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", operatorToken, nil); status != http.StatusAccepted {
+			t.Errorf("FULL_ACCESS sobre la 101 debe permitir operar (stop): esperado 202, recibido %d: %#v", status, body)
 		}
 		// El inventario del operador incluye también las instancias de solo lectura.
 		_, list := requestJSONArray(t, http.MethodGet, "/instances", operatorToken)

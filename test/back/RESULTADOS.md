@@ -1,88 +1,51 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 02/10/2026, 2ª verificación. **Backend:** submódulo en `0167b96` (último commit de `main`; nuevo: **FIX-40**). **Comando:** `go test -v -count=1 ./...`. 2 corridas completas con el mismo resultado y sin contenedores residuales.
-
-Antes de estas corridas, Docker no podía crear redes: faltaba la cadena `DOCKER-FORWARD` de iptables. Se resolvió reiniciando el daemon.
+**Fecha:** 05/10/2026. **Backend:** submódulo en `e1f2df4` (último commit de `main`; nuevos: contrato de la Etapa 1, `FIX-37`, `FIX-39`, `BAC-24A` y parte de `BAC-24B`). **Comando:** `go test -v -count=1 ./...`. 2 corridas completas con el mismo resultado y sin contenedores residuales.
 
 | Métrica | Valor |
 |---|---:|
-| Casos | 55 |
-| Aprueban | **43** |
-| Fallan | **10** |
-| Omitidos | 2: el DELETE de BAC-21B (lo crea BAC-24B), e INF-08B (Brevo rechazó la IP pública: `525 Unauthorized IP`; la prueba se omite a propósito en ese caso) |
+| Casos | 58 |
+| Aprueban | **49** |
+| Fallan | **8** |
+| Omitidos | 1: INF-08B (Brevo rechaza la IP pública con `525 Unauthorized IP`; la prueba se omite a propósito en ese caso) |
 
-## Por caso
+## Tareas de `actual.md`
 
-| Caso | Tarea | Resultado |
-|---|---|---|
-| BAC-01 a BAC-12, BAC-09, BAC-05/06/06B, prefijo `/api/admin/users`, LOGIN-03 | regresión | ✅ 12/12 |
-| LOGIN-04 circuito desde Go y LOGIN-04 front ↔ back (10/10 pasos) | regresión | ✅ 2/2 |
-| INF-05 CORS, FIX-31, BAC-17A, INF-06A, BAC-16B, BAC-17B | regresión | ✅ 6/6 |
-| INF-08B credenciales contra Brevo | regresión | ⏭️ omitido (IP no autorizada en Brevo) |
-| **BAC-18B** índice parcial y particiones; purga horaria | BAC-18B | ❌ 2 |
-| BAC-19, BAC-20, BAC-16, BAC-21, BAC-18, FIX-17, BAC-13, BAC-15 | regresión | ✅ 8/8 |
-| BAC-07, FIX-16/BAC-08, BAC-14, SEC-04 (2) | regresión | ✅ 5/5 |
-| **FIX-37** nivel de acceso en `GET /account/profile` | FIX-37 | ❌ |
-| BAC-21B energía con FULL_ACCESS + `tareas_asincronas` | BAC-21B | ✅ |
-| **FIX-39** campos de `GET /instances`, `shutdown`/`reboot` y auditoría con upid | FIX-39 | ❌ 3 |
-| BAC-21B DELETE solo ADMIN | BAC-21B | ⏭️ omitido |
-| BAC-21C (2) | regresión | ✅ 2/2 |
-| FIX-40 `504 PROXMOX_TIMEOUT` y `502 PROXMOX_UNAVAILABLE` | FIX-40 | ✅ → `terminado.md` |
-| INF-07B `/api/events` a través del borde | INF-07B | ✅ (`TASK_FINISHED` en ~1 s) |
-| **BAC-29** contrato de la etapa (nuevo) | BAC-29 | ❌ (no existe `docs/contrato-etapa1.md`) |
-| **BAC-22** `GET /api/node/status` (nuevo) | BAC-22 | ❌ (404) |
-| **BAC-23A** adaptador de IP (nuevo) | BAC-23A | ❌ (el backend no consulta los endpoints de IP) |
-| **BAC-25A** pool de UPID (nuevo) | BAC-25A | ❌ (falta `UPID_WORKERS`; las 20 tareas sí terminan `COMPLETED`) |
-| BAC-17, SEC-01, integración SEC-01/SEC-02, FIX-28, FIX-08 | regresión | ✅ 5/5 |
-| FIX-35 simulador (2) | regresión | ✅ 2/2 |
+| Tarea | Caso | Resultado | Causa |
+|---|---|---|---|
+| `FIX-44` (índice y purga, `BAC-18B`) | `cierre_fase_base…` BAC-18B (2) | ❌ índice / ✅ purga | Falta el índice parcial con `jti_access`. La purga horaria **cumple** (ver §Cambios) |
+| `BAC-29` contrato | `etapa1_acceptance…` | ❌ | `docs/contrato-etapa1.md` existe, pero no menciona `DELETE`, `exitstatus`, `PROXMOX_ERROR` ni `INSTANCE_INVALID_STATE`, ni que `/node/status` lo puede consultar cualquier usuario autenticado (D1) |
+| `BAC-22` telemetría | `etapa1_acceptance…` | ❌ | `GET /api/node/status` responde 404 |
+| `BAC-23A` adaptador de IP | `etapa1_acceptance…` | ❌ | No se consultan los endpoints de IP |
+| `BAC-25A` pool de UPID | `etapa1_acceptance…` | ❌ | Falta `UPID_WORKERS` |
+| `BAC-24A` estado previo y protegidos | `etapa1_acceptance…` (**reescrito**) | ❌ solo por documentación | Cumple todo el comportamiento:<br>• `409 INSTANCE_INVALID_STATE` en las cuatro acciones y en las dos rutas;<br>• `403 INSTANCE_PROTECTED` en shutdown, reboot y stop;<br>• `400 INVALID_ACTION`;<br>• `403` sin permiso;<br>• `202 { upid, tareaId }`;<br>• ninguna escritura en Proxmox al rechazar.<br>Falta `INSTANCE_INVALID_STATE` en `docs/swagger.json` (entregable 4) |
+| `BAC-24B` DELETE | `etapa1_acceptance…` (**reescrito**) | ❌ | Ya existe y cumple el `401`, el `403` al OPERATOR con `FULL_ACCESS` y el `403 INSTANCE_PROTECTED`. Pero responde `409 INSTANCE_NOT_STOPPED` en lugar de `INSTANCE_INVALID_STATE` (D2), y `204` sin cuerpo en lugar de `202 { upid, tareaId }`, así que no hay seguimiento ni `TASK_FINISHED` |
+| `BAC-25C` reanudación | `etapa1_acceptance…` (**reescrito**) | ❌ | `activeTask` ya se informa (parte 2 cumple). Al reiniciar no se retoma el sondeo: la tarea vencida no queda `FAILED` y la reciente no emite `TASK_FINISHED` |
 
-## Fallos y causa
+## Regresión
 
-| Caso | Causa |
-|---|---|
-| BAC-18B (2) | Sin índice parcial, sin particiones trimestrales ni índice `(fecha_hora, accion, resultado)`, y sin purga horaria |
-| FIX-37 | `UsuarioDetalleDTO` solo tiene `instanciasPermitidas` |
-| FIX-39 (3) | Faltan los campos nuevos en `GET /instances`; `shutdown` y `reboot` no existen (404); las acciones de energía no se auditan |
-| BAC-29 | No existe `backend/docs/contrato-etapa1.md` |
-| BAC-22 | `GET /api/node/status` responde 404 |
-| BAC-23A | Ningún archivo del backend consulta `agent/network-get-interfaces` ni `lxc/{vmid}/interfaces`, y no hay pruebas unitarias de IP |
-| BAC-25A | El backend no lee `UPID_WORKERS` (hoy, una goroutine por tarea) |
+Pasan todas las demás tareas terminadas, incluidas `LOGIN-04` (desde Go y front ↔ back, 10/10), `FIX-40`, `INF-07B`, `BAC-21C`, `SEC-04`, `FIX-37` y `FIX-39`.
 
-## Cambios en la suite (02/10/2026)
+## Cambios en la suite (05/10/2026)
 
-- **Nuevo `etapa1_acceptance_test.go`** (Ola 1 de la Etapa 1). Reemplaza a `etapa1_core_acceptance_test.go`, que buscaba texto en archivos fijos: un `"lxc"` en `client.go`, la palabra `"workers"`, una expresión regular sobre `instance_handler.go`. Además pedía `instancesSummary` en `BAC-22`, cuando eso es de `BAC-22B`.
-  - **BAC-29:** `docs/contrato-etapa1.md` con los nombres de su entregable, el `motivo` de D2, D1, Swagger con `/node/status`, y los códigos nuevos en `docs/estandar_http.md` (inventario de `FIX-08`).
-  - **BAC-22**, por comportamiento:
-    - sin estado previo y con Proxmox caído, `502` o `504`;
-    - `401` sin token y `200` con un OPERATOR real (D1);
-    - valores normalizados contra el stub (CPU 25 % y 8 núcleos, RAM 8 de 16 GB, disco 25 de 100 GB, uptime);
-    - una clave en Redis con TTL de 10 s o menos;
-    - con la caché vigente y Proxmox caído, `200` con `stale: false` en menos de 50 ms;
-    - vencido el TTL, `200` con `stale: true`.
-  - **BAC-23A** (función interna, sin endpoint todavía): el código consulta los dos endpoints de IP, hay pruebas unitarias, y `go test` de esos paquetes pasa.
-  - **BAC-25A:**
-    - el backend lee `UPID_WORKERS`;
-    - las pruebas unitarias del seguimiento pasan;
-    - de 20 órdenes seguidas, las 20 quedan `COMPLETED` en menos de 3 s.
-- **FIX-40 (en `puente_etapa1…`), por comportamiento.** Nuevos servicios `proxmox-lento` (acepta la conexión y no responde) y `backend-lento`: el backend tiene que responder `504 PROXMOX_TIMEOUT`. La contraprueba usa el stub caído y espera `502 PROXMOX_UNAVAILABLE`.
-- **Stub de Proxmox:**
-  - `GET /nodes/{node}/status` con valores conocidos;
-  - **un UPID distinto por tarea** (`$request_id`): antes era fijo por instancia, y desde el segundo `start` sobre la misma instancia el backend no podía registrar la tarea (`upid` único en `tareas_asincronas`);
-  - una caída simulada con el archivo `/tmp/proxmox-caido` (responde `503`).
-- **BAC-21B (auditoría):** busca el `upid` que devolvió la respuesta, en lugar de un UPID fijo.
-
-### Hallazgo de seguridad en la suite (corregido)
-
-Al detener el contenedor del stub, el nombre `proxmox` deja de resolver dentro de Docker. El backend probaba entonces con el dominio de búsqueda del host (`tail6bb3f3.ts.net`, Tailscale), y **`proxmox.tail6bb3f3.ts.net` es el Proxmox real (`100.81.49.19`)**. En una corrida intermedia, el backend de pruebas se conectó a ese servidor con el token falso del stub: **todas las respuestas fueron `401` y no se ejecutó ninguna acción**.
-
-Se corrigió de dos formas:
-- la suite ya no detiene el stub: simula la caída con un `503`;
-- los tres backends de prueba tienen `dns_search: invalid`, así que un nombre que no resuelve dentro de Docker ya no puede salir por Tailscale.
+- **BAC-24A (reescrito):** la versión anterior usaba el VMID 100 como protegido, pero en la suite el protegido es el 103 y el 100 no existe en el stub. Tampoco verificaba el `202` ni la ausencia de tráfico hacia Proxmox. Ahora cubre todo el criterio y el entregable 4, y cuenta en el log del stub las escrituras que llegaron.
+- **BAC-24B (reescrito):** tenía el mismo VMID 100, y su OPERATOR no tenía `FULL_ACCESS`. Ahora verifica también la auditoría de la orden y el `TASK_FINISHED` con `recursoTipo` `LXC`.
+- **BAC-25C (reescrito):**
+  - antes no probaba el reinicio y leía `body["data"]`, pero `GET /instances` devuelve una lista;
+  - ahora inserta una tarea `RUNNING` reciente y otra de hace 10 min, reinicia el backend y verifica la vencida `FAILED`, la reciente en `activeTask`, y el `TASK_FINISHED` y `COMPLETED` cuando Proxmox la termina;
+  - el stub tiene un interruptor nuevo, `/tmp/tareas-en-curso`, que deja todas las tareas en `running`.
+- **BAC-18B purga (reescrito):** exigía escribir literal `time.NewTicker(time.Hour)`. El backend usa `NuevoPurgaWorker(db, 1*time.Hour)`, que cumple y además permite acortar el intervalo en las pruebas unitarias. Ahora la prueba:
+  - inserta sesiones inactiva, vencida y vigente;
+  - reinicia el backend (la purga corre al arrancar) y verifica que solo queden las vigentes;
+  - acepta la hora tanto en el ticker como en la llamada que crea la rutina.
+  **Pasa.** Por eso el entregable 2 de `FIX-44` no hace falta.
+- **Pruebas viejas adaptadas a `BAC-24A`:** `BAC-21B` (energía y auditoría) y `SEC-04` mandaban `start` a la 101, que en el stub está encendida. Con la validación de estado previo ahora reciben `409`, así que usan `stop`.
 
 ## Lo que la suite no cubre
 
 - BAC-18B: el tiempo de consulta (< 20 ms).
-- BAC-23A: el timeout de 2 s por consulta de IP y la concurrencia acotada. Se verifican con el simulador cuando `BAC-23B` exponga la IP en `GET /api/instances`.
-- BAC-25A: la cota de N consultas en paralelo no se observa desde la API. Queda a cargo de las pruebas unitarias del backend, que la suite ejecuta.
-- FIX-40: el `502` con el token rechazado. Necesitaría otro backend con un token distinto; lo cubren las pruebas unitarias de `instance_handler_test.go`.
-- BAC-22: no hubo contraprueba contra una implementación, porque el endpoint no existe. Los pasos que siguen al 404 se verán cuando se implemente.
+- BAC-23A: el timeout de 2 s y la concurrencia acotada de las consultas de IP (se verán con `BAC-23B`).
+- BAC-25A: la cota de N consultas en paralelo (queda a cargo de las pruebas unitarias del backend).
+- BAC-24B: que el tipo de recurso se guarde **antes** de borrar. El stub sigue listando la instancia después del `DELETE`, así que no se puede detectar el error de averiguarlo al final.
+- BAC-25C: el registro final en `auditoria`. La entrada de resolución la define `BAC-27`, que todavía no está cargada (ver `test/informe.md`).
+- FIX-40: el `502` con el token rechazado (lo cubren las pruebas unitarias del backend).

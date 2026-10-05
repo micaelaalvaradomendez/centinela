@@ -38,6 +38,8 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 Ninguna prueba puede llegar al Proxmox real.
 - Los backends de prueba tienen `dns_search: invalid`. Sin eso, un nombre de servicio que no resuelve dentro de Docker se completa con el dominio de búsqueda del host. En esta máquina ese dominio es Tailscale, y `proxmox.<tailnet>.ts.net` es el Proxmox real.
 - Para simular que Proxmox está caído no se detiene el contenedor del stub: se crea `/tmp/proxmox-caido` dentro de él (`stopProxmoxStub` / `startProxmoxStub`), y el stub responde `503` a todo.
+- Para dejar las tareas "en curso" (BAC-25C), se crea `/tmp/tareas-en-curso` en el stub: `GET /nodes/{node}/tasks/{upid}/status` responde `running` hasta que se borra.
+- Algunas pruebas reinician el backend (`restartBackend`): BAC-18B (la purga corre al arrancar) y BAC-25C (retoma las tareas en curso).
 
 ## Requisitos
 

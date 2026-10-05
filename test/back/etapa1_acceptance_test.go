@@ -1,6 +1,8 @@
 package back_test
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -198,107 +200,289 @@ func TestEtapa1(t *testing.T) {
 		}
 	})
 
-	t.Run("BAC-24A validación de estado previo (409 INSTANCE_INVALID_STATE) y VMIDs protegidos en energía", func(t *testing.T) {
-		// Instancia 101 está 'running' en el stub: start debe responder 409 INSTANCE_INVALID_STATE
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/start", adminToken, nil)
-		if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
-			t.Errorf("start de instancia 101 (running): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
-		}
-
-		// Instancia 102 está 'stopped' en el stub: stop, shutdown y reboot deben responder 409 INSTANCE_INVALID_STATE
-		for _, action := range []string{"stop", "shutdown", "reboot"} {
-			status, body = requestJSON(t, http.MethodPost, fmt.Sprintf("/instances/102/%s", action), adminToken, nil)
-			if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
-				t.Errorf("%s de instancia 102 (stopped): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", action, status, body)
+	t.Run("BAC-24A energía: 409 si el estado no corresponde, 403 en VMIDs protegidos, 202 en órdenes válidas, sin tráfico a Proxmox al rechazar", func(t *testing.T) {
+		// Stub: 101 qemu running, 102 lxc stopped, 103 qemu running y protegida (PROXMOX_PROTECTED_VMIDS en compose.yaml).
+		// Se prueban la ruta genérica /status/:action y los alias /start y /stop, que siguen montados.
+		routes := func(vmid int, action string) []string {
+			paths := []string{fmt.Sprintf("/instances/%d/status/%s", vmid, action)}
+			if action == "start" || action == "stop" {
+				paths = append(paths, fmt.Sprintf("/instances/%d/%s", vmid, action))
 			}
+			return paths
 		}
-
-		// Instancia 100 está en PROXMOX_PROTECTED_VMIDS: reboot y shutdown deben responder 403 INSTANCE_PROTECTED
-		for _, action := range []string{"reboot", "shutdown"} {
-			status, body = requestJSON(t, http.MethodPost, fmt.Sprintf("/instances/100/%s", action), adminToken, nil)
-			if status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
-				t.Errorf("%s de instancia 100 (protegida): esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", action, status, body)
-			}
-		}
-	})
-
-	t.Run("BAC-24B endpoint de eliminación DELETE /api/instances/:vmid", func(t *testing.T) {
-		// 1. Sin token responde 401
-		if status, _ := requestValue(t, http.MethodDelete, "/instances/102", "", nil); status != http.StatusUnauthorized {
-			t.Errorf("DELETE /instances/102 sin token: esperado 401, recibido %d", status)
-		}
-
-		// 2. Con OPERATOR responde 403 (solo ADMIN puede borrar)
-		operator := createActiveUser(t, adminToken, "op_delete", "OPERATOR")
-		opSession := loginWithTOTP(t, operator.Email, operator.Password, operator.Secret)
-		if status, body := requestJSON(t, http.MethodDelete, "/instances/102", opSession.AccessToken, nil); status != http.StatusForbidden {
-			t.Errorf("DELETE con OPERATOR: esperado 403, recibido %d: %#v", status, body)
-		}
-
-		// 3. Con ADMIN sobre instancia encendida (101 running) responde 409 INSTANCE_INVALID_STATE
-		if status, body := requestJSON(t, http.MethodDelete, "/instances/101", adminToken, nil); status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
-			t.Errorf("DELETE de 101 (running): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
-		}
-
-		// 4. Con ADMIN sobre VMID protegido (100) responde 403 INSTANCE_PROTECTED
-		if status, body := requestJSON(t, http.MethodDelete, "/instances/100", adminToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
-			t.Errorf("DELETE de 100 (protegida): esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", status, body)
-		}
-
-		// 5. Con ADMIN sobre instancia detenida (102 stopped) responde 202 con upid y tareaId
-		status, body := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
-		if status != http.StatusAccepted {
-			t.Fatalf("DELETE de 102 (stopped): esperado 202, recibido %d: %#v", status, body)
-		}
-		tareaID := requiredString(t, body, "tareaId")
-		upid := requiredString(t, body, "upid")
-		if upid == "" || tareaID == "" {
-			t.Errorf("DELETE debe devolver upid y tareaId, recibido: %#v", body)
-		}
-	})
-
-	t.Run("BAC-25C reanudación de UPIDs en curso al levantar y activeTask en GET /api/instances", func(t *testing.T) {
-		// 1. Verificar activeTask en GET /api/instances: cuando hay una tarea RUNNING, debe reflejarse en la instancia correspondiente
-		tareaUUID := "01920000-0000-7000-8000-000000000099"
-		queryDatabase(t, fmt.Sprintf(
-			"INSERT INTO tareas_asincronas (id, usuario_id, instancia_id, accion, upid_proxmox, estado, fecha_creacion) "+
-				"VALUES ('%s', '%s', '101', 'start', 'UPID:pve:00000001:00000001:00000001:qstart:101:root@pam:', 'RUNNING', NOW()) "+
-				"ON CONFLICT (id) DO NOTHING;", tareaUUID, adminID,
-		))
-		defer queryDatabase(t, fmt.Sprintf("DELETE FROM tareas_asincronas WHERE id = '%s';", tareaUUID))
-
-		status, body := requestJSON(t, http.MethodGet, "/instances", adminToken, nil)
-		if status != http.StatusOK {
-			t.Fatalf("GET /instances: esperado 200, recibido %d: %#v", status, body)
-		}
-		instancias, ok := body["data"].([]any)
-		if !ok || len(instancias) == 0 {
-			t.Fatalf("GET /instances no devolvió arreglo en data: %#v", body)
-		}
-
-		foundActive := false
-		for _, item := range instancias {
-			inst, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			vmid := int(inst["id"].(float64))
-			if vmid == 101 {
-				activeTask, hasActive := inst["activeTask"].(map[string]any)
-				if !hasActive || activeTask == nil {
-					t.Errorf("instancia 101 con tarea RUNNING en DB: activeTask no debe ser null")
-				} else {
-					foundActive = true
-					if activeTask["action"] != "start" && activeTask["accion"] != "start" {
-						t.Errorf("activeTask de 101: esperado action 'start', recibido %#v", activeTask)
-					}
+		rejected := func(vmid int, action string, wantStatus int, wantCode string) {
+			t.Helper()
+			for _, path := range routes(vmid, action) {
+				before := stubWrites(t, vmid)
+				status, body := requestJSON(t, http.MethodPost, path, adminToken, nil)
+				if status != wantStatus || body["errorCode"] != wantCode {
+					t.Errorf("%s: esperado %d %s, recibido %d: %#v", path, wantStatus, wantCode, status, body)
+				}
+				if after := stubWrites(t, vmid); after != before {
+					t.Errorf("%s: el backend envió la orden a Proxmox aunque la rechazó (%d escrituras nuevas en el stub)", path, after-before)
 				}
 			}
 		}
-		if !foundActive {
-			t.Errorf("GET /instances no informó activeTask para la instancia 101 con tarea RUNNING")
+
+		// 1. Estado previo (D2): start exige stopped; stop, shutdown y reboot exigen running.
+		rejected(101, "start", http.StatusConflict, "INSTANCE_INVALID_STATE")
+		for _, action := range []string{"stop", "shutdown", "reboot"} {
+			rejected(102, action, http.StatusConflict, "INSTANCE_INVALID_STATE")
+		}
+		// 2. VMID protegido: shutdown y reboot también (stop ya lo estaba desde FIX-33).
+		for _, action := range []string{"shutdown", "reboot", "stop"} {
+			rejected(103, action, http.StatusForbidden, "INSTANCE_PROTECTED")
+		}
+		// 3. Acción desconocida en la ruta genérica.
+		if status, body := requestJSON(t, http.MethodPost, "/instances/101/status/hibernar", adminToken, nil); status != http.StatusBadRequest || body["errorCode"] != "INVALID_ACTION" {
+			t.Errorf("/status/hibernar: esperado 400 INVALID_ACTION, recibido %d: %#v", status, body)
+		}
+		// 4. Un usuario sin la instancia asignada: 403 sin tráfico hacia Proxmox.
+		stranger := createActiveUser(t, adminToken, "op_sin_101", "OPERATOR")
+		session := loginWithTOTP(t, stranger.Email, stranger.Password, stranger.Secret)
+		before := stubWrites(t, 101)
+		if status, body := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", session.AccessToken, nil); status != http.StatusForbidden {
+			t.Errorf("OPERATOR sin la 101, shutdown: esperado 403, recibido %d: %#v", status, body)
+		}
+		if after := stubWrites(t, 101); after != before {
+			t.Errorf("con un 403 por permisos el backend igual escribió en Proxmox")
+		}
+		// 5. Órdenes válidas: 202 con upid y tareaId.
+		for _, order := range []struct {
+			vmid   int
+			action string
+		}{{101, "shutdown"}, {101, "reboot"}, {101, "stop"}, {102, "start"}} {
+			path := fmt.Sprintf("/instances/%d/status/%s", order.vmid, order.action)
+			status, body := requestJSON(t, http.MethodPost, path, adminToken, nil)
+			if status != http.StatusAccepted {
+				t.Errorf("%s: esperado 202, recibido %d: %#v", path, status, body)
+				continue
+			}
+			requiredString(t, body, "upid")
+			requiredString(t, body, "tareaId")
+		}
+		// 6. Entregable 4: códigos documentados en el inventario de FIX-08 y en Swagger.
+		inventory := string(readFile(t, sourcePath("backend", "docs/estandar_http.md")))
+		swagger := string(readFile(t, sourcePath("backend", "docs/swagger.json")))
+		for _, code := range []string{"INSTANCE_INVALID_STATE", "INVALID_ACTION", "INSTANCE_PROTECTED"} {
+			if !strings.Contains(inventory, code) || !strings.Contains(swagger, code) {
+				t.Errorf("%s no está documentado en docs/estandar_http.md y docs/swagger.json", code)
+			}
 		}
 	})
+
+	t.Run("BAC-24B DELETE solo ADMIN, 409 si está encendida, 403 si está protegida, 202 con seguimiento, auditoría y TASK_FINISHED", func(t *testing.T) {
+		if status, _ := requestValue(t, http.MethodDelete, "/instances/102", "", nil); status != http.StatusUnauthorized {
+			t.Errorf("DELETE sin token: esperado 401, recibido %d", status)
+		}
+		// Un OPERATOR, aunque tenga FULL_ACCESS sobre la instancia, recibe 403.
+		operatorID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("op_delete_%d", time.Now().UnixNano()), fmt.Sprintf("op.delete.%d@elcentinela.com", time.Now().UnixNano()), "OPERATOR")
+		if status, body := requestValue(t, http.MethodPut, "/admin/users/"+operatorID+"/permissions", adminToken, map[string]any{"permisos": []map[string]any{{"vmid": 102, "nivelAcceso": "FULL_ACCESS"}}}); status != http.StatusNoContent {
+			t.Fatalf("precondición: FULL_ACCESS sobre la 102, esperado 204, recibido %d: %#v", status, body)
+		}
+		operatorToken := signedAccessToken(t, operatorID, "OPERATOR", orgID)
+		before := map[int]int{101: stubDeletes(t, 101), 102: stubDeletes(t, 102), 103: stubDeletes(t, 103)}
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/102", operatorToken, nil); status != http.StatusForbidden {
+			t.Errorf("DELETE con OPERATOR con FULL_ACCESS: esperado 403, recibido %d: %#v", status, body)
+		}
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/101", adminToken, nil); status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
+			t.Errorf("DELETE de la 101 (running): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
+		}
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/103", adminToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
+			t.Errorf("DELETE de la 103 (protegida): esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", status, body)
+		}
+		for vmid, count := range before {
+			if stubDeletes(t, vmid) != count {
+				t.Errorf("el DELETE rechazado de la %d llegó igual a Proxmox", vmid)
+			}
+		}
+
+		// Sobre la 102 (detenida): 202 con upid y tareaId, la orden queda auditada y llega TASK_FINISHED de un LXC.
+		admin := createActiveUser(t, adminToken, "admin_delete", "ADMIN")
+		adminSession := loginWithTOTP(t, admin.Email, admin.Password, admin.Secret)
+		events := listenEvents(t, adminSession.AccessToken)
+		status, body := requestJSON(t, http.MethodDelete, "/instances/102", adminSession.AccessToken, nil)
+		if status != http.StatusAccepted {
+			t.Fatalf("DELETE de la 102 (stopped) con ADMIN: esperado 202, recibido %d: %#v", status, body)
+		}
+		upid := requiredString(t, body, "upid")
+		tareaID := requiredString(t, body, "tareaId")
+		if stubDeletes(t, 102) != before[102]+1 {
+			t.Errorf("el DELETE aceptado no llegó a Proxmox (DELETE /nodes/pve/lxc/102)")
+		}
+		audit := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE detalles::text LIKE '%%%s%%';", strings.ReplaceAll(upid, "'", "''"))
+		if queryDatabase(t, audit) == "0" {
+			t.Errorf("la orden de borrado no quedó en auditoria con su upid")
+		}
+		event := waitTaskFinished(t, events, tareaID, 8*time.Second)
+		if event != nil && (event["recursoTipo"] != "LXC" || event["recursoId"] != "102") {
+			t.Errorf("TASK_FINISHED del borrado: esperado recursoTipo LXC y recursoId 102, recibido %v / %v", event["recursoTipo"], event["recursoId"])
+		}
+	})
+
+	t.Run("BAC-25C al reiniciar el backend retoma las tareas RUNNING, informa activeTask y vence las de más de 3 minutos", func(t *testing.T) {
+		// Con /tmp/tareas-en-curso el stub informa toda tarea como "running" (proxmox-stub/nginx.conf).
+		if output, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-en-curso"); err != nil {
+			t.Fatalf("no se pudo marcar las tareas como en curso en el stub: %v\n%s", err, output)
+		}
+		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
+
+		fresh := queryDatabase(t, "SELECT uuid_generate_v7();")
+		expired := queryDatabase(t, "SELECT uuid_generate_v7();")
+		suffix := time.Now().UnixNano()
+		queryDatabase(t, fmt.Sprintf(
+			"INSERT INTO tareas_asincronas (id, usuario_id, instancia_id, accion, upid_proxmox, estado, fecha_creacion) VALUES "+
+				"('%s', '%s', '101', 'shutdown', 'UPID:pve:%d:0:0:qmshutdown:101:root@pam:', 'RUNNING', NOW()), "+
+				"('%s', '%s', '102', 'start', 'UPID:pve:%d:0:0:vzstart:102:root@pam:', 'RUNNING', NOW() - interval '10 minutes');",
+			fresh, adminID, suffix, expired, adminID, suffix+1))
+
+		restartBackend(t)
+
+		// La de más de 3 minutos (D4): se consulta una vez y, como sigue en curso, queda FAILED.
+		if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", expired), "FAILED", 10*time.Second) {
+			t.Errorf("la tarea RUNNING de hace 10 minutos no quedó FAILED al reiniciar (D4: vence a los 3 minutos)")
+		}
+		// La reciente sigue RUNNING y GET /api/instances la informa en activeTask de la 101.
+		status, list := requestJSONArray(t, http.MethodGet, "/instances", adminToken)
+		if status != http.StatusOK {
+			t.Fatalf("GET /instances: esperado 200, recibido %d", status)
+		}
+		var active any
+		for _, item := range list {
+			if instance, ok := item.(map[string]any); ok && instance["id"] == float64(101) {
+				active = instance["activeTask"]
+			}
+		}
+		// El contrato publicado (docs/contrato-etapa1.md) usa el id de la tarea; la tarea pide { tareaId, action, status }.
+		switch value := active.(type) {
+		case string:
+			if value != fresh {
+				t.Errorf("activeTask de la 101: esperado %s, recibido %s", fresh, value)
+			}
+		case map[string]any:
+			if value["tareaId"] != fresh {
+				t.Errorf("activeTask de la 101: esperado tareaId %s, recibido %#v", fresh, value)
+			}
+		default:
+			t.Errorf("activeTask de la 101 con una tarea RUNNING: esperado el id de la tarea o { tareaId, action, status }, recibido %#v", active)
+		}
+
+		// Al terminar en Proxmox, el sondeo retomado la cierra y emite TASK_FINISHED.
+		admin := createActiveUser(t, adminToken, "admin_reanuda", "ADMIN")
+		adminSession := loginWithTOTP(t, admin.Email, admin.Password, admin.Secret)
+		events := listenEvents(t, adminSession.AccessToken)
+		_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso")
+		waitTaskFinished(t, events, fresh, 10*time.Second)
+		if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", fresh), "COMPLETED", 10*time.Second) {
+			t.Errorf("la tarea retomada no quedó COMPLETED en tareas_asincronas")
+		}
+	})
+}
+
+// stubWrites y stubDeletes cuentan, en el log de acceso del stub, las órdenes que el backend envió a Proxmox
+// para un VMID (POST .../status/<acción> y DELETE .../<vmid>).
+func stubWrites(t *testing.T, vmid int) int {
+	return stubLogCount(t, fmt.Sprintf(`"POST /api2/json/nodes/[^/]+/(qemu|lxc)/%d/status/`, vmid))
+}
+
+func stubDeletes(t *testing.T, vmid int) int {
+	return stubLogCount(t, fmt.Sprintf(`"DELETE /api2/json/nodes/[^/]+/(qemu|lxc)/%d `, vmid))
+}
+
+func stubLogCount(t *testing.T, expression string) int {
+	t.Helper()
+	logs, err := runCompose("logs", "--no-color", "proxmox")
+	if err != nil {
+		t.Fatalf("no se pudo leer el log del stub de Proxmox: %v", err)
+	}
+	return len(regexp.MustCompile(expression).FindAllStringIndex(logs, -1))
+}
+
+// restartBackend reinicia el contenedor del backend y espera a que vuelva a responder.
+func restartBackend(t *testing.T) {
+	t.Helper()
+	if output, err := runCompose("restart", "backend"); err != nil {
+		t.Fatalf("no se pudo reiniciar el backend: %v\n%s", err, output)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if response, err := (&http.Client{Timeout: 2 * time.Second}).Get(apiURL + "/version"); err == nil {
+			response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("el backend no volvió a responder 60 s después de reiniciarlo")
+}
+
+func waitForValue(t *testing.T, query, want string, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.TrimSpace(queryDatabase(t, query)) == want {
+			return true
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return false
+}
+
+// listenEvents abre /api/events con un ticket del usuario y entrega cada evento JSON por el canal.
+func listenEvents(t *testing.T, accessToken string) <-chan map[string]any {
+	t.Helper()
+	status, body := requestJSON(t, http.MethodPost, "/events/ticket", accessToken, nil)
+	if status != http.StatusOK && status != http.StatusCreated {
+		t.Fatalf("POST /events/ticket: esperado 200/201, recibido %d: %#v", status, body)
+	}
+	request, _ := http.NewRequest(http.MethodGet, apiURL+"/events?ticket="+requiredString(t, body, "ticket"), nil)
+	request.Header.Set("Accept", "text/event-stream")
+	response, err := (&http.Client{Timeout: 0}).Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("GET /events: no se pudo abrir el stream (%v)", err)
+	}
+	t.Cleanup(func() { response.Body.Close() })
+	events := make(chan map[string]any, 64)
+	go func() {
+		defer close(events)
+		reader := bufio.NewReader(response.Body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if payload, ok := strings.CutPrefix(strings.TrimRight(line, "\r\n"), "data: "); ok {
+				var event map[string]any
+				if json.Unmarshal([]byte(payload), &event) == nil {
+					events <- event
+				}
+			}
+		}
+	}()
+	return events
+}
+
+// waitTaskFinished espera el TASK_FINISHED de la tarea indicada (detalles.tareaId).
+func waitTaskFinished(t *testing.T, events <-chan map[string]any, tareaID string, timeout time.Duration) map[string]any {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case event, open := <-events:
+			if !open {
+				t.Errorf("el stream de /api/events se cerró antes del TASK_FINISHED de la tarea %s", tareaID)
+				return nil
+			}
+			detalles, _ := event["detalles"].(map[string]any)
+			if event["tipo"] == "TASK_FINISHED" && detalles["tareaId"] == tareaID {
+				return event
+			}
+		case <-deadline:
+			t.Errorf("no llegó TASK_FINISHED de la tarea %s en %v", tareaID, timeout)
+			return nil
+		}
+	}
 }
 
 func expectNumber(t *testing.T, body map[string]any, want, tolerance float64, path ...string) {

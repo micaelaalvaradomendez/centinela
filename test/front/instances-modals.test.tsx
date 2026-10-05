@@ -1,181 +1,105 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import InstancesPage from '@/pages/Instances';
-import { Toaster } from '@/components/ui/toast';
-import { withAppProviders } from './app-providers';
+import { actionsOf, ACTIONS, commands, findAction, findDialog, queryDialog, renderInstances, requireAction, rowOf, stubFetch } from './instances-helpers';
 
-// FRN-15: Modales de confirmación antierror para acciones operativas (RF-04 / Etapa 1).
-// Entregables:
-// - Start: confirmación estándar antes de disparar. Cancelar no envía peticiones.
-// - Shutdown / Reboot: aviso de apagado o reinicio del sistema operativo huésped.
-// - Stop: advertencia visual en rojo / advertencia sobre posible pérdida de datos.
-// - Delete: modal destructivo que exige tipear el ID o el nombre para confirmar.
-// - Control de acceso: Delete es SOLO visible para ADMIN. OPERATOR nunca ve Delete.
-//   OPERATOR con READ_ONLY no puede operar acciones de energía; con FULL_ACCESS sí.
-const inventoryMock = [
-  {
-    id: 101, name: 'servidor-web', type: 'vm', node: 'pve', status: 'running',
-    ip: '192.168.1.50', cpuUsage: 25, ramUsage: 4, maxRam: 16, nivelAcceso: 'FULL_ACCESS', activeTask: null,
-  },
-  {
-    id: 102, name: 'base-datos', type: 'lxc', node: 'pve', status: 'stopped',
-    ip: null, cpuUsage: null, ramUsage: null, maxRam: null, nivelAcceso: 'READ_ONLY', activeTask: null,
-  },
-];
+// FRN-15: modales de confirmación antierror para acciones operativas (RF-04).
+// Criterio de éxito:
+//   - Ninguna acción se dispara sin pasar por el modal, y cancelar no envía peticiones.
+//   - Un OPERATOR con READ_ONLY no ve botones de energía; uno con FULL_ACCESS sí.
+//   - El OPERATOR nunca ve Delete.
+// Entregable: Start (confirmación estándar), Shutdown/Reboot (aviso de apagado o reinicio del SO
+// huésped), Stop (advertencia en rojo por posible pérdida de datos), Delete (tipear ID o nombre, solo ADMIN).
+// La forma del modal es libre: se busca role="dialog" o role="alertdialog".
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-function renderInstancesPage(userRole = 'ADMIN', userPermissions: { vmid: number; nivelAcceso: string }[] = []) {
-  window.sessionStorage.setItem('centinela_access', 'access-token-modales');
-  window.localStorage.setItem('centinela_user', JSON.stringify({
-    id: 'user-test', organizacionId: 'org-1', nombreCompleto: 'Test User', email: 'test@centinela.local',
-    rol: userRole, instanciasPermitidas: userPermissions.map(p => p.vmid), permisos: userPermissions, tiene2FA: true,
-  }));
-  return render(withAppProviders(
-    <Toaster>
-      <MemoryRouter initialEntries={['/instances']}>
-        <InstancesPage />
-      </MemoryRouter>
-    </Toaster>,
-  ));
-}
-
-async function rowOf(name: string) {
-  const cell = await screen.findByText(new RegExp(name, 'i'));
-  const row = cell.closest('tr, [role="row"]');
-  expect(row, `"${name}" no está dentro de una fila de tabla`).not.toBeNull();
-  return row as HTMLElement;
-}
-
 beforeEach(() => {
-  fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-    const urlStr = String(url);
-    if (urlStr.includes('/instances') && (!init || init.method === 'GET' || !init.method)) {
-      return Promise.resolve(new Response(JSON.stringify(inventoryMock), {
-        status: 200, headers: { 'Content-Type': 'application/json' },
-      }));
-    }
-    return Promise.resolve(new Response(JSON.stringify({ upid: 'UPID:pve:123', tareaId: '0192-task' }), {
-      status: 202, headers: { 'Content-Type': 'application/json' },
-    }));
-  });
-  vi.stubGlobal('fetch', fetchMock);
+  fetchMock = stubFetch(() => Promise.resolve(new Response(JSON.stringify({ upid: 'UPID:pve:1:start:101:', tareaId: 't-1' }), { status: 202, headers: { 'Content-Type': 'application/json' } })));
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+
+async function openAndCancel(name: string, action: keyof typeof ACTIONS) {
+  const user = userEvent.setup();
+  const row = await rowOf(name);
+  await user.click(await requireAction(row, action));
+  const dialog = await findDialog();
+  expect(commands(fetchMock), `"${action}" envió la orden antes de confirmar el modal`).toHaveLength(0);
+  return { user, dialog };
+}
+
+async function cancel(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+  await user.click(within(dialog).getByRole('button', { name: /cancelar|volver|cerrar/i }));
+  await waitFor(() => expect(queryDialog()).toBeNull());
+  expect(commands(fetchMock), 'cancelar el modal envió una petición').toHaveLength(0);
+}
+
 describe('FRN-15 - Modales de confirmación antierror para acciones operativas', () => {
-  it('Start abre un modal de confirmación y cancelar no envía peticiones al backend', async () => {
-    const user = userEvent.setup();
-    renderInstancesPage('ADMIN');
-
-    const dbRow = await rowOf('base-datos');
-    const startBtn = within(dbRow).queryByRole('button', { name: /start|iniciar|encender/i });
-    expect(startBtn, 'no se encontró botón para iniciar la instancia detenida').not.toBeNull();
-
-    await user.click(startBtn!);
-
-    // Debe abrirse el diálogo/modal de confirmación
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toBeInTheDocument();
-    expect(within(dialog).getByText(/iniciar|encender|confirmar/i)).toBeInTheDocument();
-
-    // Cancelar no dispara peticiones POST hacia la API
-    const cancelBtn = within(dialog).getByRole('button', { name: /cancelar|volver/i });
-    await user.click(cancelBtn);
-
-    const postCalls = (fetchMock.mock.calls as [string, RequestInit?][]).filter(
-      ([, init]) => init?.method === 'POST' || init?.method === 'DELETE',
-    );
-    expect(postCalls.length, 'cancelar el modal envió una petición no deseada').toBe(0);
+  it('Start pide confirmación y cancelar no envía ninguna petición', async () => {
+    renderInstances({ rol: 'ADMIN' });
+    const { user, dialog } = await openAndCancel('base-datos', 'start');
+    expect(within(dialog).getByRole('button', { name: /confirmar|iniciar|encender|aceptar/i })).toBeInTheDocument();
+    await cancel(user, dialog);
   });
 
-  it('Stop muestra un modal de advertencia destacando riesgo de pérdida de datos', async () => {
-    const user = userEvent.setup();
-    renderInstancesPage('ADMIN');
-
-    const webRow = await rowOf('servidor-web');
-    const stopBtn = within(webRow).queryByRole('button', { name: /stop|detener|apagar/i });
-    expect(stopBtn, 'no se encontró botón para detener la instancia en ejecución').not.toBeNull();
-
-    await user.click(stopBtn!);
-
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toBeInTheDocument();
-    // Debe advertir sobre pérdida de datos o apagado forzoso
-    const warningText = dialog.textContent || '';
-    expect(warningText).toMatch(/p[eé]rdida|datos|forzoso|inmediat|riesgo/i);
+  it.each(['shutdown', 'reboot'] as const)('%s avisa que se apaga o reinicia el sistema operativo huésped, y cancelar no envía nada', async (action) => {
+    renderInstances({ rol: 'ADMIN' });
+    const { user, dialog } = await openAndCancel('servidor-web', action);
+    expect(dialog.textContent).toMatch(/sistema operativo|hu[eé]sped|guest/i);
+    await cancel(user, dialog);
   });
 
-  it('Shutdown y Reboot advierten sobre el apagado/reinicio del sistema huésped', async () => {
-    const user = userEvent.setup();
-    renderInstancesPage('ADMIN');
+  it('Stop advierte en rojo sobre la posible pérdida de datos, y cancelar no envía nada', async () => {
+    renderInstances({ rol: 'ADMIN' });
+    const { user, dialog } = await openAndCancel('servidor-web', 'stop');
+    expect(dialog.textContent).toMatch(/p[eé]rdida de datos|perder (los )?datos|datos no guardados/i);
+    const red = [dialog, ...Array.from(dialog.querySelectorAll<HTMLElement>('*'))].some((element) =>
+      /(^|\s|:)(text|bg|border)-(red|rose)-\d|destructive|danger/.test(element.getAttribute('class') ?? '')
+      || /color:\s*(red|#(dc2626|ef4444|b91c1c|f87171))|rgb\((220, 38, 38|239, 68, 68)\)/i.test(element.getAttribute('style') ?? ''));
+    expect(red, 'la advertencia de Stop no tiene un estilo rojo (clases red/rose/destructive o color rojo)').toBe(true);
+    await cancel(user, dialog);
+  });
 
-    const webRow = await rowOf('servidor-web');
-    const actionBtn = within(webRow).queryByRole('button', { name: /reboot|reiniciar|shutdown|apagar/i });
-    if (!actionBtn) {
-      throw new Error('FRN-15 no implementada: la botonera no expone acciones de shutdown o reboot');
+  it('Delete pide tipear el ID o el nombre: con otro texto no se habilita, y cancelar no envía nada', async () => {
+    renderInstances({ rol: 'ADMIN' });
+    const { user, dialog } = await openAndCancel('base-datos', 'delete');
+    const input = within(dialog).getByRole('textbox');
+    const confirm = within(dialog).getByRole('button', { name: /eliminar|borrar|confirmar/i });
+    expect(confirm, 'el botón de confirmar Delete tiene que empezar deshabilitado').toBeDisabled();
+
+    await user.type(input, 'otra-cosa');
+    expect(confirm, 'un texto que no es el ID ni el nombre habilitó el borrado').toBeDisabled();
+
+    // Se acepta el nombre o el ID (la tarea dice "el ID o el nombre").
+    await user.clear(input);
+    await user.type(input, 'base-datos');
+    if ((confirm as HTMLButtonElement).disabled) {
+      await user.clear(input);
+      await user.type(input, '102');
     }
-
-    await user.click(actionBtn);
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toBeInTheDocument();
-    expect(dialog.textContent).toMatch(/sistema|hu[eé]sped|guest|ordenad/i);
+    expect(confirm, 'ni el nombre ni el ID de la instancia habilitan el borrado').toBeEnabled();
+    expect(commands(fetchMock), 'tipear la confirmación envió la orden sin pulsar el botón').toHaveLength(0);
+    await cancel(user, dialog);
   });
 
-  it('Delete es un modal destructivo que exige ingresar el nombre o ID, y es exclusivo de ADMIN', async () => {
-    const user = userEvent.setup();
+  it('un OPERATOR ve acciones de energía solo donde tiene FULL_ACCESS y nunca ve Delete', async () => {
+    renderInstances({ rol: 'OPERATOR', permisos: [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }, { vmid: 102, nivelAcceso: 'READ_ONLY' }] });
+    const energy = [ACTIONS.start, ACTIONS.shutdown, ACTIONS.stop, ACTIONS.reboot];
+    const isEnergy = (element: HTMLElement) => energy.some((pattern) => pattern.test((element.getAttribute('aria-label') ?? element.textContent ?? '').trim()));
 
-    // 1. Un OPERATOR nunca debe ver la acción Delete
-    const { unmount } = renderInstancesPage('OPERATOR', [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }]);
-    const opRow = await rowOf('servidor-web');
-    const opDeleteBtn = within(opRow).queryByRole('button', { name: /delete|eliminar|borrar/i });
-    expect(opDeleteBtn, 'un OPERATOR no debe ver el botón Delete').toBeNull();
-    unmount();
+    const full = await actionsOf(await rowOf('servidor-web'));
+    expect(full.filter(isEnergy).length, 'con FULL_ACCESS sobre la 101 el OPERATOR tiene que ver acciones de energía').toBeGreaterThan(0);
+    expect(full.filter(isEnergy).every((element) => !(element as HTMLButtonElement).disabled), 'con FULL_ACCESS las acciones de energía no pueden estar deshabilitadas').toBe(true);
 
-    // 2. El ADMIN sí tiene la acción Delete y exige confirmación tipeada
-    renderInstancesPage('ADMIN');
-    const adminRow = await rowOf('servidor-web');
-    const deleteBtn = within(adminRow).queryByRole('button', { name: /delete|eliminar|borrar/i });
-    expect(deleteBtn, 'el ADMIN debe contar con la opción Delete').not.toBeNull();
+    const readOnly = await actionsOf(await rowOf('base-datos'));
+    expect(readOnly.filter(isEnergy).map((element) => element.getAttribute('aria-label') ?? element.textContent), 'con READ_ONLY sobre la 102 el OPERATOR no tiene que ver acciones de energía').toHaveLength(0);
 
-    await user.click(deleteBtn!);
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toBeInTheDocument();
-
-    // Requiere tipear el nombre o el ID
-    const inputConfirm = within(dialog).getByRole('textbox');
-    expect(inputConfirm).toBeInTheDocument();
-
-    const confirmDeleteBtn = within(dialog).getByRole('button', { name: /eliminar|borrar|confirmar/i });
-    expect(confirmDeleteBtn).toBeDisabled();
-
-    // Al tipear el nombre correcto se habilita el botón
-    await user.type(inputConfirm, 'servidor-web');
-    expect(confirmDeleteBtn).not.toBeDisabled();
-  });
-
-  it('OPERATOR con READ_ONLY no puede operar energía; con FULL_ACCESS sí', async () => {
-    renderInstancesPage('OPERATOR', [
-      { vmid: 101, nivelAcceso: 'FULL_ACCESS' },
-      { vmid: 102, nivelAcceso: 'READ_ONLY' },
-    ]);
-
-    const webRow = await rowOf('servidor-web');
-    const dbRow = await rowOf('base-datos');
-
-    // 101 (FULL_ACCESS): puede operar
-    const webActionBtn = within(webRow).queryByRole('button', { name: /stop|detener|reboot|reiniciar/i });
-    expect(webActionBtn, 'un operador con FULL_ACCESS debe tener habilitadas las acciones de energía').toBeEnabled();
-
-    // 102 (READ_ONLY): botones de energía deshabilitados o ausentes
-    const dbActionBtn = within(dbRow).queryByRole('button', { name: /start|iniciar|encender/i });
-    if (dbActionBtn) {
-      expect(dbActionBtn, 'un operador con READ_ONLY no debe tener botón de start habilitado').toBeDisabled();
+    for (const name of ['servidor-web', 'base-datos']) {
+      expect(await findAction(await rowOf(name), 'delete'), `el OPERATOR ve Delete en ${name}`).toBeUndefined();
     }
   });
 });

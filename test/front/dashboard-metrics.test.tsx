@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import React from 'react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import { withAppProviders } from './app-providers';
+import { withProtectedProviders } from './app-providers';
 
 // FRN-19A (ex FRN-13A): medidores de recursos del Host (CPU / RAM / Almacenamiento).
 // Entregable: componentes reutilizables en features/dashboard con barras o gauges de CPU (% y núcleos),
@@ -30,7 +30,7 @@ function propsFor(value: number, tipo: 'cpu' | 'ram' | 'storage' = 'cpu') {
 function tryRender(Component: React.ComponentType<any>, props: Record<string, unknown>) {
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
-    return render(withAppProviders(<MemoryRouter><Component {...props} /></MemoryRouter>));
+    return render(withProtectedProviders(<MemoryRouter><Component {...props} /></MemoryRouter>));
   } catch {
     return null;
   } finally {

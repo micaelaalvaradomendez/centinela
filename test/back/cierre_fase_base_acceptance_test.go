@@ -476,41 +476,63 @@ func TestCierreFaseBase(t *testing.T) {
 	})
 
 	t.Run("BAC-18B rutina horaria que purga sesiones inactivas o vencidas de sesiones_activas", func(t *testing.T) {
-		// Entregable 2: un ticker cada 1 hora ejecuta
-		// DELETE FROM sesiones_activas WHERE activa = false OR fecha_expiracion < NOW().
-		// No se puede esperar una hora en la suite: se verifica en el código del backend, tanto SQL
-		// directo como GORM (Where(...).Delete(&SesionActiva{})).
-		purge := regexp.MustCompile(`(?is)(DELETE\s+FROM\s+sesiones_activas|Delete\(\s*&?(domain\.)?SesionActiva)`)
-		inactive := regexp.MustCompile(`(?i)activa\s*=\s*(false|\?)`)
-		expired := regexp.MustCompile(`(?i)fecha_expiracion\s*<`)
-		ticker := regexp.MustCompile(`time\.(NewTicker|Tick)\(\s*(1\s*\*\s*)?time\.Hour|time\.(NewTicker|Tick)\(\s*60\s*\*\s*time\.Minute`)
-		var purgeFiles, tickerFiles []string
+		// Entregable 2: una rutina cada 1 hora borra las sesiones con activa = false o fecha_expiracion < NOW().
+		// No se puede esperar una hora en la suite. Se verifica:
+		//   - el comportamiento: la rutina corre al arrancar el backend (se reinicia y se mira la base);
+		//   - el intervalo de 1 hora en el código, aunque llegue por parámetro o por una constante
+		//     (por ejemplo NuevoPurgaWorker(db, 1*time.Hour)): la tarea no fija la forma.
+		suffix := time.Now().UnixNano()
+		insert := func(label string, active bool, expires string) string {
+			id := queryDatabase(t, "SELECT uuid_generate_v7();")
+			queryDatabase(t, fmt.Sprintf(
+				"INSERT INTO sesiones_activas (id, usuario_id, jti_access, jti_refresh, activa, fecha_expiracion, fecha_creacion, fecha_actualizacion) "+
+					"VALUES ('%s', '%s', 'purga-%s-%d', 'purga-%s-%d-r', %t, %s, NOW(), NOW());",
+				id, adminID, label, suffix, label, suffix, active, expires))
+			return id
+		}
+		inactive := insert("inactiva", false, "NOW() + interval '1 hour'")
+		expired := insert("vencida", true, "NOW() - interval '1 minute'")
+		current := insert("vigente", true, "NOW() + interval '1 hour'")
+
+		restartBackend(t)
+
+		exists := func(id string) bool {
+			return strings.TrimSpace(queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM sesiones_activas WHERE id = '%s';", id))) == "1"
+		}
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) && (exists(inactive) || exists(expired)) {
+			time.Sleep(500 * time.Millisecond)
+		}
+		if exists(inactive) {
+			t.Errorf("la sesión con activa = false sigue en sesiones_activas después de la purga")
+		}
+		if exists(expired) {
+			t.Errorf("la sesión vencida sigue en sesiones_activas después de la purga")
+		}
+		if !exists(current) {
+			t.Errorf("la purga borró una sesión activa y vigente")
+		}
+
+		// Intervalo de 1 hora: un ticker (o time.Tick) en el backend, y una duración de 1 hora en el mismo
+		// archivo o en la llamada que crea la rutina de purga.
+		hour := regexp.MustCompile(`(\b1\s*\*\s*)?time\.Hour\b|60\s*\*\s*time\.Minute|3600\s*\*\s*time\.Second`)
+		hourlyPurge := false
 		root := sourcePath("backend", "")
 		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-			if err != nil || entry.IsDir() && (entry.Name() == "vendor" || entry.Name() == ".git") {
-				if entry != nil && entry.IsDir() {
-					return filepath.SkipDir
+			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || strings.Contains(path, "/vendor/") {
+				return nil
+			}
+			text := string(readFile(t, path))
+			tickerHere := regexp.MustCompile(`time\.(NewTicker|Tick)\(`).MatchString(text) && regexp.MustCompile(`(?i)sesiones_activas|SesionActiva`).MatchString(text)
+			for _, line := range strings.Split(text, "\n") {
+				if hour.MatchString(line) && (tickerHere || regexp.MustCompile(`(?i)purg|limpi|clean`).MatchString(line)) {
+					hourlyPurge = true
 				}
-				return nil
-			}
-			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return nil
-			}
-			content, _ := os.ReadFile(path)
-			text := string(content)
-			if purge.MatchString(text) && inactive.MatchString(text) && expired.MatchString(text) {
-				purgeFiles = append(purgeFiles, path)
-			}
-			if ticker.MatchString(text) {
-				tickerFiles = append(tickerFiles, path)
 			}
 			return nil
 		})
-		if len(purgeFiles) == 0 {
-			t.Errorf("no hay en el backend un borrado de sesiones_activas por activa = false o fecha_expiracion < NOW()")
-		}
-		if len(tickerFiles) == 0 {
-			t.Errorf("no hay en el backend un ticker de 1 hora (time.NewTicker(time.Hour)) para la purga")
+		if !hourlyPurge {
+			t.Errorf("no se encontró una rutina de purga con intervalo de 1 hora (ticker en el archivo de la purga, o 1 hora pasada al crearla)")
 		}
 	})
 }

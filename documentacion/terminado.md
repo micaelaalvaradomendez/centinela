@@ -1579,3 +1579,31 @@ Evidencia en [test/informe.md](../test/informe.md). Revisiones probadas: backend
 - **Depende de:** `BAC-17B`, `FIX-23`.
 - **Criterio de éxito original:** sesiones inactivas purgadas automáticamente; tabla `auditoria` particionada por rangos trimestrales conservando inmutabilidad append-only.
 
+---
+
+# Verificación del 05/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `e1f2df4` y frontend `d47999d`.
+
+### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commit `2a2db82` "cliente SSE con tickets efímeros y backoff").** `test/front/events-client.test.tsx`:
+> - **Cumple** (3 de 4):
+>   - pide `POST /api/events/ticket` con `Bearer`, y el JWT nunca va en la URL;
+>   - ante una desconexión pide un ticket nuevo y aplica retroceso exponencial;
+>   - con un `401` avisa a la app (`API_UNAUTHORIZED_EVENT`), y el `AuthProvider` cierra la sesión y lleva a `/login`.
+> - **Falla:** abre el stream en **`/api/events/stream?ticket=…`** (`services/eventsClient.ts:19`, `EVENTS_STREAM_PATH = '/events/stream'`). El backend lo sirve en `GET /api/events` (`cmd/api/main.go:260`), así que contra el backend real el stream responde 404 y no llega ningún evento.
+>
+> La corrección es **`FIX-45`**, en [`futuro.md`](futuro.md).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `FRN-17A`.
+- **Depende de:** `BAC-21C` (`BRG-02-BAC`).
+- **Problema y contexto:** El hook `useEvents` del frontend no puede pasar el JWT por header en `EventSource`/WebSocket ni exponer el access token largo en la URL. Debe solicitar primero el ticket efímero al backend.
+- **Entregable:**
+  1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
+  2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
+- **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.

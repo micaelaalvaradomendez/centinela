@@ -1,6 +1,8 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Toaster } from '@/components/ui/toast';
+import { withAppProviders } from './app-providers';
 
 // FRN-17C (BRG-02-FRN): el cliente de eventos pide un ticket efímero antes de conectarse.
 // La tarea no fija el archivo: se busca en src/ cualquier módulo que exporte `useEvents` (FRN-17A).
@@ -126,106 +128,137 @@ describe('FRN-17C - Cliente de eventos con ticket efímero y reconexión segura'
   }, 70000);
 
   it('si /api/events/ticket responde 401 cierra la sesión local y lleva a /login', async () => {
+    // La tarea pide "disparar el cierre de sesión local y redirigir a /login". Se acepta que el cliente
+    // lo haga directo o avisando a la app (API_UNAUTHORIZED_EVENT) para que lo haga el AuthProvider:
+    // por eso el hook se monta con los providers de la app, sin EventsProvider (que abriría su propia
+    // conexión). La redirección se ve en el historial del navegador (el router usa history.*State).
     const useEvents = await loadUseEvents();
-    const replace = vi.fn();
-    const originalLocation = window.location;
-    Object.defineProperty(window, 'location', { configurable: true, value: { ...originalLocation, pathname: '/dashboard', replace, assign: replace } });
+    window.history.replaceState(null, '', '/dashboard');
+    const historyCalls = [vi.spyOn(window.history, 'replaceState'), vi.spyOn(window.history, 'pushState')];
+    // Si el cliente delega en el manejo global de 401 de la app (API_UNAUTHORIZED_EVENT → AuthProvider limpia
+    // la sesión y navega a /login con el router), la navegación no se puede observar en jsdom: el router de la
+    // app se crea al importar el módulo y en este entorno no tiene estado. En ese caso se acepta el aviso.
+    const { API_UNAUTHORIZED_EVENT } = await import('@/services/apiClient');
+    let unauthorizedNotified = false;
+    const onUnauthorized = () => { unauthorizedNotified = true; };
+    window.addEventListener(API_UNAUTHORIZED_EVENT, onUnauthorized);
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ errorCode: 'TOKEN_REVOKED', message: 'Sesión revocada' }, 401));
     vi.stubGlobal('fetch', fetchMock);
     try {
-      renderHook(() => useEvents());
+      // Como en App.tsx: Toaster por fuera del AuthProvider (el provider avisa con un toast antes de redirigir).
+      renderHook(() => useEvents(), { wrapper: ({ children }) => <Toaster>{withAppProviders(children)}</Toaster> });
 
       await waitFor(() => expect(window.sessionStorage.getItem('centinela_access')).toBeNull(), { timeout: 5000 });
+      await waitFor(() => expect(
+        window.location.pathname === '/login'
+          || historyCalls.some((spy) => spy.mock.calls.some((call) => String(call[2] ?? '').includes('/login')))
+          || unauthorizedNotified,
+        'no se redirigió a /login ni se avisó a la app de la sesión revocada (API_UNAUTHORIZED_EVENT)',
+      ).toBe(true));
       expect(opened).toHaveLength(0);
     } finally {
-      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+      window.removeEventListener(API_UNAUTHORIZED_EVENT, onUnauthorized);
+      window.history.replaceState(null, '', '/');
     }
   });
 });
 
 describe('FRN-17A - Consumo de eventos en tiempo real y distribución por instancia', () => {
-  // La tarea no fija cómo se consumen los eventos ("por ejemplo con un provider"). Se acepta que el
-  // valor de useEvents exponga una función de suscripción (subscribe, onEvent, addListener, listen o
-  // subscribeToResource) que recibe un callback, o el estado `events` (lista) / `lastEvent`. Si no
-  // expone ninguna de esas formas, la prueba falla: no hay manera de que el Dashboard o la tabla reciban.
-  const SUBSCRIBE = ['subscribe', 'onEvent', 'addListener', 'listen', 'subscribeToResource'];
+  // Criterio de éxito: el Dashboard y la tabla reciben los TASK_FINISHED en tiempo real con UNA sola
+  // conexión por pestaña; un evento repetido se procesa una sola vez. La tarea sugiere "un provider montado
+  // una sola vez": si el frontend exporta un *Provider con un hook consumidor de eventos, los consumidores
+  // usan ese hook dentro del provider (como en la app); si no, se usa useEvents directamente.
+  // Cómo llegan los eventos al consumidor es libre: una función de suscripción (subscribe, onEvent,
+  // addListener, listen), una lista (events) o el último evento (ultimoMensaje, ultimoEvento, lastEvent,
+  // lastMessage). Cada evento se identifica por su detalles.tareaId, que el cliente conserva aunque
+  // descarte otros campos.
+  const SUBSCRIBE = ['subscribe', 'onEvent', 'addListener', 'listen'];
+  const LAST = ['ultimoMensaje', 'ultimoEvento', 'lastEvent', 'lastMessage'];
 
-  function collect(result: { current: unknown }) {
+  async function loadConsumer() {
+    for (const load of Object.values(candidates)) {
+      const module = await load().catch(() => ({}) as EventsModule);
+      const providerName = Object.keys(module).find((name) => /Provider$/.test(name) && /event/i.test(name));
+      const hookName = Object.keys(module).find((name) => /^use[A-Z]/.test(name) && /event/i.test(name) && typeof module[name] === 'function');
+      if (providerName && hookName) {
+        const Provider = module[providerName] as React.ComponentType<{ children?: React.ReactNode }>;
+        return { name: `${hookName} con ${providerName}`, use: module[hookName] as () => unknown, wrapper: ({ children }: { children: React.ReactNode }) => <Provider>{children}</Provider> };
+      }
+    }
+    return { name: 'useEvents', use: (await loadUseEvents()) as () => unknown, wrapper: undefined };
+  }
+
+  // Monta un consumidor y devuelve la lista de eventos que le llegaron (por identidad del objeto).
+  async function mountConsumer() {
+    const consumer = await loadConsumer();
+    const snapshots: Record<string, unknown>[] = [];
     const received: Record<string, unknown>[] = [];
-    const value = result.current as Record<string, unknown> | null;
-    const subscribe = SUBSCRIBE.map((name) => value?.[name]).find((fn) => typeof fn === 'function') as
-      | ((callback: (event: Record<string, unknown>) => void) => unknown)
-      | undefined;
+    const { result } = renderHook(() => {
+      const value = consumer.use() as Record<string, unknown>;
+      snapshots.push(value ?? {});
+      return value;
+    }, { wrapper: consumer.wrapper });
+    await waitFor(() => expect(opened).toHaveLength(1));
+    const value = result.current ?? {};
+    const subscribe = SUBSCRIBE.map((key) => value[key]).find((fn) => typeof fn === 'function') as ((cb: (e: Record<string, unknown>) => void) => unknown) | undefined;
+    const lastKey = LAST.find((key) => key in value);
+    if (!subscribe && !Array.isArray(value.events) && !lastKey) {
+      throw new Error(`FRN-17A: ${consumer.name} no expone cómo recibir los eventos (${[...SUBSCRIBE, 'events', ...LAST].join(', ')}); expone: ${Object.keys(value).join(', ') || 'nada'}`);
+    }
     if (subscribe) act(() => { subscribe((event) => received.push(event)); });
-    const read = () => {
+    const read = (): Record<string, unknown>[] => {
       if (subscribe) return received;
-      const current = result.current as { events?: unknown; lastEvent?: unknown } | null;
-      if (Array.isArray(current?.events)) return current.events as Record<string, unknown>[];
-      if (current && 'lastEvent' in current) return current.lastEvent ? [current.lastEvent as Record<string, unknown>] : [];
-      throw new Error(`FRN-17A: useEvents no expone cómo recibir los eventos (${SUBSCRIBE.join(', ')}, events o lastEvent); expone: ${Object.keys(current ?? {}).join(', ') || 'nada'}`);
+      const last = snapshots[snapshots.length - 1];
+      if (Array.isArray(last.events)) return last.events as Record<string, unknown>[];
+      const seen = new Set<unknown>();
+      return snapshots.map((snapshot) => snapshot[lastKey!]).filter((event) => event && !seen.has(event) && seen.add(event)) as Record<string, unknown>[];
     };
     return read;
   }
 
+  const tareaOf = (event: Record<string, unknown>) => (event.detalles as Record<string, unknown> | undefined)?.tareaId;
   const taskFinished = (id: string, recursoId = '101') => ({
     id, tipo: 'TASK_FINISHED', severidad: 'INFO', recursoTipo: 'VM', recursoId, mensaje: 'La tarea de encendido finalizó correctamente',
     fechaHora: new Date().toISOString(), detalles: { tareaId: `tarea-${id}`, accion: 'start', estado: 'COMPLETED', exitstatus: 'OK' },
   });
 
   it('entrega los mensajes que cumplen RealtimeEvent y descarta los que no', async () => {
-    const useEvents = await loadUseEvents();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-parse' })));
-
-    const { result } = renderHook(() => useEvents());
-    await waitFor(() => expect(opened).toHaveLength(1));
-    const read = collect(result);
+    const read = await mountConsumer();
 
     act(() => {
-      opened[0].instance.emitMessage({ invalid: 'payload' });
+      opened[0].instance.emitMessage({ invalid: 'payload', detalles: { tareaId: 'tarea-invalido' } });
       opened[0].instance.emitMessage('esto no es JSON');
-      opened[0].instance.emitMessage({ ...taskFinished('evt-sin-tipo'), tipo: undefined });
-      opened[0].instance.emitMessage(taskFinished('evt-valid-1'));
+      opened[0].instance.emitMessage({ ...taskFinished('sin-tipo'), tipo: undefined });
+      opened[0].instance.emitMessage(taskFinished('valido'));
     });
 
-    await waitFor(() => expect(read()).toContainEqual(expect.objectContaining({ id: 'evt-valid-1', tipo: 'TASK_FINISHED' })));
-    expect(read().filter((event) => event.id !== 'evt-valid-1'), 'llegaron mensajes que no cumplen el contrato RealtimeEvent').toHaveLength(0);
+    await waitFor(() => expect(read().map(tareaOf)).toContain('tarea-valido'));
+    expect(read().map(tareaOf).filter((tarea) => tarea !== 'tarea-valido'), 'llegaron mensajes que no cumplen el contrato RealtimeEvent').toHaveLength(0);
   });
 
   it('un evento repetido (mismo id) se procesa una sola vez', async () => {
-    const useEvents = await loadUseEvents();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-dedup' })));
+    const read = await mountConsumer();
 
-    const { result } = renderHook(() => useEvents());
-    await waitFor(() => expect(opened).toHaveLength(1));
-    const read = collect(result);
+    act(() => { opened[0].instance.emitMessage(taskFinished('dup')); });
+    act(() => { opened[0].instance.emitMessage(taskFinished('dup')); });
+    act(() => { opened[0].instance.emitMessage(taskFinished('otro', '102')); });
 
-    act(() => {
-      opened[0].instance.emitMessage(taskFinished('evt-dup-1'));
-      opened[0].instance.emitMessage(taskFinished('evt-dup-1'));
-      opened[0].instance.emitMessage(taskFinished('evt-otro', '102'));
-    });
-
-    await waitFor(() => expect(read()).toContainEqual(expect.objectContaining({ id: 'evt-otro' })));
-    expect(read().filter((event) => event.id === 'evt-dup-1')).toHaveLength(1);
+    await waitFor(() => expect(read().map(tareaOf)).toContain('tarea-otro'));
+    expect(read().filter((event) => tareaOf(event) === 'tarea-dup'), 'el evento repetido se entregó dos veces').toHaveLength(1);
   });
 
   it('dos consumidores en la misma pestaña (Dashboard y tabla) comparten una sola conexión', async () => {
-    const useEvents = await loadUseEvents();
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ticket: 'ticket-compartido' }));
     vi.stubGlobal('fetch', fetchMock);
+    const consumer = await loadConsumer();
 
-    // Si la conexión vive en un provider (como sugiere la tarea), se monta igual que en la app.
-    const providers = Object.values(await Promise.all(Object.values(candidates).map((load) => load().catch(() => ({}) as EventsModule))))
-      .flatMap((module) => Object.entries(module).filter(([name, value]) => /Provider$/.test(name) && typeof value === 'function'))
-      .map(([, value]) => value as React.ComponentType<{ children?: React.ReactNode }>);
-    const wrapper = ({ children }: { children: React.ReactNode }) =>
-      providers.reduceRight<React.ReactElement>((inner, Provider) => React.createElement(Provider, null, inner), React.createElement(React.Fragment, null, children));
-
-    renderHook(() => [useEvents(), useEvents()], { wrapper });
+    renderHook(() => [consumer.use(), consumer.use()], { wrapper: consumer.wrapper });
 
     await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(1));
     await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(opened, 'cada consumidor abrió su propia conexión a /api/events').toHaveLength(1);
+    expect(opened, `con dos consumidores (${consumer.name}) se abrió más de una conexión a /api/events`).toHaveLength(1);
     expect(ticketCalls(fetchMock)).toHaveLength(1);
   });
 

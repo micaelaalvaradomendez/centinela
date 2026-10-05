@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InstancesPage from '@/pages/Instances';
 import { Toaster } from '@/components/ui/toast';
-import { withAppProviders } from './app-providers';
+import { withProtectedProviders } from './app-providers';
 
 // FRN-20A (ex FRN-14A): tabla de inventario con badges de estado e IP (RF-03).
 // Criterio de éxito: VMs y LXC en la misma tabla; IP null → "No detectada"; tolera los campos nuevos
@@ -31,7 +31,7 @@ function renderInstancesPage() {
     id: 'user-admin', organizacionId: 'org-1', nombreCompleto: 'Admin Test', email: 'admin@centinela.local',
     rol: 'ADMIN', instanciasPermitidas: [], tiene2FA: true,
   }));
-  return render(withAppProviders(
+  return render(withProtectedProviders(
     <Toaster>
       <MemoryRouter initialEntries={['/instances']}>
         <InstancesPage />

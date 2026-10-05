@@ -289,3 +289,23 @@ FIX DEL 21 AL 25 (en actual.md)
 
 ## 🛠️ Fixes detectados en la verificación del 03/10/2026
 
+---
+
+## 🛠️ Fixes detectados en la verificación del 05/10/2026
+
+### `FIX-45` - El cliente de eventos abre el stream en una ruta que el backend no sirve (`FRN-17C`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Nico (autor de `2a2db82`)
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C` (en `terminado.md`) y `BAC-21C`.
+- **Problema y evidencia (verificado el 05/10/2026, frontend `d47999d`, backend `e1f2df4`):**
+  - `services/eventsClient.ts:19` define `EVENTS_STREAM_PATH = '/events/stream'`, y el cliente se conecta a `/api/events/stream?ticket=<uuid>`.
+  - El backend sirve el stream en `GET /api/events?ticket=<uuid>` (`cmd/api/main.go:260`, `BAC-21C`); `/api/events/stream` no existe y responde 404. Contra el backend real no llega ningún evento, aunque el ticket se pida bien.
+  - El criterio de `FRN-17C` dice *"el frontend se conecta a `/api/events` usando tickets de un solo uso"*.
+  - Prueba que falla: `test/front/events-client.test.tsx`, caso *"pide POST /api/events/ticket con Bearer y se conecta a /api/events?ticket=<uuid> sin exponer el JWT"*: `expected '/api/events/stream?ticket=ticket-uno' to match /\/api\/events\?ticket=ticket-uno$/`.
+- **Entregable:** conectar el stream a `/api/events?ticket=<uuid>`, la ruta del backend y de `docs/contrato-eventos.md`. Si el equipo prefiere `/api/events/stream`, el cambio va en el backend y en el contrato, y hay que avisar para ajustar la prueba.
+- **Criterio de éxito:**
+  - Pasan los 4 casos `FRN-17C…` de `events-client.test.tsx`.
+  - Con el backend real, el navegador abre `/api/events?ticket=…` y recibe el `TASK_FINISHED` de una acción de energía.
+

@@ -185,3 +185,138 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
 - **Depende de:** ninguna.
 - **Entregable:** componentes reutilizables en `features/dashboard` con cambio de color según saturación y pruebas unitarias de borde.
 - **Criterio de éxito:** medidores responsive de 0% a 100%, advertencia desde el 70% y tests de componente aprobados.
+
+---
+
+# Verificación del 05/10/2026
+
+Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa en [test/informe.md](../test/informe.md).
+
+#### `BAC-29` - Contrato HTTP y de eventos de la Etapa 1 (nueva)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 05/10/2026, backend `e1f2df4`, commits `5787179`, `21b1332`, `4ef36e3` y `8ba0c59`).** Existe `docs/contrato-etapa1.md`, con su versión `.docx`, y Swagger documenta `/node/status`. `test/back/etapa1_acceptance_test.go`, caso `BAC-29…`, falla porque al contrato le faltan partes del entregable:
+> - entregable 3: el `DELETE /api/instances/:vmid` y su `202 { upid, tareaId }`;
+> - entregable 4: `exitstatus` y `motivo: PROXMOX_ERROR` en los `detalles` de `TASK_FINISHED`;
+> - entregable 5: que `GET /api/node/status` lo puede consultar cualquier usuario autenticado (D1);
+> - entregable 6: el código `INSTANCE_INVALID_STATE`.
+>
+> **Diferencia con la tarea:** el entregable 2 pide `activeTask: { tareaId, action, status } | null`, y el contrato lo documenta como el id de la tarea en curso; el backend lo implementa así (`ports.InstanciaListadaDTO.ActiveTask`).
+>
+> La corrección es **`FIX-46`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.0 h
+- **Depende de:** ninguna. Se hace primero, para que el frontend no espere a la implementación.
+- **Entregable:** `backend/docs/contrato-etapa1.md` y las anotaciones Swagger (sin implementación) de:
+  1. `GET /api/node/status`: `{ cpu: { usagePercent, cores }, ram: { usedGb, totalGb, usagePercent }, storage: { usedGb, totalGb, usagePercent }, uptimeSeconds, instancesSummary: { vms: { running, stopped, paused, total }, lxc: { … } }, stale, fetchedAt }`.
+  2. `GET /api/instances`: lo de `BAC-14`, más `ip | null`, `cpuUsage | null` (0-100), `ramUsage | null`, `maxRam | null` (bytes), `nivelAcceso` y `activeTask: { tareaId, action, status } | null`.
+  3. Las rutas de energía tal como queden con `FIX-39`. Pueden ser `/status/:action` o una por acción, como las actuales `/start` y `/stop`. Para `start`, `shutdown`, `stop` y `reboot`, y para el `DELETE /api/instances/:vmid` de `BAC-24B`: `202 { upid, tareaId }`.
+  4. Los `detalles` de `TASK_FINISHED`: `{ tareaId, accion, estado: COMPLETED|FAILED, exitstatus, motivo?: PROXMOX_ERROR|TIMEOUT, error? }`. `motivo` va solo cuando `estado` es `FAILED` (D2).
+  5. Quién puede consultar cada endpoint: `GET /api/node/status`, cualquier usuario autenticado (D1).
+  6. La tabla de códigos de error de la etapa con su estado HTTP:
+     - `INSTANCE_ACCESS_DENIED`, `INSTANCE_PROTECTED`, `INSTANCE_BUSY`, `INSTANCE_INVALID_STATE` (D2) e `INSTANCE_NOT_FOUND`;
+     - `PROXMOX_UNAVAILABLE` (`502`), `PROXMOX_TIMEOUT` (`504`, `FIX-40`) e `INVALID_ACTION`.
+
+     Cada código lleva una línea con su significado, para que el frontend arme un mensaje distinto para cada uno (D2).
+
+     Se agregan también al inventario de `FIX-08`.
+- **Criterio de éxito:** el frontend puede maquetar `FRN-19B`, `FRN-20A`, `FRN-16` y `FRN-17B` solo con este documento, y Swagger muestra los endpoints con ejemplos. Si una tarea posterior cambia el contrato, actualiza este archivo y avisa al frontend.
+
+#### `BAC-24A` - Validación de estado previo y VMIDs protegidos en acciones de energía (`RF-04`)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 05/10/2026, backend `e1f2df4`, commit `8591e90`).** `test/back/etapa1_acceptance_test.go`, caso `BAC-24A…`. **Todo el comportamiento cumple**, en la ruta genérica `/status/:action` y en los alias `/start` y `/stop`:
+> - `409 INSTANCE_INVALID_STATE` para `start` sobre una instancia encendida, y para `stop`, `shutdown` y `reboot` sobre una detenida;
+> - `403 INSTANCE_PROTECTED` para `shutdown`, `reboot` y `stop` sobre un VMID protegido;
+> - `400 INVALID_ACTION` para una acción desconocida;
+> - `403` para un usuario sin la instancia asignada;
+> - `202 { upid, tareaId }` en las órdenes válidas;
+> - ninguna escritura en Proxmox al rechazar (verificado en el log del stub).
+>
+> **Falla el entregable 4:** `INSTANCE_INVALID_STATE` está en `docs/estandar_http.md` (inventario de `FIX-08`), pero no en Swagger (`docs/swagger.json`). Siguen en verde `FIX-16`, `SEC-04`, `FIX-39`, `FIX-40` y `LOGIN-04`.
+>
+> La corrección es **`FIX-48`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `FIX-39` (`shutdown` y `reboot`).
+- **Entregable:**
+  1. Antes de enviar la orden, validar el estado actual de la instancia:
+     - `start` solo si está `stopped`;
+     - `shutdown`, `stop` y `reboot` solo si está `running`.
+
+     Si no corresponde, responder `409 INSTANCE_INVALID_STATE` (D2) sin enviar tráfico de escritura a Proxmox.
+  2. Aplicar `RejectProtectedInstance` a `shutdown` y `reboot`, en todas las rutas que se usen para esas acciones.
+  3. Si se usa una ruta genérica como `/status/:action`, una acción desconocida responde `400 INVALID_ACTION`.
+  4. Documentar los códigos en Swagger y `FIX-08`.
+- **Criterio de éxito:**
+  - Toda orden válida devuelve `202 { upid, tareaId }`.
+  - `start` sobre una instancia encendida devuelve `409 INSTANCE_INVALID_STATE`.
+  - `reboot` sobre un VMID protegido devuelve `403 INSTANCE_PROTECTED`.
+  - Un usuario sin la instancia asignada recibe `403` sin tráfico hacia Proxmox.
+
+#### `BAC-24B` - Endpoint de eliminación `DELETE /api/instances/:vmid`
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 05/10/2026, backend `e1f2df4`, commit `b8d2631`).** El endpoint existe: `DELETE /api/instances/:vmid` con `RequireRole("ADMIN")` y `RejectProtectedInstance` (`cmd/api/main.go:273`). `test/back/etapa1_acceptance_test.go`, caso `BAC-24B…`:
+> - **Cumple:**
+>   - sin token, `401`;
+>   - un OPERATOR, aunque tenga `FULL_ACCESS`, recibe `403`;
+>   - un VMID protegido, `403 INSTANCE_PROTECTED`;
+>   - la orden no llega a Proxmox cuando se rechaza.
+> - **Falla:**
+>   - con la instancia encendida responde `409 INSTANCE_NOT_STOPPED`; D2 y el entregable 2 piden `INSTANCE_INVALID_STATE`;
+>   - con la instancia detenida responde **`204` sin cuerpo** (`instance_handler.go:558`). `proxmox.EliminarInstancia` descarta el UPID de `qmdestroy`/`vzdestroy`, la tarea no se registra en el seguimiento y no se emite `TASK_FINISHED`. La auditoría se escribe con resultado final (éxito o falla), sin `upid` ni orden despachada `PENDING`. Fallan los entregables 3 y 4.
+>
+> La corrección es **`FIX-49`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `FIX-39`, porque reutiliza su auditoría de la orden despachada y toca los mismos archivos. Se desarrolla contra el simulador, que ya implementa el `DELETE` (`BAC-28`).
+- **Contexto:** el endpoint no existe. La regla de `DELETE` estaba en `BAC-21B`, pero quedó fuera de su alcance y de `FIX-39`. La prueba `puente_etapa1…` del `DELETE` se omite hasta que exista.
+- **Entregable:**
+  1. Agregar `EliminarInstancia` a `ProxmoxPort` y al cliente: `DELETE /nodes/{node}/{qemu|lxc}/{vmid}`.
+  2. Montar `DELETE /api/instances/:vmid` con:
+     - `RequireRole("ADMIN")`;
+     - `RejectProtectedInstance`;
+     - la validación de estado: si la instancia no está `stopped`, `409 INSTANCE_INVALID_STATE` (D2) sin enviar la orden a Proxmox.
+  3. Registrar el UPID de `qmdestroy`/`vzdestroy` en el seguimiento (`Seguir`) y en la auditoría de la orden despachada, y responder `202 { upid, tareaId }`.
+  4. Guardar el tipo de recurso (`VM`/`LXC`) **antes** de borrar: hoy `seguir` lo averigua con `ObtenerInstancia` al terminar, y después del borrado esa consulta falla.
+  5. Documentar el endpoint y sus códigos en Swagger y `FIX-08`.
+- **Criterio de éxito:**
+  - Un `OPERATOR`, aunque tenga `FULL_ACCESS`, recibe `403`.
+  - Borrar una instancia encendida responde `409 INSTANCE_INVALID_STATE`.
+  - Sobre una detenida responde `202`, el simulador la saca del inventario y llega `TASK_FINISHED` con `recursoTipo` correcto.
+  - Sobre un VMID protegido responde `403 INSTANCE_PROTECTED`.
+
+#### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commits `8739022` y `0407fbd`).** `test/front/events-client.test.tsx`, bloque `FRN-17A`:
+> - **Cumple** (2 de 4):
+>   - una sola conexión por pestaña: `EventsProvider` en `ProtectedLayout`, y los consumidores con `useEventsContext()`;
+>   - descarta los mensajes que no cumplen `RealtimeEvent`.
+> - **Falla:**
+>   - **no deduplica**: `parseCentinelaEventsMessage` descarta el `id` del evento, y un evento repetido vuelve a entregarse en `ultimoMensaje`;
+>   - sigue existiendo `hooks/useWebSocket.js`, y `types/notifications.ts:4` sigue diciendo "El servidor WebSocket todavía no existe".
+>
+> La corrección es **`FIX-47`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-17C` (fase base: conexión con ticket y reconexión del mismo hook `useEvents`). Conviene hacerlas juntas. En el backend, `BAC-21C` ya está terminada.
+- **Entregable:**
+  - Sobre la conexión de `FRN-17C`:
+    - parsear cada mensaje como `RealtimeEvent` (`types/notifications.ts`) y descartar los que no cumplen el contrato;
+    - deduplicar por `id`;
+    - exponer una suscripción por tipo y por `recursoId`, por ejemplo con un provider montado una sola vez en el layout protegido.
+  - Eliminar el archivo vacío `hooks/useWebSocket.js` y actualizar el comentario desactualizado de `notifications.ts`.
+- **Criterio de éxito:**
+  - El Dashboard y la tabla reciben los `TASK_FINISHED` del backend en tiempo real con una sola conexión abierta por pestaña.
+  - Un evento repetido se procesa una sola vez.
+  - Las pruebas de `events-client.test.tsx` pasan.

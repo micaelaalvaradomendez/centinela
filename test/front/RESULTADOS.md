@@ -1,65 +1,62 @@
 # Resultados de las pruebas frontend
 
-**Fecha:** 03/10/2026. **Frontend:** submódulo en `907efe5` (último commit de `main`, incluye PR #78: `FRN-19A`, maquetado y medidores de recursos del Host). **Comando:** `pnpm test`.
+**Fecha:** 05/10/2026. **Frontend:** submódulo en `d47999d` (último commit de `main`; nuevos: `FIX-36`, `FRN-19A`, `FRN-17C` y `FRN-17A`). **Comando:** `pnpm vitest run --no-file-parallelism`. 2 corridas con el mismo resultado.
 
 | Métrica | Valor |
 |---|---:|
-| Pruebas | 113 |
-| Aprueban | **90** |
-| Fallan | **13** |
-| Omitidas | 10 (`login04-e2e.test.ts`: se ejecuta desde `test/back`) |
+| Pruebas | 139 |
+| Aprueban | 95 |
+| Fallan | **34** |
+| Omitidas | 10 (`login04-e2e.test.ts`: se ejecuta desde `test/back`, donde pasa 10/10) |
 
-## Por archivo
+## Tareas de `actual.md`
 
-| Archivo | Pruebas | Fallan | Tareas |
-|---|---:|---:|---|
-| `admin-users.test.tsx` | 20 | 0 | FRN-05, FRN-06, FRN-06B, FIX-25, FIX-27, SEC-03 (PR #72), FIX-38 (PR #73) ✅ |
-| `navigation.test.tsx` | 9 | 0 | FRN-03, SEC-03, FIX-30, FIX-38, FIX-42 ✅ |
-| `password-change.test.tsx`, `recover-password.test.tsx` | 19 | 0 | FRN-10, FRN-12, FIX-21, FIX-29 ✅ |
-| `audit.test.tsx` | 7 | 0 | FRN-14 / FIX-22, FIX-36 (PR #77) ✅ |
-| `dashboard-metrics.test.tsx` | 3 | 0 | **FRN-19A** (PR #78) ✅ |
-| `events-client.test.tsx` | 8 | 8 | **FRN-17C** ❌ (4) y **FRN-17A** ❌ (4): no existe `useEvents` |
-| `instances-table.test.tsx` | 5 | 5 | **FRN-20A** 🟡: integración reactiva implementada; discrepancias de maquetado en IP, badges y nombres (cubierto por `FIX-43`) |
-| `session-security`, `admin-recovery`, `login-form`, `authentication-contract`, `two-factor-*`, `api-client` | 32 | 0 | regresión ✅ |
+| Tarea | Archivo | Fallan | Causa |
+|---|---|---:|---|
+| `FRN-17C` cliente con ticket | `events-client.test.tsx` | 1 de 4 | **El frontend abre el stream en `/api/events/stream?ticket=…`** (`EVENTS_STREAM_PATH = '/events/stream'`), pero el backend lo sirve en `GET /api/events`: contra el backend real respondería 404. El ticket con `Bearer`, la reconexión con ticket nuevo, el retroceso exponencial y el `401` cumplen |
+| `FRN-17A` consumo de eventos | `events-client.test.tsx` | 2 de 4 | La conexión única (`EventsProvider` + `useEventsContext`) y el descarte de mensajes inválidos cumplen. **No deduplica:** el cliente descarta el `id` del evento y un evento repetido se entrega dos veces. Además sigue existiendo `hooks/useWebSocket.js` |
+| `FIX-43` tabla de instancias | `instances-table.test.tsx` | 5 de 5 | Sin cambios: nombre e ID en el mismo texto, IP fija en `—`, estado sin badge |
+| `FRN-15` modales | `instances-modals.test.tsx` (**reescrito**) | 6 de 6 | La tabla no tiene botonera ni modales |
+| `FRN-16` operación en progreso | `instances-operation.test.tsx` (**reescrito**) | 9 de 9 | Depende de `FRN-15`: no hay acciones que disparar |
+| `FRN-19B` semáforo del nodo | `dashboard-node.test.tsx` (**reescrito**) | 11 de 11 | El Dashboard no consulta `GET /api/node/status` |
 
-## Fallos y causa
+## Regresión
 
-| Tarea | Causa en el código |
-|---|---|
-| FRN-17C / FRN-17A | No existe `useEvents`; `hooks/useWebSocket.js` sigue vacío |
-| FRN-20A | Discrepancias de maquetado e interfaz en `Instances.tsx` (`FIX-43`: IP, badges de estado y separación de nombre/VMID) |
+Pasan `FRN-19A` (`dashboard-metrics`), `FIX-36` (`audit`), `SEC-03`, `FIX-38`, `FIX-41`, `FIX-42`, `FIX-29` y el resto de las tareas terminadas.
 
-## Cambios en la suite (02/10/2026)
+## Cambios en la suite (05/10/2026)
 
-- **`app-providers.tsx` (nuevo):** monta los providers de `src/context` igual que `App.tsx`. Desde `SEC-03`, el menú, `PermissionGate` y la ficha del usuario leen `useAuth()`; las pruebas que renderizaban rutas sin el `AuthProvider` fallaban por un error de la prueba, no del producto. Lo usan `navigation`, `audit`, `password-change`, `instances-table` y `dashboard-metrics`.
-- **`navigation.test.tsx` (SEC-03):** acepta el hook como `usePermissions`, `useAuthUser` o `useAuth`, con helpers booleanos o funciones, y `PermissionGate` con export por defecto. La tarea no fija nombres ("un contexto con Provider es opcional"). El caso de `FIX-38` evalúa `usePermissions` (el helper que nombra esa tarea), y uno nuevo, `FIX-42`, evalúa los demás hooks (`useAuth`).
-- **`instances-table.test.tsx` (FRN-20A), reescrito:**
-  - el tipo es `vm`, como en el contrato de `BAC-14` (antes, `qemu`);
-  - verifica el `Bearer`, que el tipo se muestre como VM o LXC, que Running sea verde y Stopped gris, la copia de la IP y la botonera en cada fila;
-  - ya no importa `AuthProvider` de forma fija ni exige un nombre accesible para la tabla;
-  - se quitó un `if (copyButton)` que dejaba pasar el caso sin verificar.
-- **`dashboard-metrics.test.tsx` (FRN-19A), reescrito:** antes exigía nombres de componente (`CpuGauge`…), props y clases CSS concretas. Ahora:
-  - detecta los medidores por lo que renderizan;
-  - compara el aspecto visual: igual en 20 % y 69 %, distinto en 70 % (D3);
-  - verifica que el frontend tenga sus propias pruebas con los bordes 69 y 70, como pide el criterio.
-- **`events-client.test.tsx` (FRN-17A), reescrito:** los tres casos tenían un `if (subscribe) … else expect(algo definido)`, y pasaban sin verificar nada. Ahora verifican:
-  - que lleguen los eventos válidos y se descarten los inválidos;
-  - la deduplicación por `id`;
-  - **una sola conexión** con dos consumidores;
-  - la eliminación de `useWebSocket.js` y la actualización de `notifications.ts`.
+- **`app-providers.tsx`:**
+  - `withAppProviders` monta lo mismo que `App.tsx` (`AuthProvider`). Se usa en las pruebas que renderizan rutas, porque `ProtectedLayout` ya monta su `EventsProvider`.
+  - `withProtectedProviders` (nuevo) agrega el `EventsProvider`. Se usa en las pruebas que renderizan una página protegida suelta.
+  - Incluir el `EventsProvider` en todas las pruebas rompía `password-change`: el mock de `fetch` reutiliza la misma `Response`, y el pedido de ticket consumía su cuerpo.
+- **`instances-helpers.tsx` (nuevo):** inventario de prueba y búsqueda de acciones de la fila. Acepta botones directos o un menú "Acciones", y modales con `role="dialog"` o `"alertdialog"`. Solo cuenta como órdenes las peticiones a `/instances/`.
+- **FRN-15 (reescrito):**
+  - el caso de `READ_ONLY` tenía un `if (botón)` que lo dejaba pasar sin verificar;
+  - de shutdown y reboot probaba solo uno;
+  - no verificaba que cancelar no envíe nada en todas las acciones, ni el rojo de Stop, ni que un texto incorrecto mantenga deshabilitado el borrado.
+- **FRN-16 (reescrito):**
+  - confirmaba el modal con un `if`;
+  - tomaba como mensaje cualquier `role="status"`, que podía ser el propio spinner, y sus expresiones regulares coincidían con texto de la tabla;
+  - ahora verifica la ruta, el `Bearer`, el bloqueo de toda la fila, que no se pueda enviar una segunda orden, un mensaje propio por cada uno de los seis códigos de D2, que los seis sean distintos, y el mensaje genérico.
+- **FRN-19B (reescrito):** ahora prueba:
+  - los bordes 69 % y 70 % de D3 en CPU, RAM y disco;
+  - "Inaccesible" con `502`, `504` y error de red;
+  - el aviso de `stale`, que solo aparece cuando corresponde;
+  - el skeleton mientras se espera `/node/status`;
+  - la consulta cada 10 s y la pausa con la pestaña oculta.
+- **FRN-17A (reescrito):** acepta el diseño implementado: `EventsProvider` montado una vez, consumidores con `useEventsContext()`, y el evento recibido en `ultimoMensaje`. Identifica cada evento por `detalles.tareaId`, porque el cliente no conserva el `id`.
+- **FRN-17C, caso del `401`:**
+  - reemplazaba `window.location` por un objeto armado con `{...location}`, que pierde `href` y `origin`;
+  - ahora monta los providers de la app con su `Toaster`, y acepta la redirección o el aviso `API_UNAUTHORIZED_EVENT`, que es como el cliente delega en el `AuthProvider`;
+  - en jsdom no se puede observar el `navigate` del router de la app.
 
 ### Contrapruebas
 
-Las pruebas nuevas se corrieron contra una copia temporal del frontend con implementaciones mínimas correctas (`CENTINELA_FRONTEND_DIR`, sin tocar el submódulo): **16 de 16 pasan**. Después se rompió cada implementación de una forma distinta, y cada vez falló exactamente la prueba que corresponde:
+Contra una copia temporal del frontend con implementaciones mínimas correctas pasan **34 de 34**, en `instances-modals`, `instances-operation`, `dashboard-node` y `events-client`. La copia incluye el cliente de eventos real con la ruta, la deduplicación y la limpieza corregidas. Con 13 defectos introducidos, uno por vez, cada uno hace fallar exactamente la prueba que corresponde:
 
-| Defecto introducido | Prueba que lo detecta |
+| Defecto | Lo detecta |
 |---|---|
-| Umbral en 80 % o en 69 % | FRN-19A, caso D3 |
-| Sin deduplicar / sin validar el contrato / una conexión por consumidor | FRN-17A, el caso de cada uno |
-| Badges sin color / IP null como `-` / tipo sin traducir | FRN-20A, el caso de cada uno |
-
-## Lo que la suite no cubre
-
-- FRN-17A: la suscripción **filtrada** por tipo o `recursoId`. La tarea no fija su forma; se verifica indirectamente en `FRN-19C` y `FRN-20C`, cuando la usen.
-- FRN-19A: que haya un medidor de cada tipo (CPU, RAM y almacenamiento). Se verifica el comportamiento de cada medidor que exista.
-- FRN-19A: las pruebas del propio frontend se buscan, pero no se ejecutan: el frontend no tiene un comando de pruebas configurado.
+| Start sin modal, Stop sin rojo, Delete que acepta cualquier texto, READ_ONLY con energía, OPERATOR con Delete | FRN-15, el caso de cada uno |
+| Fila sin bloqueo, sin desbloqueo tras error, dos códigos con el mismo mensaje | FRN-16, el caso de cada uno |
+| Umbral en 80 %, red caída sin "Inaccesible", sin polling, sin pausa con pestaña oculta, aviso de `stale` siempre visible | FRN-19B, el caso de cada uno |

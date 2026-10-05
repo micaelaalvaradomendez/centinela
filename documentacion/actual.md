@@ -14,16 +14,22 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 >   - `INF-07B`, referencia local verificada (pendiente despliegue CT 103 en `INT-03`);
 >   - `FRN-20A`, implementada con problemas en frontend `070e96b` (integración a la API y modales implementados; maquetado, IP y badges derivados a `FIX-43` en `futuro-1.md`);
 >   - `FRN-19A`, completa (PR #78, frontend `907efe5`, medidores de host en `ResourceMeter.tsx`).
-> - **Tareas que permanecen en este archivo (sin implementar en los submódulos):**
+> - **Verificación del 05/10/2026** (backend `e1f2df4`, frontend `d47999d`; detalle en [test/informe.md](../test/informe.md)). Ninguna tarea está completa con todas sus pruebas en verde.
+>   - **Pasaron a [`terminado.md`](terminado.md)**, implementada con problema: `FRN-17C`. Su corrección es `FIX-45`, en [`futuro.md`](futuro.md).
+>   - **Pasaron a [`terminado-1.md`](terminado-1.md)**, implementadas con problema: `BAC-29`, `BAC-24A`, `BAC-24B` y `FRN-17A`. Sus correcciones son `FIX-46` a `FIX-49`, en [`futuro-1.md`](futuro-1.md).
+>   - **Quedan en este archivo**, sin implementar:
 >
 > | Tarea | Área | Estado | Pruebas |
 > |---|---|---|---|
-> | `FRN-17C` | Frontend | No implementada: no existe `useEvents` ni pedido de ticket en front | `events-client.test.tsx` (4) |
-> | `BAC-29` | Backend | No implementada: falta `contrato-etapa1.md` y Swagger de Etapa 1 | `etapa1_acceptance…` (1) |
-> | `BAC-22` | Backend | No implementada: falta `GET /api/node/status` y telemetría en Redis | `etapa1_acceptance…` (1) |
-> | `BAC-23A` | Backend | No implementada: falta resolución de IP por guest agent / LXC | `etapa1_acceptance…` (1) |
-> | `BAC-25A` | Backend | No implementada: falta pool acotado de workers (`UPID_WORKERS`) | `etapa1_acceptance…` (1) |
-> | `FRN-17A` | Frontend | No implementada: consumo y distribución de eventos en front | `events-client` (4) |
+> | `FIX-44` | Backend | No implementado: el índice parcial no incluye `jti_access`. La purga horaria ya cumple | `cierre_fase_base…` BAC-18B (2; falla 1) |
+> | `BAC-22` | Backend | No implementada (`/node/status` responde 404) | `etapa1_acceptance…` (1) |
+> | `BAC-23A` | Backend | No implementada | `etapa1_acceptance…` (1) |
+> | `BAC-25A` | Backend | No implementada | `etapa1_acceptance…` (1) |
+> | `FIX-43` | Frontend | No implementado | `instances-table.test.tsx` (5) |
+> | `FRN-15` | Frontend | No implementada | `instances-modals.test.tsx` (6) |
+> | `FRN-19B` | Frontend | No implementada | `dashboard-node.test.tsx` (11) |
+> | `FRN-16` | Frontend | No implementada | `instances-operation.test.tsx` (9) |
+> | `BAC-25C` | Backend | No implementada: no retoma las tareas al reiniciar (el `activeTask` que ya se informa vino con `FIX-39`) | `etapa1_acceptance…` (1) |
 
 ---
 
@@ -37,19 +43,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 > **Estado verificado (01/10/2026):** el recorrido completo funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al `OPERATOR`. El mensaje ante `502 EMAIL_DELIVERY_FAILED` en el alta quedó resuelto con `FIX-27` (en `terminado.md`).
 
 ---
-
-### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1,5 h
-- **Ventana propuesta:** Junto a `FRN-17A`.
-- **Depende de:** `BAC-21C` (`BRG-02-BAC`).
-- **Problema y contexto:** El hook `useEvents` del frontend no puede pasar el JWT por header en `EventSource`/WebSocket ni exponer el access token largo en la URL. Debe solicitar primero el ticket efímero al backend.
-- **Entregable:**
-  1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
-  2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
-- **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
 
 ### `FIX-44` - Corregir índice parcial en `sesiones_activas` para incluir `jti_access` y alinear worker de purga (`BAC-18B`) (Backend)
 
@@ -78,27 +71,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ---
 
 > Tareas de la Ola 1 de [`etapa1.md`](etapa1.md), en curso. Ninguna está implementada todavía (verificado el 03/10/2026).
-
-#### `BAC-29` - Contrato HTTP y de eventos de la Etapa 1 (nueva)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.0 h
-- **Depende de:** ninguna. Se hace primero, para que el frontend no espere a la implementación.
-- **Entregable:** `backend/docs/contrato-etapa1.md` y las anotaciones Swagger (sin implementación) de:
-  1. `GET /api/node/status`: `{ cpu: { usagePercent, cores }, ram: { usedGb, totalGb, usagePercent }, storage: { usedGb, totalGb, usagePercent }, uptimeSeconds, instancesSummary: { vms: { running, stopped, paused, total }, lxc: { … } }, stale, fetchedAt }`.
-  2. `GET /api/instances`: lo de `BAC-14`, más `ip | null`, `cpuUsage | null` (0-100), `ramUsage | null`, `maxRam | null` (bytes), `nivelAcceso` y `activeTask: { tareaId, action, status } | null`.
-  3. Las rutas de energía tal como queden con `FIX-39`. Pueden ser `/status/:action` o una por acción, como las actuales `/start` y `/stop`. Para `start`, `shutdown`, `stop` y `reboot`, y para el `DELETE /api/instances/:vmid` de `BAC-24B`: `202 { upid, tareaId }`.
-  4. Los `detalles` de `TASK_FINISHED`: `{ tareaId, accion, estado: COMPLETED|FAILED, exitstatus, motivo?: PROXMOX_ERROR|TIMEOUT, error? }`. `motivo` va solo cuando `estado` es `FAILED` (D2).
-  5. Quién puede consultar cada endpoint: `GET /api/node/status`, cualquier usuario autenticado (D1).
-  6. La tabla de códigos de error de la etapa con su estado HTTP:
-     - `INSTANCE_ACCESS_DENIED`, `INSTANCE_PROTECTED`, `INSTANCE_BUSY`, `INSTANCE_INVALID_STATE` (D2) e `INSTANCE_NOT_FOUND`;
-     - `PROXMOX_UNAVAILABLE` (`502`), `PROXMOX_TIMEOUT` (`504`, `FIX-40`) e `INVALID_ACTION`.
-
-     Cada código lleva una línea con su significado, para que el frontend arme un mensaje distinto para cada uno (D2).
-
-     Se agregan también al inventario de `FIX-08`.
-- **Criterio de éxito:** el frontend puede maquetar `FRN-19B`, `FRN-20A`, `FRN-16` y `FRN-17B` solo con este documento, y Swagger muestra los endpoints con ejemplos. Si una tarea posterior cambia el contrato, actualiza este archivo y avisa al frontend.
 
 #### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
 - **Área:** Backend
@@ -148,22 +120,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - El fin de cada tarea se detecta en menos de 2 s.
   - Las pruebas de `seguimiento_tareas_test.go` siguen en verde.
 
-#### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-17C` (fase base: conexión con ticket y reconexión del mismo hook `useEvents`). Conviene hacerlas juntas. En el backend, `BAC-21C` ya está terminada.
-- **Entregable:**
-  - Sobre la conexión de `FRN-17C`:
-    - parsear cada mensaje como `RealtimeEvent` (`types/notifications.ts`) y descartar los que no cumplen el contrato;
-    - deduplicar por `id`;
-    - exponer una suscripción por tipo y por `recursoId`, por ejemplo con un provider montado una sola vez en el layout protegido.
-  - Eliminar el archivo vacío `hooks/useWebSocket.js` y actualizar el comentario desactualizado de `notifications.ts`.
-- **Criterio de éxito:**
-  - El Dashboard y la tabla reciben los `TASK_FINISHED` del backend en tiempo real con una sola conexión abierta por pestaña.
-  - Un evento repetido se procesa una sola vez.
-  - Las pruebas de `events-client.test.tsx` pasan.
-
 ### `FIX-43` - Corregir maquetado, visualización de IP, badges de estado y columnas en tabla de instancias (`FRN-20A` / RF-03) (Frontend)
 
 - **Área:** Frontend
@@ -184,48 +140,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   5. Asegurar que la columna tipo exponga claramente `VM` o `LXC`.
 - **Criterio de éxito:**
   - Los 5 casos de `test/front/instances-table.test.tsx` pasan 100% en verde.
-
-
-#### `BAC-24A` - Validación de estado previo y VMIDs protegidos en acciones de energía (`RF-04`)
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `FIX-39` (`shutdown` y `reboot`).
-- **Entregable:**
-  1. Antes de enviar la orden, validar el estado actual de la instancia:
-     - `start` solo si está `stopped`;
-     - `shutdown`, `stop` y `reboot` solo si está `running`.
-
-     Si no corresponde, responder `409 INSTANCE_INVALID_STATE` (D2) sin enviar tráfico de escritura a Proxmox.
-  2. Aplicar `RejectProtectedInstance` a `shutdown` y `reboot`, en todas las rutas que se usen para esas acciones.
-  3. Si se usa una ruta genérica como `/status/:action`, una acción desconocida responde `400 INVALID_ACTION`.
-  4. Documentar los códigos en Swagger y `FIX-08`.
-- **Criterio de éxito:**
-  - Toda orden válida devuelve `202 { upid, tareaId }`.
-  - `start` sobre una instancia encendida devuelve `409 INSTANCE_INVALID_STATE`.
-  - `reboot` sobre un VMID protegido devuelve `403 INSTANCE_PROTECTED`.
-  - Un usuario sin la instancia asignada recibe `403` sin tráfico hacia Proxmox.
-
-#### `BAC-24B` - Endpoint de eliminación `DELETE /api/instances/:vmid`
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `FIX-39`, porque reutiliza su auditoría de la orden despachada y toca los mismos archivos. Se desarrolla contra el simulador, que ya implementa el `DELETE` (`BAC-28`).
-- **Contexto:** el endpoint no existe. La regla de `DELETE` estaba en `BAC-21B`, pero quedó fuera de su alcance y de `FIX-39`. La prueba `puente_etapa1…` del `DELETE` se omite hasta que exista.
-- **Entregable:**
-  1. Agregar `EliminarInstancia` a `ProxmoxPort` y al cliente: `DELETE /nodes/{node}/{qemu|lxc}/{vmid}`.
-  2. Montar `DELETE /api/instances/:vmid` con:
-     - `RequireRole("ADMIN")`;
-     - `RejectProtectedInstance`;
-     - la validación de estado: si la instancia no está `stopped`, `409 INSTANCE_INVALID_STATE` (D2) sin enviar la orden a Proxmox.
-  3. Registrar el UPID de `qmdestroy`/`vzdestroy` en el seguimiento (`Seguir`) y en la auditoría de la orden despachada, y responder `202 { upid, tareaId }`.
-  4. Guardar el tipo de recurso (`VM`/`LXC`) **antes** de borrar: hoy `seguir` lo averigua con `ObtenerInstancia` al terminar, y después del borrado esa consulta falla.
-  5. Documentar el endpoint y sus códigos en Swagger y `FIX-08`.
-- **Criterio de éxito:**
-  - Un `OPERATOR`, aunque tenga `FULL_ACCESS`, recibe `403`.
-  - Borrar una instancia encendida responde `409 INSTANCE_INVALID_STATE`.
-  - Sobre una detenida responde `202`, el simulador la saca del inventario y llega `TASK_FINISHED` con `recursoTipo` correcto.
-  - Sobre un VMID protegido responde `403 INSTANCE_PROTECTED`.
 
 
 #### `FRN-15` - Modales de confirmación antierror para acciones operativas

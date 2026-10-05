@@ -1,143 +1,99 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import InstancesPage from '@/pages/Instances';
-import { Toaster } from '@/components/ui/toast';
-import { withAppProviders } from './app-providers';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { commands, findDialog, findOutsideTable, renderInstances, requireAction, rowOf, stubFetch } from './instances-helpers';
 
-// FRN-16: Máquina de estados "Operación en progreso" por instancia (RF-04 / Etapa 1).
-// Entregables:
-// - Al enviar una orden (start, stop, reboot, shutdown, delete), la fila entra en estado `transitioning`.
-// - El botón accionado muestra un spinner y se deshabilitan todos los botones de esa instancia (antidoble-clic).
-// - Ante error HTTP, desbloquea la fila y muestra un mensaje distinto según el código (D2):
-//   - 409 INSTANCE_INVALID_STATE
-//   - 409 INSTANCE_BUSY
-//   - 403 INSTANCE_PROTECTED
-//   - 403 INSTANCE_ACCESS_DENIED
-//   - 502 PROXMOX_UNAVAILABLE
-//   - 504 PROXMOX_TIMEOUT
-
-const inventory = [
-  {
-    id: 101, name: 'servidor-web', type: 'vm', node: 'pve', status: 'running',
-    ip: '192.168.1.50', cpuUsage: 30, ramUsage: 4, maxRam: 16, nivelAcceso: 'FULL_ACCESS', activeTask: null,
-  },
-];
-
-let fetchMock: ReturnType<typeof vi.fn>;
-
-function renderInstancesPage() {
-  window.sessionStorage.setItem('centinela_access', 'access-token-operation');
-  window.localStorage.setItem('centinela_user', JSON.stringify({
-    id: 'user-admin', rol: 'ADMIN', nombreCompleto: 'Admin Test', email: 'admin@centinela.local',
-  }));
-  return render(withAppProviders(
-    <Toaster>
-      <MemoryRouter initialEntries={['/instances']}>
-        <InstancesPage />
-      </MemoryRouter>
-    </Toaster>,
-  ));
-}
-
-async function rowOf(name: string) {
-  const cell = await screen.findByText(new RegExp(name, 'i'));
-  const row = cell.closest('tr, [role="row"]');
-  expect(row, `"${name}" no está dentro de una fila de tabla`).not.toBeNull();
-  return row as HTMLElement;
-}
+// FRN-16: máquina de estados "Operación en progreso" por instancia (RF-04).
+// Criterio de éxito: es imposible disparar una segunda acción sobre la misma instancia mientras hay una
+// orden en curso. Cada uno de los seis códigos (D2) muestra su propio mensaje, y cualquier otro código,
+// un mensaje genérico. Entregable: al confirmar el modal (FRN-15) se envía la orden por la ruta del
+// contrato (BAC-29: /instances/:vmid/:accion o /instances/:vmid/status/:accion); el botón muestra un
+// spinner y se deshabilitan todos los de la fila; ante un error la fila se desbloquea.
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+async function confirmStop() {
+  const user = userEvent.setup();
+  const row = await rowOf('servidor-web');
+  await user.click(await requireAction(row, 'stop'));
+  const dialog = await findDialog();
+  await user.click(within(dialog).getByRole('button', { name: /confirmar|detener|forzar|aceptar/i }));
+  return { user, row };
+}
+
+const busy = (row: HTMLElement) => Boolean(
+  row.getAttribute('aria-busy') === 'true'
+  || within(row).queryByRole('status')
+  || within(row).queryByRole('progressbar')
+  || row.querySelector('.animate-spin, [data-loading="true"], [aria-busy="true"]'),
+);
+
 describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', () => {
-  it('deshabilita los botones de la fila y muestra spinner durante una operación en curso', async () => {
-    let resolvePost: (value: Response) => void;
-    const postPromise = new Promise<Response>((resolve) => { resolvePost = resolve; });
+  it('al confirmar envía la orden por la ruta del contrato y, mientras está en curso, bloquea toda la fila con un spinner', async () => {
+    let release!: (response: Response) => void;
+    const fetchMock = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
+    renderInstances({ rol: 'ADMIN' });
 
-    fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (String(url).includes('/instances') && (!init || init.method === 'GET' || !init.method)) {
-        return Promise.resolve(new Response(JSON.stringify(inventory), { status: 200 }));
-      }
-      return postPromise;
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const { user, row } = await confirmStop();
 
-    const user = userEvent.setup();
-    renderInstancesPage();
+    await waitFor(() => expect(commands(fetchMock)).toHaveLength(1));
+    const [url, init] = commands(fetchMock)[0];
+    expect(String(init?.method).toUpperCase()).toBe('POST');
+    expect(url, 'la orden no va a la ruta de energía de la 101').toMatch(/\/instances\/101\/(status\/)?stop(\?|$)/);
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-token-instancias');
 
-    const row = await rowOf('servidor-web');
-    const stopBtn = within(row).queryByRole('button', { name: /stop|detener|apagar/i });
-    expect(stopBtn).not.toBeNull();
-
-    await user.click(stopBtn!);
-
-    // Si abre modal, confirmamos
-    const confirmBtn = screen.queryByRole('button', { name: /confirmar|detener|apagar/i });
-    if (confirmBtn && confirmBtn !== stopBtn) {
-      await user.click(confirmBtn);
-    }
-
-    // Durante el vuelo: los botones de la fila deben quedar deshabilitados
     await waitFor(() => {
-      const buttons = within(row).getAllByRole('button');
-      for (const btn of buttons) {
-        expect(btn).toBeDisabled();
-      }
+      const actions = within(row).queryAllByRole('button');
+      expect(actions.length).toBeGreaterThan(0);
+      for (const action of actions) expect(action, `"${action.getAttribute('aria-label') ?? action.textContent}" sigue habilitado con una orden en curso`).toBeDisabled();
     });
+    expect(busy(row), 'la fila no muestra spinner ni estado de carga mientras la orden está en curso').toBe(true);
 
-    // Debe mostrarse un spinner o estado de carga
-    expect(within(row).queryByRole('status') || row.querySelector('.animate-spin, [data-loading]')).not.toBeNull();
+    // Una segunda acción sobre la misma instancia no envía nada.
+    for (const action of within(row).queryAllByRole('button')) await user.click(action).catch(() => {});
+    expect(commands(fetchMock), 'se pudo disparar una segunda orden sobre la misma instancia').toHaveLength(1);
 
-    // Completamos la petición
-    resolvePost!(new Response(JSON.stringify({ upid: 'UPID:123', tareaId: 't-1' }), { status: 202 }));
+    release(json({ upid: 'UPID:pve:1:stop:101:', tareaId: 't-1' }, 202));
   });
 
-  it('muestra mensajes de error específicos según el código devuelto por el backend (D2)', async () => {
-    const errorCodes = [
-      { status: 409, code: 'INSTANCE_INVALID_STATE', match: /estado|ya est[aá]/i },
-      { status: 409, code: 'INSTANCE_BUSY', match: /otra tarea|ocupad|esper[aá]/i },
-      { status: 403, code: 'INSTANCE_PROTECTED', match: /protegid|infraestructura/i },
-      { status: 403, code: 'INSTANCE_ACCESS_DENIED', match: /permiso|denegad/i },
-      { status: 502, code: 'PROXMOX_UNAVAILABLE', match: /no est[aá] disponible|ca[ií]do/i },
-      { status: 504, code: 'PROXMOX_TIMEOUT', match: /tiempo|timeout/i },
-    ];
+  const cases = [
+    { status: 409, code: 'INSTANCE_INVALID_STATE', message: /estado actual|ya est[aá] (encendida|apagada|detenida|en ejecuci)|no corresponde/i },
+    { status: 409, code: 'INSTANCE_BUSY', message: /otra tarea|ocupad/i },
+    { status: 403, code: 'INSTANCE_PROTECTED', message: /protegid|infraestructura/i },
+    { status: 403, code: 'INSTANCE_ACCESS_DENIED', message: /permiso/i },
+    { status: 502, code: 'PROXMOX_UNAVAILABLE', message: /no est[aá] disponible|no disponible/i },
+    { status: 504, code: 'PROXMOX_TIMEOUT', message: /no respondi[oó] a tiempo|tiempo de espera|timeout/i },
+  ];
+  const shown = new Map<string, string>();
 
-    for (const { status, code, match } of errorCodes) {
-      fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-        if (String(url).includes('/instances') && (!init || init.method === 'GET' || !init.method)) {
-          return Promise.resolve(new Response(JSON.stringify(inventory), { status: 200 }));
-        }
-        return Promise.resolve(new Response(JSON.stringify({ errorCode: code, message: `Error ${code}` }), {
-          status, headers: { 'Content-Type': 'application/json' },
-        }));
-      });
-      vi.stubGlobal('fetch', fetchMock);
+  it.each(cases)('D2: $status $code muestra su mensaje y desbloquea la fila', async ({ status, code, message }) => {
+    // El cuerpo trae un mensaje neutro: el texto que ve el usuario lo arma el frontend según el código.
+    stubFetch(() => Promise.resolve(json({ errorCode: code, message: 'error' }, status)));
+    renderInstances({ rol: 'ADMIN' });
+    const { row } = await confirmStop();
 
-      const user = userEvent.setup();
-      const { unmount } = renderInstancesPage();
+    shown.set(code, await findOutsideTable(message));
+    await waitFor(async () => {
+      const stop = await requireAction(row, 'stop');
+      expect(stop, 'después del error la fila tiene que desbloquearse').toBeEnabled();
+    });
+  });
 
-      const row = await rowOf('servidor-web');
-      const actionBtn = within(row).getByRole('button', { name: /stop|detener|apagar/i });
-      await user.click(actionBtn);
+  it('cualquier otro código muestra un mensaje genérico, distinto de los seis de D2', async () => {
+    stubFetch(() => Promise.resolve(json({ errorCode: 'INTERNAL_ERROR', message: 'error' }, 500)));
+    renderInstances({ rol: 'ADMIN' });
+    await confirmStop();
+    const generic = await findOutsideTable(/error|no se pudo|fall[oó]|inesperad/i);
+    expect(cases.some(({ message }) => message.test(generic)), `el mensaje genérico coincide con el de un código de D2: "${generic}"`).toBe(false);
+  });
 
-      const confirmBtn = screen.queryByRole('button', { name: /confirmar|detener|apagar/i });
-      if (confirmBtn && confirmBtn !== actionBtn) {
-        await user.click(confirmBtn);
-      }
-
-      // Debe aparecer el mensaje toast correspondiente al error
-      const toast = await screen.findByRole('status').catch(() => screen.findByText(match));
-      expect(toast.textContent).toMatch(match);
-
-      // Y la fila debe haberse desbloqueado tras el fallo
-      await waitFor(() => {
-        expect(within(row).getByRole('button', { name: /stop|detener|apagar/i })).not.toBeDisabled();
-      });
-
-      unmount();
-    }
+  it('los seis mensajes de D2 son distintos entre sí', () => {
+    expect(shown.size, 'algún caso de D2 no mostró su mensaje (ver los casos anteriores)').toBe(cases.length);
+    expect(new Set(shown.values()).size, `hay mensajes repetidos: ${JSON.stringify(Object.fromEntries(shown))}`).toBe(cases.length);
   });
 });
+
