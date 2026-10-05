@@ -289,23 +289,3 @@ FIX DEL 21 AL 25 (en actual.md)
 
 ## 🛠️ Fixes detectados en la verificación del 03/10/2026
 
-### `FIX-44` - Corregir índice parcial en `sesiones_activas` para incluir `jti_access` y alinear worker de purga (`BAC-18B`) (Backend)
-
-- **Área:** Backend
-- **Asignada:** Tayra (autora de `96106a6`)
-- **Estimación:** 0,5 h
-- **Depende de:** `BAC-18B` (en `terminado.md`).
-- **Problema y evidencia:**
-  1. `internal/adapters/secondary/postgres/db.go:148` creó el índice parcial como:
-     ```sql
-     CREATE INDEX IF NOT EXISTS idx_sesiones_activas_vigentes
-     ON sesiones_activas (usuario_id, fecha_expiracion)
-     WHERE activa = true;
-     ```
-     Omitió la columna `jti_access`. Como el middleware de autenticación (`AuthMiddleware`) busca las sesiones por `jti_access` para comprobar revocaciones en cada solicitud, el índice no cubre la consulta de alta concurrencia. La suite de pruebas (`cierre_fase_base_acceptance_test.go:396`) falla por no encontrar un índice parcial que cubra `jti_access`.
-  2. En `internal/adapters/secondary/postgres/purga_worker.go:39`, el worker usa `ticker := time.NewTicker(w.intervalo)`. La prueba estática de aceptación busca la inicialización con `time.Hour` o equivalente dentro del worker (`time.NewTicker(time.Hour)`).
-- **Entregable:**
-  1. Actualizar la definición del índice parcial en `db.go` para que indexe `(jti_access, usuario_id)` o `jti_access` con `WHERE activa = true` (por ejemplo `ON sesiones_activas (jti_access, usuario_id) WHERE activa = true;`).
-  2. Ajustar `purga_worker.go` para que instancie el ticker con `time.NewTicker(1 * time.Hour)` (o mantenga el default con `time.NewTicker(time.Hour)`).
-- **Criterio de éxito:**
-  - `TestCierreFaseBase/BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `TestCierreFaseBase/BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.

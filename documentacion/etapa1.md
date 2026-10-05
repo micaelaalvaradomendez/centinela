@@ -272,22 +272,7 @@ flowchart TD
 > | SMTP | `INF-08B` (terminada) | `INF-08A` (fase base) |
 > | Nginx para SSE | No hace falta: en local el frontend habla directo con el backend | `INF-07B` |
 
-#### `INF-07` - Token de Proxmox, conectividad y VMIDs protegidos en el servidor
 
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1.0 h
-- **Depende de:** ninguna. Usa variables que el backend ya lee: `PROXMOX_*` (`BAC-14`) y `PROXMOX_PROTECTED_VMIDS` (`FIX-33`/`SEC-04`).
-- **No bloquea al desarrollo:** solo hace falta para `INT-03`.
-- **Estado verificado (29/09/2026):** el token `centi-api@pve!backend-token` responde 200 en `/version`, `/nodes/proxmox/status`, `/cluster/resources` y `/cluster/nextid`, y tiene `Sys.Audit`, `VM.Audit`, `VM.PowerMgmt`, `VM.Allocate` y `VM.GuestAgent.Audit`. Alcanza para telemetría, inventario, energía, borrado y lectura de IP.
-- **Entregable:**
-  1. **Rotar el secreto del token**, que hoy está en texto plano en `documentacion/api-proxmox.md`. Documentar en ese archivo el token y sus privilegios, sin el secreto.
-  2. Verificar con `curl`, desde el LXC del backend (pruebas y estable), la conectividad HTTPS hacia `/nodes/{node}/status` y `/cluster/resources`.
-  3. Cargar en el `.env` del servidor `PROXMOX_URL`, `PROXMOX_NODE`, `PROXMOX_TOKEN_ID`, `PROXMOX_TOKEN_SECRET` (el nuevo) y `PROXMOX_PROTECTED_VMIDS=100,101,102,103,104,105`.
-- **Criterio de éxito:**
-  - Desde el LXC del backend las dos consultas responden `200 OK` con el token nuevo, y el anterior responde `401`.
-  - El backend desplegado lista las instancias reales.
-  - Un `stop` sobre un VMID protegido responde `403 INSTANCE_PROTECTED`.
 
 ---
 
@@ -335,46 +320,6 @@ flowchart TD
 >
 > `BAC-24A` completa la energía y **`BAC-24B` crea el `DELETE` completo**, que no hace ninguna de las dos.
 
-#### `BAC-24A` - Validación de estado previo y VMIDs protegidos en acciones de energía (`RF-04`)
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `FIX-39` (`shutdown` y `reboot`).
-- **Entregable:**
-  1. Antes de enviar la orden, validar el estado actual de la instancia:
-     - `start` solo si está `stopped`;
-     - `shutdown`, `stop` y `reboot` solo si está `running`.
-
-     Si no corresponde, responder `409 INSTANCE_INVALID_STATE` (D2) sin enviar tráfico de escritura a Proxmox.
-  2. Aplicar `RejectProtectedInstance` a `shutdown` y `reboot`, en todas las rutas que se usen para esas acciones.
-  3. Si se usa una ruta genérica como `/status/:action`, una acción desconocida responde `400 INVALID_ACTION`.
-  4. Documentar los códigos en Swagger y `FIX-08`.
-- **Criterio de éxito:**
-  - Toda orden válida devuelve `202 { upid, tareaId }`.
-  - `start` sobre una instancia encendida devuelve `409 INSTANCE_INVALID_STATE`.
-  - `reboot` sobre un VMID protegido devuelve `403 INSTANCE_PROTECTED`.
-  - Un usuario sin la instancia asignada recibe `403` sin tráfico hacia Proxmox.
-
-#### `BAC-24B` - Endpoint de eliminación `DELETE /api/instances/:vmid`
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `FIX-39`, porque reutiliza su auditoría de la orden despachada y toca los mismos archivos. Se desarrolla contra el simulador, que ya implementa el `DELETE` (`BAC-28`).
-- **Contexto:** el endpoint no existe. La regla de `DELETE` estaba en `BAC-21B`, pero quedó fuera de su alcance y de `FIX-39`. La prueba `puente_etapa1…` del `DELETE` se omite hasta que exista.
-- **Entregable:**
-  1. Agregar `EliminarInstancia` a `ProxmoxPort` y al cliente: `DELETE /nodes/{node}/{qemu|lxc}/{vmid}`.
-  2. Montar `DELETE /api/instances/:vmid` con:
-     - `RequireRole("ADMIN")`;
-     - `RejectProtectedInstance`;
-     - la validación de estado: si la instancia no está `stopped`, `409 INSTANCE_INVALID_STATE` (D2) sin enviar la orden a Proxmox.
-  3. Registrar el UPID de `qmdestroy`/`vzdestroy` en el seguimiento (`Seguir`) y en la auditoría de la orden despachada, y responder `202 { upid, tareaId }`.
-  4. Guardar el tipo de recurso (`VM`/`LXC`) **antes** de borrar: hoy `seguir` lo averigua con `ObtenerInstancia` al terminar, y después del borrado esa consulta falla.
-  5. Documentar el endpoint y sus códigos en Swagger y `FIX-08`.
-- **Criterio de éxito:**
-  - Un `OPERATOR`, aunque tenga `FULL_ACCESS`, recibe `403`.
-  - Borrar una instancia encendida responde `409 INSTANCE_INVALID_STATE`.
-  - Sobre una detenida responde `202`, el simulador la saca del inventario y llega `TASK_FINISHED` con `recursoTipo` correcto.
-  - Sobre un VMID protegido responde `403 INSTANCE_PROTECTED`.
 
 #### `BAC-24C` - Limpieza de permisos al eliminar una instancia (nueva)
 - **Área:** Backend
@@ -407,17 +352,6 @@ flowchart TD
   - Sin `UPID_TIMEOUT` configurado, una tarea que no termina se marca `FAILED` con `motivo: TIMEOUT` a los 3 minutos.
   - Todo `TASK_FINISHED` trae `tareaId`, `accion`, `estado` y `exitstatus`. Los fallidos traen además `motivo`, y es distinto en cada uno de los dos casos.
   - `BAC-27` y `BAC-24C` reciben todos los resultados.
-
-#### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-25A` y `FIX-39` (campo `activeTask`).
-- **Entregable:**
-  1. Al iniciar el backend, leer de `tareas_asincronas` las filas con `estado = 'RUNNING'` y volver a encolarlas en el pool de `BAC-25A`. El plazo de 3 minutos (D4) se cuenta desde `fecha_creacion`. Si ya venció, se consulta Proxmox una sola vez: si la tarea terminó, se registra su resultado; si no, se marca `FAILED` con `motivo: TIMEOUT`.
-  2. Completar `activeTask: { tareaId, action, status } | null` en cada instancia de `GET /api/instances`, cruzando con las tareas `RUNNING`.
-- **Criterio de éxito:** si el backend se reinicia durante una tarea de Proxmox, al levantar retoma el sondeo, actualiza `tareas_asincronas` y `auditoria`, y emite `TASK_FINISHED`. Mientras tanto, `GET /api/instances` muestra la tarea en `activeTask`.
 
 #### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
 - **Área:** Backend
@@ -467,21 +401,6 @@ flowchart TD
 > Cada tarea de frontend indica **con qué puede empezar** (contrato `BAC-29` y datos de prueba) y **con qué cierra** (la implementación de backend). Las pantallas actuales (`Dashboard.tsx`, `Instances.tsx`) son maquetas estáticas que se reemplazan. Las carpetas vacías `features/dashboard` y `features/intances` se usan o se eliminan.
 
 
-#### `FRN-19B` (ex `FRN-13B`) - Semáforo de salud global e integración con `GET /api/node/status` (`RF-02`)
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-19A`. Empieza con `BAC-29` (datos de prueba) y cierra con `BAC-22`.
-- **Entregable:** el Dashboard conecta los medidores a `GET /api/node/status` mediante un servicio en `features/dashboard/services`:
-  - uptime legible (días, horas, minutos);
-  - semáforo de salud (D3):
-    - `Saludable` si CPU, RAM y disco están por debajo del 70 %;
-    - `Advertencia` si alguno llega al 70 % o más;
-    - `Inaccesible` si el backend responde `502`/`504` o no responde.
-  - Aviso de "datos desactualizados" si `stale: true`;
-  - consulta automática cada 10 s, que se pausa con la pestaña oculta;
-  - skeletons mientras carga y reintento visual ante una desconexión.
-- **Criterio de éxito:** los datos reales del nodo se ven en pantalla y se actualizan sin `F5`. Si el backend cae, la UI muestra `Inaccesible` sin romperse.
 
 #### `FRN-19C` (`BRG-05-FRN`, parte Dashboard) - Tarjetas de conteo de VMs/LXC con auto-actualización (`RF-02`)
 
@@ -521,45 +440,6 @@ flowchart TD
 
 ### Bloque 5: Frontend - Controles de Energía y Gestión de Estados
 
-#### `FRN-15` - Modales de confirmación antierror para acciones operativas
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.5 h
-- **Depende de:**
-  - `FRN-20A`;
-  - `SEC-03` (`PermissionGate`);
-  - `FIX-37` y `FIX-38`, para que `canOperateInstance` funcione con datos reales.
-
-  Los modales se pueden maquetar antes, con datos de prueba.
-- **Entregable:** modales según la criticidad de la acción, con `components/ui/modals.tsx`:
-  - `Start`: confirmación estándar.
-  - `Shutdown` / `Reboot`: aviso de apagado o reinicio del sistema operativo huésped.
-  - `Stop`: advertencia en rojo sobre posible pérdida de datos.
-  - `Delete`: modal destructivo que pide tipear el ID o el nombre. **Solo visible para ADMIN** (`PermissionGate`).
-
-  Los botones de energía se muestran solo si `canOperateInstance(vmid)` da `true`.
-- **Criterio de éxito:**
-  - Ninguna acción se dispara sin pasar por el modal, y cancelar no envía peticiones.
-  - Un OPERATOR con `READ_ONLY` no ve botones de energía; uno con `FULL_ACCESS` sí.
-  - El OPERATOR nunca ve Delete.
-
-#### `FRN-16` - Máquina de estados "Operación en progreso" por instancia
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.5 h
-- **Depende de:** `FRN-15`. Empieza con `BAC-29` y cierra con `FIX-39`, `FIX-40`, `BAC-24A` y `BAC-24B`.
-- **Entregable:**
-  - Al confirmar el modal, enviar la orden de energía (con la ruta documentada en `BAC-29`) o `DELETE`, y guardar el `tareaId` del `202` en el estado de la fila (`transitioning`).
-  - El botón accionado muestra un spinner, y se deshabilitan todos los botones de esa instancia.
-  - Ante un error, desbloquear la fila y mostrar un mensaje distinto según el código (D2), con los significados de `BAC-29`:
-    - `409 INSTANCE_INVALID_STATE`: la acción no corresponde al estado actual (por ejemplo, "La instancia ya está encendida").
-    - `409 INSTANCE_BUSY`: "La instancia está ejecutando otra tarea. Esperá a que termine".
-    - `403 INSTANCE_PROTECTED`: la instancia es de infraestructura y no admite esa acción.
-    - `403 INSTANCE_ACCESS_DENIED`: no tenés permiso sobre la instancia.
-    - `502 PROXMOX_UNAVAILABLE`: Proxmox no está disponible.
-    - `504 PROXMOX_TIMEOUT`: Proxmox no respondió a tiempo, y la acción puede no haberse aplicado.
-    - Cualquier otro código: un mensaje genérico.
-- **Criterio de éxito:** es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso. Cada uno de los seis códigos muestra su propio mensaje, verificado con una prueba de componente por código.
 
 
 #### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa

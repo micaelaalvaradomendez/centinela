@@ -152,3 +152,36 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
 - **Estimación:** 2.5 h
 - **Depende de:** `BAC-14`, `BAC-29`, `FIX-39`.
 - **Criterio de éxito original:** VMs y LXC en la misma tabla; IP null muestra "No detectada"; tolera campos nuevos en null; badges de estado diferenciados.
+
+#### `INF-07` - Token de Proxmox, conectividad y VMIDs protegidos en el servidor
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.0 h
+- **Depende de:** ninguna. Usa variables que el backend ya lee: `PROXMOX_*` (`BAC-14`) y `PROXMOX_PROTECTED_VMIDS` (`FIX-33`/`SEC-04`).
+- **No bloquea al desarrollo:** solo hace falta para `INT-03`.
+- **Estado verificado (29/09/2026):** el token `centi-api@pve!backend-token` responde 200 en `/version`, `/nodes/proxmox/status`, `/cluster/resources` y `/cluster/nextid`, y tiene `Sys.Audit`, `VM.Audit`, `VM.PowerMgmt`, `VM.Allocate` y `VM.GuestAgent.Audit`. Alcanza para telemetría, inventario, energía, borrado y lectura de IP.
+- **Entregable:**
+  1. **Rotar el secreto del token**, que hoy está en texto plano en `documentacion/api-proxmox.md`. Documentar en ese archivo el token y sus privilegios, sin el secreto.
+  2. Verificar con `curl`, desde el LXC del backend (pruebas y estable), la conectividad HTTPS hacia `/nodes/{node}/status` y `/cluster/resources`.
+  3. Cargar en el `.env` del servidor `PROXMOX_URL`, `PROXMOX_NODE`, `PROXMOX_TOKEN_ID`, `PROXMOX_TOKEN_SECRET` (el nuevo) y `PROXMOX_PROTECTED_VMIDS=100,101,102,103,104,105`.
+- **Criterio de éxito:**
+  - Desde el LXC del backend las dos consultas responden `200 OK` con el token nuevo, y el anterior responde `401`.
+  - El backend desplegado lista las instancias reales.
+  - Un `stop` sobre un VMID protegido responde `403 INSTANCE_PROTECTED`.
+
+#### `FRN-19A` (ex `FRN-13A`) - Maquetado y medidores de recursos del Host (CPU / RAM / Almacenamiento) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 03/10/2026, frontend `907efe5`, PR #78, commit `6572011`).**
+> - Se implementó el componente `ResourceMeter.tsx` en `features/dashboard/components`, soportando barras de progreso y medidores para CPU (% y núcleos), RAM (usada y total) y almacenamiento (formateo dinámico GB/TB).
+> - Aplica estilos reactivos acordes a la saturación: visualización estándar por debajo del 70% y estado de advertencia (`warning`) a partir del 70% (D3).
+> - Se integró en `Dashboard.tsx` y se incorporó la suite de pruebas unitarias `centinela/src/test/resource-meters.test.tsx` evaluando umbrales de borde al 69% y 70%.
+> - **Pruebas:** `test/front/dashboard-metrics.test.tsx` pasa **3/3 en verde ✅**.
+
+- **Área:** Frontend
+- **Asignada:** Belinda (PR #78)
+- **Estimación:** 2.0 h
+- **Depende de:** ninguna.
+- **Entregable:** componentes reutilizables en `features/dashboard` con cambio de color según saturación y pruebas unitarias de borde.
+- **Criterio de éxito:** medidores responsive de 0% a 100%, advertencia desde el 70% y tests de componente aprobados.

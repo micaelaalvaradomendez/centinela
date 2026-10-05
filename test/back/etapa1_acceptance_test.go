@@ -197,6 +197,108 @@ func TestEtapa1(t *testing.T) {
 			t.Errorf("de %d tareas despachadas, %d quedaron COMPLETED 3 s después; las demás se perdieron o tardaron demasiado", total, completed)
 		}
 	})
+
+	t.Run("BAC-24A validación de estado previo (409 INSTANCE_INVALID_STATE) y VMIDs protegidos en energía", func(t *testing.T) {
+		// Instancia 101 está 'running' en el stub: start debe responder 409 INSTANCE_INVALID_STATE
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/start", adminToken, nil)
+		if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
+			t.Errorf("start de instancia 101 (running): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
+		}
+
+		// Instancia 102 está 'stopped' en el stub: stop, shutdown y reboot deben responder 409 INSTANCE_INVALID_STATE
+		for _, action := range []string{"stop", "shutdown", "reboot"} {
+			status, body = requestJSON(t, http.MethodPost, fmt.Sprintf("/instances/102/%s", action), adminToken, nil)
+			if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
+				t.Errorf("%s de instancia 102 (stopped): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", action, status, body)
+			}
+		}
+
+		// Instancia 100 está en PROXMOX_PROTECTED_VMIDS: reboot y shutdown deben responder 403 INSTANCE_PROTECTED
+		for _, action := range []string{"reboot", "shutdown"} {
+			status, body = requestJSON(t, http.MethodPost, fmt.Sprintf("/instances/100/%s", action), adminToken, nil)
+			if status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
+				t.Errorf("%s de instancia 100 (protegida): esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", action, status, body)
+			}
+		}
+	})
+
+	t.Run("BAC-24B endpoint de eliminación DELETE /api/instances/:vmid", func(t *testing.T) {
+		// 1. Sin token responde 401
+		if status, _ := requestValue(t, http.MethodDelete, "/instances/102", "", nil); status != http.StatusUnauthorized {
+			t.Errorf("DELETE /instances/102 sin token: esperado 401, recibido %d", status)
+		}
+
+		// 2. Con OPERATOR responde 403 (solo ADMIN puede borrar)
+		operator := createActiveUser(t, adminToken, "op_delete", "OPERATOR")
+		opSession := loginWithTOTP(t, operator.Email, operator.Password, operator.Secret)
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/102", opSession.AccessToken, nil); status != http.StatusForbidden {
+			t.Errorf("DELETE con OPERATOR: esperado 403, recibido %d: %#v", status, body)
+		}
+
+		// 3. Con ADMIN sobre instancia encendida (101 running) responde 409 INSTANCE_INVALID_STATE
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/101", adminToken, nil); status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
+			t.Errorf("DELETE de 101 (running): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
+		}
+
+		// 4. Con ADMIN sobre VMID protegido (100) responde 403 INSTANCE_PROTECTED
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/100", adminToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
+			t.Errorf("DELETE de 100 (protegida): esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", status, body)
+		}
+
+		// 5. Con ADMIN sobre instancia detenida (102 stopped) responde 202 con upid y tareaId
+		status, body := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		if status != http.StatusAccepted {
+			t.Fatalf("DELETE de 102 (stopped): esperado 202, recibido %d: %#v", status, body)
+		}
+		tareaID := requiredString(t, body, "tareaId")
+		upid := requiredString(t, body, "upid")
+		if upid == "" || tareaID == "" {
+			t.Errorf("DELETE debe devolver upid y tareaId, recibido: %#v", body)
+		}
+	})
+
+	t.Run("BAC-25C reanudación de UPIDs en curso al levantar y activeTask en GET /api/instances", func(t *testing.T) {
+		// 1. Verificar activeTask en GET /api/instances: cuando hay una tarea RUNNING, debe reflejarse en la instancia correspondiente
+		tareaUUID := "01920000-0000-7000-8000-000000000099"
+		queryDatabase(t, fmt.Sprintf(
+			"INSERT INTO tareas_asincronas (id, usuario_id, instancia_id, accion, upid_proxmox, estado, fecha_creacion) "+
+				"VALUES ('%s', '%s', '101', 'start', 'UPID:pve:00000001:00000001:00000001:qstart:101:root@pam:', 'RUNNING', NOW()) "+
+				"ON CONFLICT (id) DO NOTHING;", tareaUUID, adminID,
+		))
+		defer queryDatabase(t, fmt.Sprintf("DELETE FROM tareas_asincronas WHERE id = '%s';", tareaUUID))
+
+		status, body := requestJSON(t, http.MethodGet, "/instances", adminToken, nil)
+		if status != http.StatusOK {
+			t.Fatalf("GET /instances: esperado 200, recibido %d: %#v", status, body)
+		}
+		instancias, ok := body["data"].([]any)
+		if !ok || len(instancias) == 0 {
+			t.Fatalf("GET /instances no devolvió arreglo en data: %#v", body)
+		}
+
+		foundActive := false
+		for _, item := range instancias {
+			inst, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			vmid := int(inst["id"].(float64))
+			if vmid == 101 {
+				activeTask, hasActive := inst["activeTask"].(map[string]any)
+				if !hasActive || activeTask == nil {
+					t.Errorf("instancia 101 con tarea RUNNING en DB: activeTask no debe ser null")
+				} else {
+					foundActive = true
+					if activeTask["action"] != "start" && activeTask["accion"] != "start" {
+						t.Errorf("activeTask de 101: esperado action 'start', recibido %#v", activeTask)
+					}
+				}
+			}
+		}
+		if !foundActive {
+			t.Errorf("GET /instances no informó activeTask para la instancia 101 con tarea RUNNING")
+		}
+	})
 }
 
 func expectNumber(t *testing.T, body map[string]any, want, tolerance float64, path ...string) {
