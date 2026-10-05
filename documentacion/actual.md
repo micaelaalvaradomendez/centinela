@@ -9,7 +9,7 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 >   - `SEC-03`, `FIX-41`, `FIX-42` y `FIX-38`, completas;
 >   - `FIX-36`, completa (PR #77, frontend `070e96b`);
 >   - `FIX-37` y `FIX-39`, completas (backend `4e204f1`);
->   - `BAC-18B`, implementada con problemas en backend `4e204f1` (particionamiento trimestral OK, purga periódica OK; falta indexar `jti_access`, derivado a `FIX-44` en `futuro.md`).
+>   - `BAC-18B`, implementada con problemas en backend `4e204f1` (particionamiento trimestral OK, purga periódica OK; falta indexar `jti_access`, derivado a `FIX-44`, en este archivo).
 > - **Pasaron a [`terminado-1.md`](terminado-1.md):**
 >   - `INF-07B`, referencia local verificada (pendiente despliegue CT 103 en `INT-03`);
 >   - `FRN-20A`, implementada con problemas en frontend `070e96b` (integración a la API y modales implementados; maquetado, IP y badges derivados a `FIX-43` en `futuro-1.md`);
@@ -17,11 +17,14 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > - **Verificación del 05/10/2026** (backend `e1f2df4`, frontend `d47999d`; detalle en [test/informe.md](../test/informe.md)). Ninguna tarea está completa con todas sus pruebas en verde.
 >   - **Pasaron a [`terminado.md`](terminado.md)**, implementada con problema: `FRN-17C`. Su corrección es `FIX-45`, en [`futuro.md`](futuro.md).
 >   - **Pasaron a [`terminado-1.md`](terminado-1.md)**, implementadas con problema: `BAC-29`, `BAC-24A`, `BAC-24B` y `FRN-17A`. Sus correcciones son `FIX-46` a `FIX-49`, en [`futuro-1.md`](futuro-1.md).
+>   - **Revisión manual de Lucas del 05/10/2026** sobre `BAC-24A`/`BAC-18B` (backend `e1f2df4`): agrega 4 problemas no cubiertos por `FIX-46` a `FIX-49`. Dos son de `BAC-18B` (`FIX-50` apagado del servidor HTTP, `FIX-51` auditoría previa a la migración invisible, ambos en este archivo); dos son de `BAC-24A` (`FIX-52` distinción `INSTANCE_BUSY`/`INSTANCE_INVALID_STATE` y código muerto, `FIX-53` códigos de auditoría mezclados, ambos en [`futuro-1.md`](futuro-1.md)). El resto de sus puntos ya está cubierto (`FIX-49`, borrado asíncrono) o es una decisión de diseño a discutir, no un bug (purga inmediata de sesiones cerradas; bloqueo de `start` en VMIDs `100`-`105`).
 >   - **Quedan en este archivo**, sin implementar:
 >
 > | Tarea | Área | Estado | Pruebas |
 > |---|---|---|---|
 > | `FIX-44` | Backend | No implementado: el índice parcial no incluye `jti_access`. La purga horaria ya cumple | `cierre_fase_base…` BAC-18B (2; falla 1) |
+> | `FIX-50` | Backend | No implementado: `router.Run` no observa la señal de apagado, el proceso no termina solo | Detectado por revisión manual (Lucas, 05/10) |
+> | `FIX-51` | Backend | No implementado: `auditoria_legacy` no se consulta desde la API tras particionar | Detectado por revisión manual (Lucas, 05/10) |
 > | `BAC-22` | Backend | No implementada (`/node/status` responde 404) | `etapa1_acceptance…` (1) |
 > | `BAC-23A` | Backend | No implementada | `etapa1_acceptance…` (1) |
 > | `BAC-25A` | Backend | No implementada | `etapa1_acceptance…` (1) |
@@ -64,6 +67,36 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Ajustar `purga_worker.go` para que instancie el ticker con `time.NewTicker(1 * time.Hour)` (o mantenga el default con `time.NewTicker(time.Hour)`).
 - **Criterio de éxito:**
   - `TestCierreFaseBase/BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `TestCierreFaseBase/BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.
+
+---
+
+### `FIX-50` - Apagado correcto del servidor HTTP ante `SIGINT`/`SIGTERM` (`BAC-18B`) (Backend)
+
+- **Área:** Backend
+- **Asignada:** Tayra (autora de `96106a6`)
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B` (en `terminado.md`).
+- **Problema y evidencia (detectado en la revisión de Lucas del 05/10/2026, verificado enviando ambas señales):** `cmd/api/main.go:90` crea `ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)` para que los workers en segundo plano se detengan limpiamente, pero solo se lo pasa a `purgaWorker.Iniciar(ctx)` (línea 96). El servidor HTTP se levanta con `router.Run(":8080")` (línea 299), que internamente llama a `http.ListenAndServe` y bloquea el goroutine principal sin recibir nunca `ctx`. Al llegar `SIGINT` o `SIGTERM`: el worker de purga corta su loop y lo loguea, pero el servidor HTTP sigue aceptando conexiones indefinidamente. En el servidor, cada deploy espera unos 90 segundos hasta que el sistema operativo mata el proceso a la fuerza; en local hay que matarlo a mano.
+- **Entregable:**
+  1. Reemplazar `router.Run(":8080")` por un `http.Server{Addr: ":8080", Handler: router}` explícito.
+  2. Arrancar ese servidor en una goroutine con `ListenAndServe` y, en el goroutine principal, esperar `<-ctx.Done()` para disparar `srv.Shutdown(shutdownCtx)` con un timeout acotado (por ejemplo 10 s) que deje drenar las requests en curso.
+  3. Verificar que, tras `srv.Shutdown`, el proceso termina solo (sin quedar colgado) y que el log muestra el apagado del worker de purga y del servidor HTTP en el mismo cierre.
+- **Criterio de éxito:** enviar `SIGINT` o `SIGTERM` al proceso hace que termine por sí mismo en pocos segundos, sin necesidad de `kill -9` ni de esperar al timeout forzado del orquestador de despliegue.
+
+---
+
+### `FIX-51` - El historial de `auditoria` previo a la migración queda inaccesible desde la API (`BAC-18B`) (Backend)
+
+- **Área:** Backend
+- **Asignada:** Tayra (autora de `96106a6`)
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B` (en `terminado.md`).
+- **Problema y evidencia (detectado en la revisión de Lucas del 05/10/2026, verificado en PC local y en el servidor):** `migrarAuditoriaParticionada` (`internal/adapters/secondary/postgres/db.go:216`) detecta la tabla `auditoria` plana preexistente y la renombra con `ALTER TABLE auditoria RENAME TO auditoria_legacy` antes de crear la tabla particionada desde cero. Ningún repositorio vuelve a referenciar `auditoria_legacy`: `auditRepositoryImpl.Listar` y `.ExportarRegistros` (`internal/adapters/secondary/postgres/audit_repository.go`) solo consultan `auditoria`. Los datos no se pierden (siguen en la tabla renombrada), pero el historial anterior a la migración (167 registros en el caso verificado, tanto en PC local como en el servidor) deja de verse en `GET /api/admin/audit` y en las exportaciones CSV/JSON, rompiendo la propiedad *append-only* visible de la auditoría.
+- **Entregable:**
+  1. Migrar los datos de `auditoria_legacy` hacia la tabla particionada (`INSERT INTO auditoria SELECT * FROM auditoria_legacy`, distribuyendo cada fila a su partición por `fecha_hora`) en lugar de solo renombrar, o bien incluir `auditoria_legacy` en una vista/consulta `UNION ALL` que use `Listar` y `ExportarRegistros`.
+  2. Si se opta por la migración de datos, eliminar `auditoria_legacy` al terminar y documentar el paso en `migrarAuditoriaParticionada`.
+  3. Agregar una prueba de aceptación que arranque con una tabla `auditoria` plana con filas de prueba y verifique que, tras la migración, esas filas siguen apareciendo en `GET /api/admin/audit`.
+- **Criterio de éxito:** un registro de auditoría creado antes de la migración a particionado sigue siendo visible por `GET /api/admin/audit` y por las exportaciones, sin duplicados ni pérdida de datos.
 
 ---
 # ETAPA 1

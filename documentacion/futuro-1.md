@@ -76,3 +76,48 @@ Correcciones de tareas de la Etapa 1 que ya están implementadas pero no cumplen
   - Pasa el caso `BAC-24B…`: `409 INSTANCE_INVALID_STATE`, `202` con `upid` y `tareaId`, la orden en `auditoria` con su `upid`, y `TASK_FINISHED` con `recursoTipo` `LXC` para la 102.
   - Siguen en verde el `401`, el `403` al OPERATOR y el `403 INSTANCE_PROTECTED`.
 
+### `FIX-52` - Distinguir `INSTANCE_BUSY` de `INSTANCE_INVALID_STATE` y limpiar código muerto (`BAC-24A`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro (autor de `8591e90`)
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-24A` (en `terminado-1.md`).
+- **Problema y evidencia (detectado en la revisión manual de Lucas del 05/10/2026, verificada en su PC):**
+  1. **`INSTANCE_BUSY` quedó casi inalcanzable.** `validarEstadoParaAccion` (`instance_handler.go:111`) decide únicamente con el `estado` que devuelve `ObtenerInstancia`, comparado contra `estadosRequeridosPorAccion`. No consulta si ya existe una tarea `RUNNING` para ese `vmid` en `tareas_asincronas`. Un `start` seguido de inmediato por un `stop` sobre la misma instancia da `409 INSTANCE_INVALID_STATE` ("estado incompatible"), cuando la causa real es que la instancia está ocupada con la tarea del `start` anterior: Proxmox todavía no reflejó el cambio de estado. El código para distinguir ambos casos ya existe (`tareas_asincronas`, campo `activeTask` de `GET /api/instances`), pero `validarEstadoParaAccion` no lo usa.
+  2. **Código muerto.** `ProxmoxPort.ReiniciarInstancia` (`client.go:291`, `ports/proxmox_port.go:99`) nunca se invoca: `CambiarEstado` reemplazó su uso por `Reboot(node, vmid, vmType)` (`instance_handler.go:485`), que sí resuelve nodo y tipo. `ReiniciarInstancia` quedó huérfano en el puerto y en el cliente.
+  3. **Comentario desactualizado.** El comentario de `EliminarInstancia` (`client.go:323`) dice *"si está encendida Proxmox responde 500 con un mensaje de bloqueo y se retorna `ErrInstanciaOcupada`"*, pero el handler (`instance_handler.go`, validación de estado previa al `DELETE`) ya rechaza una instancia no `stopped` con `409` antes de invocar a `proxmox.EliminarInstancia`: esa rama de `ErrInstanciaOcupada` es inalcanzable con el flujo actual y el comentario induce a error a quien lea el cliente.
+- **Entregable:**
+  1. Antes de aplicar `estadosRequeridosPorAccion`, consultar si el `vmid` tiene una tarea `RUNNING` en `tareas_asincronas`; si la tiene, responder `409 INSTANCE_BUSY` sin tráfico de escritura a Proxmox, sin evaluar la matriz de estados.
+  2. Eliminar `ReiniciarInstancia` de `ProxmoxPort` y de `client.go` (o, si se prefiere conservarlo, usarlo de forma consistente en lugar de `Reboot` y actualizar el puerto para que reciba `node`/`vmType`).
+  3. Corregir el comentario de `EliminarInstancia` para reflejar que el `409` por instancia encendida lo decide el handler, no Proxmox.
+- **Criterio de éxito:**
+  - Un `start` inmediatamente seguido de un `stop` (u otra combinación con una tarea `RUNNING` en curso) responde `409 INSTANCE_BUSY`, no `409 INSTANCE_INVALID_STATE`.
+  - `start` sobre una instancia realmente `running` (sin tarea en curso) sigue respondiendo `409 INSTANCE_INVALID_STATE`.
+  - No quedan referencias a `ReiniciarInstancia` sin uso, y el comentario de `EliminarInstancia` describe el flujo real.
+  - Siguen en verde todos los casos de `BAC-24A…` y `BAC-24B…` de `etapa1_acceptance_test.go`.
+
+### `FIX-53` - Unificar códigos de acción y resultado en la auditoría de instancias (`BAC-24A`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro (autor de `8591e90`)
+- **Estimación:** 1 h
+- **Depende de:** `BAC-24A` (en `terminado-1.md`) y `FIX-39` (patrón de auditoría `PENDING`).
+- **Problema y evidencia (detectado en la revisión manual de Lucas del 05/10/2026, verificada en su PC):** una misma acción real termina con distinto `accion` en `auditoria` según la ruta y el desenlace:
+  - `IniciarInstancia` (alias `/start`): éxito audita `accion: "START"` (`instance_handler.go:344`); falla audita `accion: ports.AccionIniciarVM` = `"INICIAR_VM"` (línea 338).
+  - `DetenerInstancia` (alias `/stop`): éxito `"STOP"` (línea 388); falla `ports.AccionDetenerVM` = `"DETENER_VM"` (línea 382).
+  - `CambiarEstado` (`/status/:action`): tanto éxito como falla usan el literal `accionAudit` (`"START"`/`"STOP"`/`"SHUTDOWN"`/`"REBOOT"`, líneas 490 y 496), que nunca coincide con las constantes `ports.AccionIniciarVM`/`AccionDetenerVM`/`AccionReiniciarVM`.
+  - `EliminarInstancia` sí es consistente: usa `ports.AccionEliminarVM` tanto en éxito como en falla (líneas 548 y 555).
+
+  Filtrar la auditoría por una sola acción no trae todos los registros de la misma operación real. Además, `"PENDING"` (líneas 344, 388, 496) es un literal suelto: no es uno de los resultados definidos en `ports.ResultadoExito`/`ResultadoFalla` (`audit_port.go:105`), y no hay una constante `ports.ResultadoPendiente` equivalente.
+
+  Por separado, `IniciarInstancia` y `DetenerInstancia` descartan la instancia que ya obtuvieron en `validarEstadoParaAccion` (`if _, ok := h.validarEstadoParaAccion(...)`) y auditan `instanciaNombre: ""` (líneas 338 y 344, 382 y 388) y `"resource_type": "vm_or_lxc"` (un valor fijo que no es ni `"qemu"/"lxc"` como usa `CambiarEstado` -`instancia.Tipo`- ni `"VM"/"LXC"` como usan los eventos `TASK_FINISHED`). `CambiarEstado` sí captura `instancia, ok := h.validarEstadoParaAccion(...)` y audita `instancia.Nombre` e `instancia.Tipo` (líneas 490 y 496).
+- **Entregable:**
+  1. Definir `ports.ResultadoPendiente = "PENDIENTE"` (o el nombre que el equipo prefiera) en `audit_port.go`, junto a `ResultadoExito`/`ResultadoFalla`, y usarlo en los cuatro lugares que hoy escriben el literal `"PENDING"`.
+  2. Unificar el `accion` auditado para cada operación real, usando siempre las constantes de `ports` (`AccionIniciarVM`, `AccionDetenerVM`, `AccionReiniciarVM`) tanto para el éxito/`PENDIENTE` como para la falla, en `IniciarInstancia`, `DetenerInstancia` y `CambiarEstado`. Si no existe una constante para `shutdown` (apagado ordenado), agregarla (por ejemplo `AccionApagarVM = "APAGAR_VM"`) en vez de usar el literal `"SHUTDOWN"`.
+  3. En `IniciarInstancia` y `DetenerInstancia`, dejar de descartar la instancia de `validarEstadoParaAccion` y auditar `instancia.Nombre` e `instancia.Tipo` como ya hace `CambiarEstado`, en lugar de `""` y `"vm_or_lxc"`.
+- **Criterio de éxito:**
+  - El mismo `vmid` y la misma acción real auditan siempre el mismo código de `accion`, sin importar si se invocó por `/start`/`/stop` o por `/status/:action`, y sin importar el desenlace (falla o `PENDIENTE`).
+  - `instanciaNombre` y `resource_type` en los detalles de auditoría son correctos también al usar los alias `/start` y `/stop`.
+  - Una consulta de auditoría filtrando por una sola acción (por ejemplo `AccionIniciarVM`) trae tanto los intentos fallidos como las órdenes despachadas con éxito.
+  - Siguen en verde todos los casos de `BAC-24A…` y `BAC-24B…` de `etapa1_acceptance_test.go`.
+
