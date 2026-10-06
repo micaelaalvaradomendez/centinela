@@ -1,8 +1,9 @@
 # Despliegue completo de Centinela en el servidor **C1** (Universidad)
 
 > **Qué es esto**: el plan completo, paso a paso, para replicar **todo** Centinela
-> (frontend, backend, base de datos, Redis y el relay de correo `centinela-smtp-brevo`)
-> en el servidor **C1** de la universidad, con recursos limitados.
+> (proxy, frontend, backend, base de datos, Redis y el relay `centinela-smtp-brevo`)
+> en el servidor **C1** de la universidad, con **un contenedor (LXC) por servicio**,
+> igual que en casa.
 >
 > **Estado**: plan listo para ejecutar. Cuando la facultad habilite C1, se sigue
 > esta guía de punta a punta y no hay que pensar nada nuevo.
@@ -22,146 +23,189 @@ Backend --STARTTLS--> relay centinela-smtp-brevo --STARTTLS + IP autorizada--> B
 
 ---
 
-## 1. Arquitectura objetivo en C1 (consolidada)
+## 1. Arquitectura objetivo en C1
 
-Hoy en casa corremos **6 contenedores LXC** (proxy, db, api, front, redis, relay).
-Cada LXC es un SO completo: eso es el lujo que con pocos recursos no nos podemos dar.
+Se mantiene el mismo esquema que ya usamos en casa: **un contenedor por servicio**.
 
-En C1 **consolidamos todo en un solo nodo con Docker Compose**: 5 servicios livianos
-en vez de 6 sistemas operativos.
+> **Decisión tomada**: se evaluó consolidar todo con Docker Compose en un solo nodo,
+> y **se descartó**. Se replica el esquema actual (LXC por servicio) porque el equipo
+> ya lo conoce, se opera igual y C1 lo aguanta (probado). El costo es un poco más de
+> RAM (cada LXC tiene su propio SO), y se asume.
 
 ```
-                            Internet
-                               │
-                               v
-                    ┌─────────────────────────┐
-                    │   C1 (universidad)      │  IP pública FIJA
-                    │                         │
-                    │   nginx  (80/443)       │  SPA + /api + /swagger
-                    │     │           │       │
-                    │     v           v       │
-                    │  front(SPA)  backend(Go)│
-                    │                 │       │
-                    │        ┌────────┼─────────────┐
-                    │        v        v             v
-                    │   postgres     redis      relay(postfix)
-                    │                              │
-                    └──────────────────────────────┼──────────┘
-                                                   v
-                                                 Brevo ──> destinatarios
+                        Internet
+                           │
+                           v
+                 ┌───────────────────────┐
+                 │   C1 (universidad)    │  IP pública FIJA
+                 │                       │
+                 │  CT-proxy  (nginx)    │  TLS + /api + /swagger
+                 │     │           │     │
+                 │     v           v     │
+                 │  CT-front     CT-api  │
+                 │  (nginx SPA)  (Go)    │
+                 │                 │     │
+                 │        ┌────────┼──────────┐
+                 │        v        v          v
+                 │    CT-db      CT-redis   CT-relay
+                 │   (postgres)             (postfix)
+                 │                            │
+                 └────────────────────────────┼───────┘
+                                              v
+                                            Brevo ──> destinatarios
 ```
 
-**Decisiones de diseño**
+### Contenedores a crear en C1
 
-- **Un solo nginx** sirve el SPA **y** hace de proxy de `/api` (fusiona los viejos CT100 + CT103).
-- **Postgres y Redis** como contenedores con volumen persistente.
-- **El relay** corre en el mismo nodo: su salida es la **IP fija de C1**, que es lo que Brevo autoriza.
-- Todo con **Docker Compose**, un solo `up -d` levanta el sistema.
+| CT      | Nombre                   | Servicio              | Rol                          |
+|---------|--------------------------|-----------------------|------------------------------|
+| CT200   | `centinela-proxy`        | nginx                 | Entrada, TLS, proxy          |
+| CT201   | `centinela-db`           | PostgreSQL            | Base de datos                |
+| CT202   | `centinela-api`          | Go (systemd)          | API                          |
+| CT203   | `centinela-front`        | nginx                 | Sirve el SPA                 |
+| CT204   | `centinela-redis`        | Redis                 | Caché / tickets              |
+| CT205   | `centinela-smtp-brevo`   | postfix               | Relay de correo a Brevo      |
+
+*(Los IDs son una sugerencia; se ajustan a los que estén libres en C1.)*
 
 ---
 
 ## 2. Inventario: qué hay hoy y cómo se replica
 
-| Componente      | Hoy (casa)                    | En C1 (consolidado)              |
+| Componente      | Hoy (casa)                    | En C1                            |
 |-----------------|-------------------------------|----------------------------------|
-| Proxy / TLS     | CT100 nginx                   | nginx del stack (80/443)         |
-| Frontend        | CT103 nginx + SPA             | servicio `frontend` (nginx)      |
-| Backend         | CT102 Go + systemd            | servicio `backend` (Go)          |
-| Base de datos   | CT101 PostgreSQL              | servicio `db` (postgres)         |
-| Redis           | CT106 Redis                   | servicio `redis`                 |
-| Relay correo    | CT107 postfix                 | servicio `smtp-relay`            |
-| Red interna     | vmbr0 `10.10.10.0/24`         | red Docker interna               |
+| Proxy / TLS     | CT100 nginx                   | CT200 nginx                      |
+| Frontend        | CT103 nginx + SPA             | CT203 nginx + SPA                |
+| Backend         | CT102 Go + systemd            | CT202 Go + systemd               |
+| Base de datos   | CT101 PostgreSQL              | CT201 PostgreSQL                 |
+| Redis           | CT106 Redis                   | CT204 Redis                      |
+| Relay correo    | CT107 postfix                 | CT205 postfix                    |
+| Red interna     | vmbr0 `10.10.10.0/24`         | bridge de C1 (a definir)         |
 | Acceso          | `centinela.tail6bb3f3.ts.net` | dominio/Tailscale de C1          |
 
 **Repositorios que se usan**
 
-- `orchestrator` (general/infra): `compose.yaml`, `docker/`, `documentacion/`.
+- `orchestrator` (general/infra): `compose.yaml`, `docker/`, `documentacion/`, scripts de deploy.
 - `backend` (submódulo, `tayraag/centinela-back`): código Go.
 - `frontend` (submódulo, `luzpacello/centinela-front`): SPA React.
 
 ---
 
-## 3. Presupuesto de recursos
+## 3. Presupuesto de recursos (LXC por servicio)
 
-| Servicio     | RAM sugerida   | Rol                   |
-|--------------|----------------|-----------------------|
-| Postgres     | 256–512 MB     | Base de datos         |
-| Redis        | 64 MB          | Caché / tickets       |
-| Backend Go   | 64–128 MB      | API                   |
-| Nginx        | 32 MB          | SPA + proxy /api      |
-| Postfix      | 64 MB          | Relay a Brevo         |
-| Total        | ~0.5–1 GB      | 1 vCPU, ~8 GB disco   |
+Cada LXC tiene el costo de su propio sistema operativo (~80–120 MB en reposo) más el servicio.
 
-Con **1 vCPU / 1 GB / 8 GB** corre justo. Con **2 vCPU / 2 GB** va cómodo.
-Si C1 es más chico, se puede bajar Postgres a 256 MB y Redis a 64 MB.
+| CT               | RAM asignada    | Disco         | Nota                            |
+|------------------|-----------------|---------------|---------------------------------|
+| `proxy`          | 256 MB          | 2 GB          | nginx es liviano                |
+| `db`             | 512–1024 MB     | 8–10 GB       | el más pesado; guarda estado    |
+| `api`            | 256 MB          | 4 GB          | binario Go + logs               |
+| `front`          | 256 MB          | 2 GB          | nginx estático                  |
+| `redis`          | 256 MB          | 2 GB          | caché                           |
+| `relay`          | 256 MB          | 2 GB          | postfix                         |
+| **Total**        | **~1.8–2.3 GB** | **~20–22 GB** | + lo que use el host            |
+
+Con **4 GB de RAM** en C1 va cómodo (probado: "se la banca").
+Si aprieta, se puede bajar cada CT a 192 MB y la db a 512 MB.
 
 ---
 
 ## 4. Requisitos previos (antes de tocar C1)
 
-- [ ] Acceso SSH a C1 (usuario + clave).
+- [ ] Acceso SSH al Proxmox de C1 (usuario + clave).
 - [ ] **IP pública fija** confirmada (la que ve internet).
-- [ ] Docker + `docker compose` disponibles (o LXC con `nesting=1` si C1 es un LXC).
+- [ ] Template LXC disponible (`debian-13-standard` o el que haya).
+- [ ] Storage para los rootfs (`local-lvm` o equivalente).
+- [ ] Bridge de red + gateway + DNS definidos.
 - [ ] Puerto 80/443 accesibles (o el que asigne la facultad).
 - [ ] DNS o Tailscale para el acceso con nombre.
 - [ ] Credenciales de Brevo: **SMTP key** (`SMTP_USER` / `SMTP_PASS`) y acceso al **panel**.
-- [ ] El **dump** de la base actual (para migrar los usuarios y la auditoría).
+- [ ] El **dump** de la base actual (para migrar usuarios y auditoría).
 - [ ] Los repos clonados (o los archivos del relay del PR #1).
 
 ---
 
 ## 5. Runbook (paso a paso)
 
-### Fase 0 — Preparar C1
+### Fase 0 — Preparar el host C1
 
-1. Actualizar el sistema e instalar Docker + Compose.
-2. Verificar la IP pública: `curl -s https://api.ipify.org` (anotarla: es la que va a Brevo).
-3. **DNS**: si el resolver del host es un stub local (`127.0.0.53`), los contenedores
-   no lo alcanzan. Hay que darle DNS explícito al stack (ver Gotcha 1).
-4. Si C1 es un LXC: habilitar `nesting=1` para poder correr Docker adentro.
+1. Verificar template, storage y red disponibles:
+   ```bash
+   pveam list local | grep debian
+   pvesm status
+   grep -E "iface vmbr|address|bridge" /etc/network/interfaces
+   ```
+2. Anotar: **bridge**, **gateway** y **DNS** (los que use C1).
+3. Verificar la IP pública: `curl -s https://api.ipify.org` (es la que va a Brevo).
+4. **DNS**: si el resolver del host es un stub local (`127.0.0.53`), los contenedores
+   no lo alcanzan. A los LXC hay que darles un **nameserver alcanzable** (ver Gotcha 1).
 
-### Fase 1 — Datos (Postgres + Redis)
+### Fase 1 — Crear los 6 contenedores
 
-1. Levantar `db` y `redis` con volumen persistente.
-2. Crear la base y el usuario de la app.
-3. **Migrar los datos actuales**:
+Para cada uno (ajustando ID, IP y tamaño):
+
+```bash
+pct create 20X local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst \
+  --hostname centinela-<servicio> \
+  --cores 1 --memory <RAM> --swap 256 \
+  --rootfs local-lvm:<GB> \
+  --net0 name=eth0,bridge=<bridge>,ip=<IP>/24,gw=<gw>,firewall=1 \
+  --nameserver <DNS-alcanzable> \
+  --unprivileged 1 --onboot 1 \
+  --description "<servicio> de Centinela"
+pct start 20X
+```
+
+Verificación rápida por CT: `pct exec 20X -- ip -brief a` y `getent hosts deb.debian.org`.
+
+### Fase 2 — Base de datos (CT201) y Redis (CT204)
+
+1. **Postgres**: instalar, crear la base y el usuario de la app.
+2. **Migrar los datos actuales**:
    - En casa: `pg_dump` de `centinela_test`.
    - Copiar el dump a C1 y restaurarlo.
-4. Verificar: `\dt` (tablas), conteo de usuarios, y que el trigger de auditoría exista.
+3. **Redis**: instalar, setear password y `bind` a la red interna.
+4. Verificar: `\dt`, conteo de usuarios, y que el trigger de auditoría exista.
 
-### Fase 2 — Backend
+### Fase 3 — Backend (CT202)
 
-1. Build del backend (Go) — por Docker o binario + systemd.
+1. Instalar el toolchain Go (o compilar afuera y copiar el binario).
 2. Crear el `.env` real (permisos `600`) con TODAS las variables (ver Anexo A).
-3. Apuntar `SMTP_HOST` al relay (`smtp-relay`, puerto `25`) y `SMTP_PORT=25`.
-4. Arrancar y verificar `GET /api/version`.
+3. Apuntar `SMTP_HOST` al **relay** (IP de CT205) y `SMTP_PORT=25`.
+4. Crear el servicio systemd `centinela-api` con `EnvironmentFile=/etc/centinela-api.env`.
+5. Arrancar y verificar `GET /api/version`.
 
-### Fase 3 — Frontend + nginx
+### Fase 4 — Frontend (CT203) y Proxy (CT200)
 
 1. Build del SPA (`pnpm build`) con `VITE_API_BASE_URL=/api`.
-2. Un **solo nginx**: sirve el SPA y hace proxy de `/api` al backend.
-3. TLS: certificado real (Tailscale cert o Let's Encrypt de la facultad).
+2. CT203: nginx sirviendo el SPA (fallback `try_files ... /index.html`).
+3. CT200: nginx de entrada que:
+   - sirve `/` → CT203,
+   - proxipea `/api/` → CT202:8080,
+   - normaliza `/swagger` → CT202,
+   - tiene el TLS (cert real: Tailscale cert o Let's Encrypt de la facultad).
 
-### Fase 4 — Relay `centinela-smtp-brevo`
+### Fase 5 — Relay `centinela-smtp-brevo` (CT205)
 
 Los archivos ya están en el repo (PR #1): `docker/relay/` + `compose.relay.yaml`.
 
-1. Generar el certificado self-signed del relay con **SAN = nombre del servicio**
-   (`smtp-relay`) y su IP interna, para el STARTTLS backend→relay.
-2. Levantar el relay con `compose.relay.yaml` (env: `BREVO_HOST/USER/PASS`).
-3. Que el backend **confíe** ese certificado (instalarlo en su trust store).
-4. Probar: `swaks`/`python smtplib` al relay → ver `status=sent` en los logs.
+1. Instalar `postfix`, `libsasl2-modules`, `ca-certificates`.
+2. Generar el certificado del relay (SAN = su IP interna) para el STARTTLS.
+3. Configurar postfix como relay a Brevo (STARTTLS + clave SMTP) — mismo `main.cf`
+   que en casa.
+4. Desactivar chroot y copiar el `resolv.conf` (ver Gotcha 2).
+5. Probar: cliente → relay → Brevo, con `status=sent` en el log.
 
-### Fase 5 — Brevo
+### Fase 6 — Brevo
 
 1. Panel → **Settings → Security → Authorized IPs**.
-2. **Agregar la IP pública de C1** (y dejar la de casa durante la transición).
-3. **SMTP keys → Blocking: activado** (si no lo está).
+2. **Agregar la IP pública de C1** (dejar la de casa durante la transición).
+3. **SMTP keys → Blocking: activado**.
 4. Verificar el **remitente** (`centinelauntdf@gmail.com`) activo.
-5. **Higiene**: rotar la SMTP key (la actual estuvo expuesta en un comentario de ClickUp).
+5. **Higiene**: rotar la SMTP key (la actual estuvo expuesta en ClickUp).
 6. Recordar el límite: **free = 300 envíos/día** (compartido por toda la cuenta).
 
-### Fase 6 — Verificación end-to-end
+### Fase 7 — Verificación end-to-end
 
 1. Alta de un usuario de prueba → debe llegar el correo con la clave temporal.
 2. "Olvidé mi contraseña" → debe llegar el OTP.
@@ -173,16 +217,13 @@ Los archivos ya están en el repo (PR #1): `docker/relay/` + `compose.relay.yaml
 
 ## 6. Gotchas (lo que aprendimos a golpes)
 
-Estos son los problemas que **ya nos costaron tiempo** en casa. En C1 van a reaparecer
-si no se tienen en cuenta.
+Estos problemas **ya nos costaron tiempo** en casa. En C1 reaparecen si no se tienen en cuenta.
 
-### Gotcha 1 — DNS dentro de contenedores
+### Gotcha 1 — DNS dentro de los contenedores
 - **Síntoma**: `getent hosts smtp-relay.brevo.com` vacío; el correo queda en cola con
   `Host or domain name not found`.
-- **Causa**: el contenedor usa el resolver del host (`127.0.0.53`, systemd-resolved),
-  que **no es alcanzable desde adentro**.
-- **Solución**: dar DNS explícito al servicio (`dns: [1.1.1.1, 8.8.8.8]` en Compose) o
-  el DNS que provea la facultad.
+- **Causa**: el contenedor no puede usar el resolver del host (`127.0.0.53`, systemd-resolved).
+- **Solución**: darle un `nameserver` alcanzable (el DNS del lab o uno público permitido).
 
 ### Gotcha 2 — postfix en chroot no ve el DNS
 - **Síntoma**: postfix resuelve bien desde el shell pero al enviar falla.
@@ -192,12 +233,12 @@ si no se tienen en cuenta.
 ### Gotcha 3 — Falta `libsasl2-modules`
 - **Síntoma**: `SASL authentication failure: No worthy mechs found`.
 - **Causa**: falta el paquete con los mecanismos SASL (LOGIN/PLAIN).
-- **Solución**: instalar `libsasl2-modules` en el contenedor del relay.
+- **Solución**: instalar `libsasl2-modules` en el CT del relay.
 
 ### Gotcha 4 — Egreso restringido
 - **Síntoma**: `apt` no llega a `deb.debian.org:80` (timeout).
 - **Causa**: la red bloquea puertos/hosts; solo pasan algunos (ej. 587 a Brevo).
-- **Solución**: bajar el `.deb` en el host (que sí tiene internet) y pasarlo al contenedor.
+- **Solución**: bajar el `.deb` en el host (que sí tiene internet) y pasarlo al CT con `pct push`.
 
 ### Gotcha 5 — Sin ruta IPv6
 - **Síntoma**: `apt` intenta IPv6 y falla (`Network is unreachable`).
@@ -206,8 +247,8 @@ si no se tienen en cuenta.
 ### Gotcha 6 — STARTTLS interno y certificados
 - **Síntoma**: el backend rechaza el STARTTLS del relay (cert no confiable).
 - **Causa**: el certificado es self-signed y el cliente valida contra el nombre/IP.
-- **Solución**: generar el cert con **SAN** correcto (el hostname del relay) e
-  **instalarlo como confiable** en el backend (`update-ca-certificates`).
+- **Solución**: generar el cert con **SAN** correcto (IP del relay) e **instalarlo como
+  confiable** en el backend (`update-ca-certificates`).
 
 ### Gotcha 7 — Cómo se comporta el cliente SMTP (go-mail)
 - STARTTLS es **oportunista**: si el server no lo ofrece, sigue en texto plano.
@@ -242,17 +283,18 @@ El sistema sigue andando en casa (PRUEBAS) mientras tanto.
 
 ## 8. Checklist del día de la migración
 
-- [ ] C1 con Docker + IP fija confirmada.
-- [ ] DNS del stack configurado (Gotcha 1).
+- [ ] Host C1 con template, storage y red listos.
+- [ ] 6 LXC creados y con DNS funcionando.
 - [ ] Base migrada (dump/restore) y verificada.
-- [ ] Backend arriba con el `.env` completo (`600`).
-- [ ] Frontend servido y `/api` proxiado.
+- [ ] Redis arriba con password.
+- [ ] Backend arriba con el `.env` completo (`600`) y systemd.
+- [ ] Frontend servido y `/api` proxiado por el proxy.
 - [ ] Relay arriba, con STARTTLS y cert confiado por el backend.
 - [ ] IP de C1 autorizada en Brevo + bloqueo activo.
 - [ ] SMTP key rotada.
 - [ ] Alta de usuario de prueba → correo `delivered`.
 - [ ] Recuperación de contraseña → OTP `delivered`.
-- [ ] Rollback anotado (Fase 7) por si falla.
+- [ ] Rollback anotado (sección 7) por si falla.
 
 ---
 
@@ -272,7 +314,7 @@ El sistema sigue andando en casa (PRUEBAS) mientras tanto.
 | `PROXMOX_*`                  | Integración con Proxmox                     |
 | `REDIS_*`                    | Conexión a Redis                            |
 | `EMAIL_PROVIDER=smtp`        | Proveedor de correo real                    |
-| `SMTP_HOST`                  | **El relay** (`smtp-relay`)                 |
+| `SMTP_HOST`                  | **El relay** (IP del CT205)                 |
 | `SMTP_PORT`                  | `25` (interno)                              |
 | `SMTP_USER/PASS`             | Credenciales SMTP de Brevo                  |
 | `SMTP_FROM`                  | Remitente (`centinelauntdf@gmail.com`)      |
@@ -297,11 +339,8 @@ ssh root@proxmox 'pct exec 101 -- su - postgres -c "pg_dump -d centinela_test -F
 # copiar el dump y restaurar en C1:
 pg_restore -d centinela_test --clean --if-exists /ruta/centinela_test.dump
 
-# Levantar el stack
-docker compose up -d --build
-
 # Ver logs del relay
-docker logs -f centinela-smtp-brevo
+pct exec 205 -- tail -f /var/log/postfix-relay.log
 
 # Probar el relay (cliente -> relay -> Brevo)
 python3 -c "
@@ -309,16 +348,16 @@ import smtplib
 from email.message import EmailMessage
 m=EmailMessage(); m['From']='centinelauntdf@gmail.com'; m['To']='centinelauntdf@gmail.com'
 m['Subject']='Prueba C1'; m.set_content('hola')
-s=smtplib.SMTP('smtp-relay',25,timeout=20); s.send_message(m); print('OK')
+s=smtplib.SMTP('<IP-del-relay>',25,timeout=20); s.send_message(m); print('OK')
 "
 ```
 
 ### Anexo D — Certificado del relay (STARTTLS interno)
 
 ```bash
-# Generar (SAN = nombre del servicio en la red Docker)
+# Generar (SAN = IP interna del relay)
 openssl req -x509 -newkey rsa:2048 -nodes -keyout relay.key -out relay.crt -days 3650 \
-  -subj "/CN=smtp-relay" -addext "subjectAltName=DNS:smtp-relay"
+  -subj "/CN=centinela-smtp-brevo" -addext "subjectAltName=IP:<IP-del-relay>"
 
 # En el backend: instalar como CA confiable
 cp relay.crt /usr/local/share/ca-certificates/centinela-smtp-brevo.crt
@@ -329,11 +368,11 @@ update-ca-certificates
 
 ## 10. Diferencias respecto de casa (resumen)
 
-| Tema              | Casa (hoy)                          | C1 (objetivo)                       |
-|-------------------|-------------------------------------|-------------------------------------|
-| Contenedores      | 6 LXC separados                     | 1 nodo con 5 servicios Docker       |
-| IP de salida      | domiciliaria (dinámica)             | **fija** (universidad)              |
-| Relay             | CT107 (`10.10.10.60`)               | servicio `smtp-relay`               |
-| Brevo IPs         | 1 autorizada (casa)                 | + IP de C1 autorizada               |
-| Acceso            | Tailscale `centinela.tail6bb3f3`    | dominio/Tailscale de C1             |
-| Deploy            | scripts `deploy-back/front.sh`      | `docker compose up -d --build`      |
+| Tema            | Casa (hoy)                         | C1 (objetivo)                          |
+|-----------------|------------------------------------|----------------------------------------|
+| Contenedores    | 6 LXC separados                    | 6 LXC separados (igual)                |
+| IP de salida    | domiciliaria (dinámica)            | **fija** (universidad)                 |
+| Relay           | CT107 (`10.10.10.60`)              | CT205                                  |
+| Brevo IPs       | 1 autorizada (casa)                | + IP de C1 autorizada                  |
+| Acceso          | Tailscale `centinela.tail6bb3f3`   | dominio/Tailscale de C1                |
+| Deploy          | scripts `deploy-back/front.sh`     | los mismos scripts (cambiando host/CT) |
