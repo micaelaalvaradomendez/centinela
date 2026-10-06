@@ -331,59 +331,123 @@ Conservar al usuario anterior para auditoría y permitir una cuenta **nueva** co
 > [!IMPORTANT]
 > **Datos existentes:** hoy `activo=false` no permite saber si ocurrió un `DELETE` o una suspensión por `PUT`. No marcar automáticamente todos los inactivos como eliminados. Planificar clasificación controlada con evidencia de `AccionEliminarUsuario` y `detalles.usuarioEliminado`, considerando reactivaciones posteriores y la disponibilidad de `auditoria_legacy` (`FIX-51`), o revisión manual. Mantener suspendidos por defecto hasta identificación segura. `FIX-51` es un problema independiente: no incorporar su migración de auditoría a estos fixes.
 
-### `FIX-54` - Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend)
 
-- **Área:** Backend
-- **Estado:** Pendiente; no implementado ni probado.
-- **Estimación:** 2 h
-- **Depende de:** `BAC-05`, `BAC-06` y la clasificación controlada de datos históricos descrita arriba; coordinar disponibilidad de evidencia con `FIX-51`, sin mezclar su solución.
-- **Problema:** la baja conserva correctamente la identidad, pero la unicidad incondicional reserva su correo; `activo` no distingue eliminación de suspensión.
-- **Entregables:**
-  1. Agregar `eliminado_en timestamptz` nullable y definir la invariante de eliminado siempre inactivo, conservando identidad y relaciones. Aplicar el plan seguro de clasificación histórica; no inferir eliminación solo desde `activo=false`.
-  2. Quitar `uniqueIndex` incondicional de `EmailUsuario` del modelo e inspeccionar el nombre real del índice/constraint existente antes de reemplazarlo explícitamente por `UNIQUE (lower(btrim(email_usuario))) WHERE eliminado_en IS NULL`. Evitar que `AutoMigrate` recree la unicidad anterior; mantener la del username.
-  3. Prevalidar duplicados normalizados entre no eliminados sin fusionar identidades ni modificar auditoría; definir resolución controlada y transacción/orden seguro de migración. Documentar base nueva, base existente, reinicio e idempotencia.
-  4. Corregir el comentario `SET NULL` para reflejar `RESTRICT`, sin cambiar FK ni aplicar scopes de borrado a JOIN de auditoría o actividad histórica.
-- **Criterios de aceptación pendientes:** múltiples eliminados pueden conservar el mismo correo; solo una fila no eliminada puede reservarlo, incluso con mayúsculas/espacios; suspendidos lo reservan. Migración repetible y reinicio no recrean el índice anterior ni pierden filas/relaciones/auditoría.
+### `FIX-57A` - Regresión backend de recreación, autenticación, migración y auditoría
 
-### `FIX-55` - Alinear baja, validación y autenticación con identidad histórica (Backend)
+- **Área:** Backend / pruebas de aceptación
+- **Estado:** Pendiente; casos propuestos, ninguno ejecutado en esta revisión.
+- **Estimación:** 4 h
+- **Depende de:** `FIX-54` y `FIX-55`; considerar `FIX-51` al preparar fixtures históricos, sin resolverlo aquí.
+- **Problema:** la cobertura backend actual llega a la baja, pero no verifica la separación entre generaciones de una cuenta ni la migración de unicidad.
+- **Dónde probar:** `test/back`, extendiendo las pruebas Go contra el backend real y PostgreSQL del Compose existente. Esta suite ya tiene helpers para API, consultas SQL, correo simulado y autenticación; no dejar la verificación exclusivamente a los equipos que implementan los cambios.
+- **Entregables / casos pendientes:**
+  1. Crear A, generar actividad/auditoría, eliminarla y crear B con el mismo correo y distinto username. Verificar `201`, UUID distinto, login/recuperación/2FA de B y persistencia de A con correo histórico y marca de eliminación. Los registros, exports, tareas y relaciones conservan UUID A, organización y nombre originales; nada se transfiere ni se heredan permisos, sesiones o credenciales.
+  2. Verificar que suspender por `PUT` reserva el correo y permite reactivar; una eliminación no permite reactivación, edición, cambios de permisos, resets ni acceso con credenciales, access/refresh tokens, tickets/preauth u OTP anteriores. Cubrir fallos de revocación y comprobar que no produzcan éxito engañoso ni acceso habilitado.
+  3. Verificar varias generaciones eliminadas con el mismo correo, conflictos `409` para duplicados no eliminados y variantes de mayúsculas/espacios, y altas concurrentes con solo una fila activa/no eliminada. Las demás reciben errores controlados. Registrar el efecto observable del envío SMTP previo al INSERT, sin exigir una transacción distribuida.
+  4. Probar migración en base nueva y existente, repetición y reinicio; incluir duplicados normalizados y fixtures históricos con suspensiones y reactivaciones posteriores. No clasificar automáticamente todos los inactivos como eliminados ni recrear el índice incondicional.
+- **Criterios de aceptación pendientes:** los casos de estado, autenticación, unicidad, migración y auditoría pasan contra servicios reales, y sus resultados quedan registrados en `test/back/RESULTADOS.md`. Esta revisión documental no declara suites en verde ni tareas verificadas.
 
-- **Área:** Backend
-- **Estado:** Pendiente; no implementado ni probado.
-- **Estimación:** 2,5 h
-- **Depende de:** `FIX-54`, `BAC-06`, `BAC-06B`, `BAC-13`, `BAC-15` y los mecanismos existentes de autenticación/revocación.
-- **Problema:** cambiar solo la unicidad dejaría lookup ambiguo, reactivación de eliminados y flujos con estado temporal anterior a la baja.
-- **Entregables:**
-  1. `DELETE` fija la marca y desactiva conservando identidad; `PUT activo=false` solo suspende y `PUT activo=true` no restaura eliminados. Bloquear edición, cambios de permisos y resets administrativos sobre eliminados; conservar consultas históricas explícitas por UUID.
-  2. `ExisteEmailEnOrg` y validaciones de crear/editar/perfil excluyen eliminados, incluyen suspendidos y comparten normalización con DB. El lookup de autenticación por email excluye eliminados, mantiene el rechazo de suspendidos y no usa `First` ambiguo entre generaciones.
-  3. Incorporar guardas de eliminado por UUID en login, 2FA, refresh y recuperación y revisar los caminos que emiten/usan acceso. Invalidar OTP de recuperación y expiración, preauth, tickets, sesiones PostgreSQL/Redis y streams con los mecanismos existentes. Definir consistencia/rollback o estrategia fail-closed: un error de revocación no debe producir éxito engañoso ni dejar acceso habilitado.
-  4. Crear con UUID y clave nuevos, cambio obligatorio y 2FA nuevo, sin permisos/sesiones heredados; mantener relaciones históricas en el UUID anterior. Conservar la unicidad DB como última barrera ante carreras y mapear su violación de correo a `409` estructurado, con código acordado en contrato, sin SQL crudo y sin convertir cualquier fallo DB en conflicto.
-  5. Revisar el envío SMTP previo al INSERT al probar altas concurrentes y documentar su riesgo; no prometer una transacción distribuida email/DB ni incorporar un refactor SMTP ajeno como requisito obligatorio.
-- **Criterios de aceptación pendientes:** nueva cuenta accesible sin seleccionar la histórica; eliminado no puede reactivarse, editarse ni acceder mediante credenciales, tokens, preauth u OTP previos. Suspensión sigue siendo reversible y reserva correo. Conflictos y fallos de revocación tienen respuestas controladas y coherentes con el estado persistido.
+### `FIX-57B` - Regresión frontend de estados e identidad de usuario
 
-### `FIX-56` - Distinguir suspensión y eliminación en contrato e interfaz (Frontend)
-
-- **Área:** Frontend
-- **Estado:** Pendiente; no implementado ni probado.
-- **Estimación:** 1,5 h
-- **Depende de:** DTO/contrato de `FIX-54`/`FIX-55`, `FRN-05`, `FRN-06`, `FRN-06B` y `FIX-24`.
-- **Problema:** la interfaz llama eliminación a una desactivación y no dispone de estado separado; no es la causa del bloqueo de unicidad backend.
-- **Entregables:**
-  1. Diferenciar “Inactivo” de “Eliminado” según DTO; deshabilitar reactivar, editar y resetear eliminados. Ocultarlos del listado operativo por defecto manteniendo acceso histórico explícito y auditoría.
-  2. Modal de eliminación: explicar conservación de historial y liberación del correo; suspensión: explicar reversibilidad y reserva del correo. Alinear acciones, mensajes y navegación con el contrato.
-  3. Mostrar el conflicto de correo de cuentas no eliminadas con el código acordado por backend; mantener alta `201`, baja `204` y restricción `403` salvo cambio contractual explícito documentado.
-- **Criterios de aceptación pendientes:** mensajes y acciones distinguen ambos estados; un eliminado no ofrece acciones operativas; historial accesible y errores de correo claros, sin atribuir la restricción DB al frontend.
-
-### `FIX-57` - Regresión de recreación, autenticación, migración y auditoría (Integración)
-
-- **Área:** Integración
+- **Área:** Frontend / pruebas de aceptación
 - **Estado:** Pendiente; casos propuestos, ninguno ejecutado en esta revisión.
 - **Estimación:** 2 h
-- **Depende de:** `FIX-54`, `FIX-55` y `FIX-56`; considerar `FIX-51` al preparar fixtures históricos, sin resolverlo aquí.
-- **Problema:** la cobertura leída termina en la baja y no comprueba aislamiento entre generaciones de una cuenta.
-- **Entregables / casos pendientes en la infraestructura de pruebas existente:**
-  1. Crear A → acciones/auditoría → `DELETE A` → `POST B` con mismo correo y distinto username → `201` y UUID distinto → login/recuperación/2FA de B. A sigue persistido con correo histórico y marca; sus registros y exports mantienen UUID A, organización y nombre originales. Tareas/relaciones se preservan, sin transferirse a B ni heredar permisos, sesiones o credenciales.
-  2. Suspender por `PUT`: reserva correo y permite reactivar. Eliminar: rechaza reactivación, edición, permisos, resets y autenticación con credenciales, access/refresh tokens, tickets/preauth y OTP anteriores; incluir fallos de revocación y ausencia de éxito engañoso.
-  3. Varias generaciones eliminadas con el mismo correo; duplicados no eliminados y variantes de mayúsculas/espacios reciben `409`. Altas concurrentes permiten solo una cuenta no eliminada y devuelven error controlado para las demás; registrar el efecto del SMTP previo al INSERT.
-  4. Migración en base nueva y existente, repetición y reinicio; duplicados normalizados y clasificación histórica con suspensiones y reactivaciones posteriores. No convertir todos los inactivos ni recrear el índice incondicional.
-  5. Pruebas frontend de mensajes, listado operativo/histórico y acciones de cada estado; no regresión de `201`/`204`/`403`.
-- **Criterios de aceptación pendientes:** ejecutar y registrar estos casos al implementar, con revisiones y entorno reales. Esta revisión documental no declara suites en verde ni tareas verificadas.
+- **Depende de:** `FIX-56` y del contrato acordado en `FIX-54`/`FIX-55`.
+- **Problema:** la suite frontend actual prueba la gestión de usuarios, pero sus fixtures no distinguen suspensión de eliminación y no verifica las acciones visibles para cada generación.
+- **Dónde probar:** `test/front/admin-users.test.tsx` con Vitest y React Testing Library, usando fixtures del DTO y mocks de `fetch`, como hace la suite existente. No duplicar aquí pruebas de migración, base de datos o revocación real; esas pertenecen a `FIX-57A`.
+- **Entregables / casos pendientes:**
+  1. Verificar que suspensión y eliminación se etiqueten y expliquen de forma distinta; la suspensión conserva las acciones de reactivación y el eliminado no ofrece edición, reactivación, cambios de permisos ni resets.
+  2. Verificar listado operativo por defecto y acceso explícito al historial, incluyendo las identidades/generaciones y sus datos históricos sin presentarlas como una sola cuenta.
+  3. Verificar los mensajes de confirmación para suspender/eliminar, el conflicto de correo de una cuenta no eliminada y la navegación/mensajes tras alta y baja. Mantener los contratos `201`, `204` y `403`, salvo cambio explícito acordado.
+- **Criterios de aceptación pendientes:** las pruebas de UI distinguen ambos estados y cubren sus acciones y errores sin depender de condiciones opcionales en las aserciones. Registrar los resultados en `test/front/RESULTADOS.md`.
+
+**Responsabilidad de integración:** `test/back` es el dueño de la regresión funcional real entre generaciones (API, DB, autenticación y auditoría). `test/front` es dueño de la presentación y acciones de UI con contratos simulados. El recorrido real del frontend contra el backend se añade al orquestador de `test/back` reutilizando el patrón de `LOGIN-04` solo donde sea necesario para comprobar el contrato, sin convertir toda la cobertura de ambos lados en una tercera tarea transversal.
+
+---
+
+## 🎨 Revisión visual y de UX del 06/10/2026: autenticación, branding y acciones de instancias
+
+> [!WARNING]
+> **Estado: Defectos visuales y de UX detectados en despliegue activo.** En el despliegue del frontend (verificado en `centinela.tail6bb3f3.ts.net/two-factor/verify`, frontend commit `d47999d`, backend commit `f17295c`), el layout compartido de autenticación (`/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password`, `/change-password`) y la navegación principal contienen desalineaciones de interfaz y experiencia de usuario que degradan la usabilidad y la presentación institucional del producto:
+> 1. El logo de la aplicación se renderiza como texto literal crudo (`"logo Centinela"`).
+> 2. La columna lateral/carrusel de bienvenida muestra el texto informal `"imagenes y informacion random"`.
+> 3. Falta un texto claro, conciso y amigable que explique qué es Centinela y por qué es obligatorio pasar por el doble factor de autenticación (2FA).
+> 4. El botón de acción "Crear instancia" se ubicó en el Dashboard en lugar de la página de Instancias, rompiendo la separación de responsabilidades y la consistencia con el resto de la aplicación.
+
+### `FIX-58` - Reemplazar placeholder textual del logo por el imagotipo/logotipo oficial vectorizado (`FRN-01` / `LOGIN-02`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignada:** Belinda / Luz
+- **Estado:** Pendiente
+- **Estimación:** 1 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la vista de autenticación desplegada (`centinela.tail6bb3f3.ts.net/two-factor/verify`, front `d47999d`), en el encabezado superior izquierdo de la columna lateral se renderiza el texto plano `"logo Centinela"` (con `"logo"` estilizado en color primario/turquesa y `"Centinela"` en texto oscuro). No se está utilizando el imagotipo o logotipo vectorizado (SVG) de Centinela ni un componente de marca unificado, dejando un aspecto de maqueta incompleta en producción/staging.
+- **Dónde corregir:**
+  Componente del layout de autenticación en el frontend (ej. `AuthLayout.tsx` o componente de marca compartido en `src/components/layout/` o `src/pages/Login.tsx` / `LoginContinuation.tsx`).
+- **Entregables:**
+  1. Incorporar el activo gráfico oficial vectorizado de Centinela (archivo SVG o componente React `<CentinelaLogo />` / `<img src="/assets/logo.svg" alt="Centinela" />`).
+  2. Implementar accesibilidad correcta: etiqueta `alt="Centinela"` o `aria-label="Centinela - Panel de Orquestación"` y contraste visual adecuado según los lineamientos de accesibilidad WCAG.
+  3. Asegurar comportamiento responsivo: tamaño proporcional que no desborde en pantallas móviles ni en escritorio, manteniendo alineación con el contenedor principal.
+  4. Si el logo incluye enlace, dirigir al inicio o a `/login` sin provocar bucles de redirección en usuarios no autenticados.
+- **Criterio de éxito:**
+  - En `/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password` y `/change-password` se visualiza el logotipo oficial vectorizado de Centinela en lugar de la cadena de texto `"logo Centinela"`.
+  - El elemento es accesible para lectores de pantalla y mantiene proporciones nítidas en cualquier resolución.
+
+### `FIX-59` - Sustituir el placeholder "imagenes y informacion random" por mensaje informativo y amigable sobre Centinela y 2FA (`FRN-01` / `LOGIN-02`) (Frontend / UX Copy)
+
+- **Área:** Frontend / UX Copy
+- **Asignada:** Luz / Belinda
+- **Estado:** Pendiente
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la columna lateral/carrusel de bienvenida de las pantallas de acceso (`centinela.tail6bb3f3.ts.net/two-factor/verify`), debajo del logo aparece textualmente el placeholder en verde/turquesa `"imagenes y informacion random"`. Este texto de desarrollo quedó expuesto a los usuarios, omitiendo información crucial sobre la plataforma a la que acceden y el propósito del segundo factor de autenticación requerido.
+- **Dónde corregir:**
+  Contenedor de onboarding/carrusel lateral del layout de autenticación (ej. `AuthSidebar.tsx`, `AuthCarousel.tsx` o sección informativa en `AuthLayout.tsx`).
+- **Entregables:**
+  1. Reemplazar completamente el texto placeholder por una sección explicativa con redacción amigable, profesional y resumida que aborde los dos ejes clave del negocio:
+     - **Qué es Centinela:** Panel centralizado y amigable para la orquestación y monitoreo en tiempo real de servidores y entornos virtualizados (máquinas virtuales y contenedores Proxmox VE), diseñado para operar infraestructura de forma simple, ágil y sin riesgos operativos.
+     - **Por qué es fundamental el 2FA:** Al gestionar servidores y servicios de infraestructura crítica (con capacidad de encendido, reinicio, apagado y despliegue), la autenticación de dos pasos garantiza que solo operadores autorizados puedan ejecutar acciones, blindando las instancias frente a accesos indebidos aunque la contraseña se vea comprometida.
+  2. Propuesta de copy lista para implementar (adaptable a vista estática o a las tarjetas/slides del carrusel existente indicado por la flecha de navegación):
+     - **Slide 1 - La Plataforma:**
+       - *Título:* "Tu infraestructura virtual, simplificada y bajo control"
+       - *Descripción:* "Centinela te permite administrar, monitorear y operar tus máquinas virtuales y contenedores Proxmox VE en tiempo real desde un entorno ágil, intuitivo y seguro."
+     - **Slide 2 - Seguridad y Doble Factor (2FA):**
+       - *Título:* "Protección de infraestructura con doble factor"
+       - *Descripción:* "Gestionar servidores requiere la máxima seguridad. El 2FA añade una capa de protección indispensable para salvaguardar tus servicios críticos ante cualquier acceso no autorizado."
+  3. Acompañar el copy con iconografía representativa (ej. iconos de servidor/nube para la plataforma y escudo/candado para el 2FA) o ilustraciones vectoriales acordes a la identidad visual, eliminando cualquier referencia a textos aleatorios o informales.
+  4. Ordenar visualmente la convivencia con el componente de diagnóstico `InfraDeployCheck` ("VERIFICACION DE DEPLOY — INFRA (TEMPORAL)"), ubicándolo de manera discreta al pie del contenedor para no invadir el mensaje de bienvenida y seguridad.
+- **Criterio de éxito:**
+  - El texto `"imagenes y informacion random"` no aparece en ninguna pantalla ni componente del frontend.
+  - La columna lateral presenta el mensaje claro y amigable sobre el propósito de Centinela y el valor del 2FA, estructurado con jerarquía tipográfica adecuada (título destacado y párrafo explicativo).
+  - La navegación del carrusel (si aplica) transiciona suavemente entre los mensajes informativos con sus correspondientes elementos visuales.
+
+### `FIX-60` - Reubicar el botón "Crear instancia" del Dashboard a la página de Instancias (`FRN-19B` / `FRN-20A` / `RF-03` / `RF-07`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignada:** Cristian / Luz
+- **Estado:** Pendiente
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19A`, `FRN-19B`, `FRN-20A` y `SEC-03` (`PermissionGate`).
+- **Problema y evidencia:**
+  En la vista del Dashboard (`/dashboard`, `src/pages/Dashboard.tsx`), el frontend incluyó un botón de acción "Crear instancia" (o "Nueva instancia"). Esta ubicación rompe la separación de responsabilidades y la consistencia de experiencia de usuario (UX) de la plataforma:
+  1. **Separación de responsabilidades:** El Dashboard (`RF-02`, `FRN-19A`, `FRN-19B`) es una vista de monitoreo global, telemetría y salud general del nodo físico (medidores de CPU, RAM, disco, uptime y semáforo). Las acciones operativas sobre recursos virtualizados (VMs y contenedores) pertenecen a la vista de Inventario de Instancias (`/instances`, `RF-03`, `FRN-20A`).
+  2. **Inconsistencia con el patrón de la aplicación:** En la gestión de usuarios, el botón "Crear usuario" no se encuentra en el Dashboard ni en la barra de navegación, sino en la cabecera de la tabla de usuarios (`/users`, formalizado en el commit `a387e10`). La creación de instancias debe seguir el mismo patrón de diseño contextual dentro de `/instances`.
+  3. **Fricción de navegación y control de acceso:** Un operador o administrador que gestiona máquinas desde `/instances` no encuentra allí el botón para desplegar una nueva instancia y se ve forzado a regresar al Dashboard. Además, la creación de instancias es una acción reservada para administradores (`ADMIN`), por lo que colocarla en el Dashboard expone un control desalineado en una vista accesible por cualquier usuario (`D1`).
+- **Dónde corregir:**
+  - `src/pages/Dashboard.tsx`: Remover el botón y cualquier trigger o modal de creación de instancia alojado en el Dashboard.
+  - `src/pages/Instances.tsx`: Incorporar el botón "Crear instancia" en la barra de herramientas superior (junto a los filtros por tipo y buscador de `FRN-20B`).
+- **Entregables:**
+  1. Eliminar el botón "Crear instancia" de `Dashboard.tsx`. Asegurar que el Dashboard conserve únicamente los medidores de nodo, el resumen de instancias y el semáforo de salud (`RF-02`).
+  2. Agregar el botón "Crear instancia" (o "Nueva instancia") en la cabecera de `Instances.tsx`, alineado a la derecha de la barra de acciones y filtros.
+  3. Proteger la visualización del botón con `PermissionGate` o el sistema de permisos de `SEC-03`:
+     - Rol `ADMIN`: Visualiza el botón habilitado.
+     - Rol `OPERATOR`: No visualiza el botón (o se muestra con fallback/deshabilitado con tooltip indicando falta de permisos de aprovisionamiento).
+  4. Conectar la acción al modal/asistente de creación de instancia o navegación correspondiente (`RF-07` / wizard paso a paso si ya está maquetado, o placeholder inactivo con tooltip hasta la implementación completa de la Etapa 2).
+  5. Asegurar que las suites de pruebas (`dashboard-node.test.tsx` e `instances-table.test.tsx`) no presenten regresiones y verificar que en `/dashboard` no se renderice el botón.
+- **Criterio de éxito:**
+  - `screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })` devuelve `null` en `/dashboard`.
+  - En `/instances`, un usuario con rol `ADMIN` ve el botón "Crear instancia" en la cabecera del inventario.
+  - Un usuario con rol `OPERATOR` no ve el botón "Crear instancia" en `/instances` ni en `/dashboard`.
+  - El maquetado de ambas vistas se mantiene limpio, responsivo y sin errores de consola.
