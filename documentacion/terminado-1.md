@@ -281,18 +281,14 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
 
 #### `BAC-24B` - Endpoint de eliminación `DELETE /api/instances/:vmid`
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, backend `e1f2df4`, commit `b8d2631`).** El endpoint existe: `DELETE /api/instances/:vmid` con `RequireRole("ADMIN")` y `RejectProtectedInstance` (`cmd/api/main.go:273`). `test/back/etapa1_acceptance_test.go`, caso `BAC-24B…`:
-> - **Cumple:**
->   - sin token, `401`;
->   - un OPERATOR, aunque tenga `FULL_ACCESS`, recibe `403`;
->   - un VMID protegido, `403 INSTANCE_PROTECTED`;
->   - la orden no llega a Proxmox cuando se rechaza.
-> - **Falla:**
->   - con la instancia encendida responde `409 INSTANCE_NOT_STOPPED`; D2 y el entregable 2 piden `INSTANCE_INVALID_STATE`;
->   - con la instancia detenida responde **`204` sin cuerpo** (`instance_handler.go:558`). `proxmox.EliminarInstancia` descarta el UPID de `qmdestroy`/`vzdestroy`, la tarea no se registra en el seguimiento y no se emite `TASK_FINISHED`. La auditoría se escribe con resultado final (éxito o falla), sin `upid` ni orden despachada `PENDING`. Fallan los entregables 3 y 4.
->
-> La corrección es **`FIX-49`**, en [`futuro-1.md`](futuro-1.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commits `088e175` y `f06640f`).** El endpoint destructivo `DELETE /api/instances/:vmid` cumple todos sus entregables:
+> - sin token, `401`;
+> - un OPERATOR recibe `403`;
+> - un VMID protegido recibe `403 INSTANCE_PROTECTED`;
+> - con la instancia encendida responde `409 INSTANCE_INVALID_STATE` (D2);
+> - con la instancia detenida responde `202 { upid, tareaId }`, encolando el UPID en `Seguir`, despachando la orden auditada con `PENDING` y emitiendo `TASK_FINISHED` con `recursoTipo` correcto.
+> Pasa 100% en verde en `etapa1_acceptance_test.go` y `puente_etapa1_acceptance_test.go`. Resuelto por `FIX-49`.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -316,16 +312,13 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
 
 #### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commits `8739022` y `0407fbd`).** `test/front/events-client.test.tsx`, bloque `FRN-17A`:
-> - **Cumple** (2 de 4):
->   - una sola conexión por pestaña: `EventsProvider` en `ProtectedLayout`, y los consumidores con `useEventsContext()`;
->   - descarta los mensajes que no cumplen `RealtimeEvent`.
-> - **Falla:**
->   - **no deduplica**: `parseCentinelaEventsMessage` descarta el `id` del evento, y un evento repetido vuelve a entregarse en `ultimoMensaje`;
->   - sigue existiendo `hooks/useWebSocket.js`, y `types/notifications.ts:4` sigue diciendo "El servidor WebSocket todavía no existe".
->
-> La corrección es **`FIX-47`**, en [`futuro-1.md`](futuro-1.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commit `1ce64f6` `FIX-47`).** `test/front/events-client.test.tsx`, bloque `FRN-17A`:
+> - una sola conexión por pestaña: `EventsProvider` en `ProtectedLayout`, y los consumidores con `useEventsContext()`;
+> - descarta los mensajes que no cumplen `RealtimeEvent`;
+> - deduplica por `id` en `parseCentinelaEventsMessage` manteniendo `seenEventIds`;
+> - se eliminó `hooks/useWebSocket.js` y se actualizó `types/notifications.ts`.
+> Pasan 4 de 4 pruebas de `FRN-17A` en `events-client.test.tsx`. Resuelto por `FIX-47`.
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -341,3 +334,168 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
   - El Dashboard y la tabla reciben los `TASK_FINISHED` del backend en tiempo real con una sola conexión abierta por pestaña.
   - Un evento repetido se procesa una sola vez.
   - Las pruebas de `events-client.test.tsx` pasan.
+
+---
+
+# Verificación del 06/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `59148b1` y frontend `5a86dce`.
+
+#### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `13f9c35`).**
+> - **Cumple:** implementa `GET /api/node/status` en `nodo_service.go`, normaliza CPU/RAM/disco y uptime, cachea en Redis con TTL y sirve fallback `stale` si Proxmox cae teniendo lectura previa.
+> - **Problema:** si el backend arranca y Proxmox falla antes de poblar la caché (`node:status:last_known`), `nodo_service.go:24` aplica `pausaTrasFallaNodo = 5s`. Durante ese intervalo, cualquier consulta devuelve `502 PROXMOX_UNAVAILABLE` sin reintentar a Proxmox, haciendo fallar el caso de recuperación en `etapa1_acceptance_test.go:91`.
+>
+> La corrección es **`FIX-62`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.5 h
+- **Depende de:** `INF-06A` y `BAC-17A`.
+- **Criterio de éxito original:** Responde en < 50 ms en caché; refresca al vencer TTL; ante caída de Proxmox sirve último estado con `stale: true`; accesible para cualquier usuario autenticado (`ADMIN` u `OPERATOR`).
+
+#### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `d1dec4f`).**
+> - **Cumple:** unifica inventario de VMs y LXCs, resuelve IPs de forma concurrente consultando QEMU Guest Agent e interfaces de LXC, y devuelve `ip: null` si la máquina está apagada.
+> - **Problema:** la suite de aceptación (`etapa1_acceptance_test.go:165`) busca pruebas unitarias que mencionen explícitamente `network-get-interfaces` o `/interfaces` en archivos `_test.go` del cliente/adaptador de Proxmox.
+>
+> La corrección es **`FIX-63`** (y profundización en `FIX-67`), en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-14`, `BAC-28` y `FIX-35`.
+- **Criterio de éxito original:** Devuelve inventario consolidado con IP resuelta concurrentemente y timeout acotado por petición.
+
+#### `BAC-25A` - Worker pool acotado para el seguimiento de UPID
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `3988546`).**
+> - **Cumple:** pool acotado con `UPID_WORKERS` (default 8), encolado no bloqueante con reconciliador en base de datos (`seguimiento_tareas.go`), y procesamiento concurrente sin pérdida de tareas.
+> - **Problema:** la aserción de suite limpia en `etapa1_acceptance_test.go:178` ejecuta `go test ./docs ...`, la cual falla debido a que la regeneración de Swagger en `f06640f` omitió las definiciones de modelos SSE en `swagger.yaml`.
+>
+> La corrección es **`FIX-69`** (y verificación estricta de concurrencia en `FIX-67`), en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-21C`.
+- **Criterio de éxito original:** Con 50 tareas simultáneas no supera $N$ workers en vuelo; detección en menos de 2 s.
+
+#### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commit `f17295c`).**
+> - Reanuda tareas `RUNNING` ≤ 3 min al iniciar el backend y marca `FAILED (TIMEOUT)` las vencidas.
+> - Informa `activeTask: { tareaId, action, status }` en `GET /api/instances` cruzando con las tareas en curso.
+> - Pasa 100% en verde en `etapa1_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25A` y `FIX-39`.
+- **Criterio de éxito:** Tareas en curso se retoman tras reinicio y se informa `activeTask` en inventario.
+
+#### `FIX-43` - Corregir maquetado, visualización de IP, badges de estado y columnas en tabla de instancias (`FRN-20A` / RF-03) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commits `0901682`..`56d67bb`, `743e4cc`).**
+> - Muestra columnas separadas para ID y Nombre, permitiendo identificación unívoca.
+> - Columna IP con valor real o "No detectada" y botón copiar interactivo.
+> - Badges de estado con estilos verde/gris según `running`/`stopped`.
+> - Menú desplegable y botonera de acciones operativa.
+> - Pasan 5 de 5 pruebas en `test/front/instances-table.test.tsx`.
+
+- **Área:** Frontend
+- **Asignada:** Luz / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-20A`.
+- **Criterio de éxito:** Pasan las 5 pruebas de `instances-table.test.tsx`.
+
+#### `FIX-46` - Completar el contrato de la Etapa 1 y alinear `activeTask` (`BAC-29`) (Backend)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `0850ec7`).**
+> - **Cumple:** contrato actualizado con `activeTask` estructurado, DELETE asíncrono y eventos.
+> - **Problema:** falta documentar explícitamente en `docs/contrato-etapa1.md` que `/node/status` lo puede consultar cualquier usuario autenticado (D1).
+>
+> Pendiente D1 registrado en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Depende de:** `BAC-29`.
+- **Criterio de éxito:** Contrato alineado y paso de `etapa1_acceptance_test.go`.
+
+#### `FIX-47` - Deduplicar eventos por `id` y limpiar restos del canal anterior (`FRN-17A`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commit `1ce64f6`).**
+> - Deduplica eventos por `id` en `eventsClient.ts` con `seenEventIds`.
+> - Se eliminó el archivo residual `hooks/useWebSocket.js` y se actualizó `types/notifications.ts`.
+> - Pasan los casos de `FRN-17A` en `events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Depende de:** `FRN-17A`.
+- **Criterio de éxito:** Eventos repetidos se procesan una sola vez y no quedan restos del canal anterior.
+
+#### `FIX-48` - Documentar `INSTANCE_INVALID_STATE` en Swagger (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commit `0850ec7`).**
+> - Se documentó la respuesta `@Failure 409` con `INSTANCE_INVALID_STATE` en los handlers de acciones de energía y se regeneró `swagger.json`.
+> - Entregable 4 verificado y en verde en `etapa1_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lucas
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Swagger documenta `INSTANCE_INVALID_STATE` en acciones de ciclo de vida.
+
+#### `FIX-49` - `DELETE /api/instances/:vmid`: código de estado (D2) y `202` con seguimiento (`BAC-24B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commits `088e175` y `f06640f`).**
+> - Responde `409 INSTANCE_INVALID_STATE` si la instancia no está detenida.
+> - Responde `202 { upid, tareaId }` si está detenida, encolando el UPID en `Seguir`, despachando auditoría `PENDING` y emitiendo `TASK_FINISHED` con `resource_type`.
+> - Pasa 100% en verde en `etapa1_acceptance_test.go` y `puente_etapa1_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-24B`.
+- **Criterio de éxito:** DELETE responde 409 si encendida, 202 con seguimiento si detenida y emite TASK_FINISHED.
+
+#### `FIX-53` - Unificar códigos de acción y resultado en la auditoría de instancias (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commit `b476636`).**
+> - Unifica vocabulario canónico `START`/`STOP`/`SHUTDOWN`/`REBOOT`/`DELETE`.
+> - Define `ResultadoPendiente = "PENDING"` y preserva `instanciaNombre` y `resource_type` en alias `/start` y `/stop`.
+> - Pasa la prueba `FIX-53_unificacion_de_codigos_de_accion_y_resultado_en_la_auditoria_de_instancias` en `fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Códigos de auditoría unificados entre rutas y alias.
+
+#### `FIX-64` - Conexión SSE compartida y suscripción selectiva (`FRN-17A`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`).**
+> - Implementa conexión compartida única vía `EventsProvider` en `ProtectedLayout`.
+> - Suscripción y distribución de eventos por contexto (`useEventsContext`).
+> - Pasan las pruebas correspondientes en `test/front/events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-17A`, `FRN-17C`.
+- **Criterio de éxito:** Una sola conexión SSE compartida por pestaña con suscripciones selectivas.

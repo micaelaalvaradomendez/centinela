@@ -1597,15 +1597,11 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commit `2a2db82` "cliente SSE con tickets efímeros y backoff").** `test/front/events-client.test.tsx`:
-> - **Cumple** (3 de 4):
->   - pide `POST /api/events/ticket` con `Bearer`, y el JWT nunca va en la URL;
->   - ante una desconexión pide un ticket nuevo y aplica retroceso exponencial;
->   - con un `401` avisa a la app (`API_UNAUTHORIZED_EVENT`), y el `AuthProvider` cierra la sesión y lleva a `/login`.
-> - **Falla:** abre el stream en **`/api/events/stream?ticket=…`** (`services/eventsClient.ts:19`, `EVENTS_STREAM_PATH = '/events/stream'`). El backend lo sirve en `GET /api/events` (`cmd/api/main.go:260`), así que contra el backend real el stream responde 404 y no llega ningún evento.
->
-> La corrección es **`FIX-45`**, en [`futuro.md`](futuro.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026 con FIX-45 en `7f945ec` y FIX-61 en `2a2db82`, frontend `5a86dce`).**
+> - `src/services/eventsClient.ts` define `EVENTS_STREAM_PATH = '/events'`, conectándose correctamente a `GET /api/events?ticket=<uuid>`.
+> - Ante 401 en ticket, detiene los temporizadores de reconexión y delega el cierre de sesión en `AuthProvider`.
+> - Pasan 4 de 4 pruebas de `FRN-17C` en `test/front/events-client.test.tsx`.
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -1617,3 +1613,62 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
   2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
 - **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
+
+---
+
+# Verificación del 06/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `59148b1` y frontend `5a86dce`.
+
+### `FIX-44` - Corregir índice parcial en `sesiones_activas` para incluir `jti_access` y alinear worker de purga (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `c02fd29` / `59148b1`).**
+> - Commit `c02fd29`: `internal/adapters/secondary/postgres/db.go:148` indexa `(jti_access, usuario_id) WHERE activa = true`, cubriendo la consulta de validación de sesiones activas en alta concurrencia.
+> - `purga_worker.go:39` inicializa el worker de purga periódica con `time.NewTicker(1 * time.Hour)`.
+> - En `cierre_fase_base_acceptance_test.go`: `BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-18B`.
+- **Criterio de éxito:** Pasan las pruebas de índice parcial y purga horaria en `cierre_fase_base_acceptance_test.go`.
+
+### `FIX-50` - Apagado correcto del servidor HTTP ante `SIGINT`/`SIGTERM` (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `3988546` / `59148b1`).**
+> - Commit `3988546`: `main.go:308-330` reemplaza `router.Run` por `http.Server{Addr: ":8080", Handler: router}`, escucha señales `SIGINT`/`SIGTERM` con `signal.NotifyContext` y ejecuta `srv.Shutdown(ctxApagado)` con timeout para drenar peticiones activas.
+> - Pasa la prueba `FIX-50_el_servidor_HTTP_implementa_apagado_ordenado_con_http.Server_y_Shutdown_ante_senales` en `fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B`.
+- **Criterio de éxito:** Enviar `SIGINT` o `SIGTERM` hace que el servidor HTTP y los workers se apaguen de forma ordenada en pocos segundos.
+
+### `FIX-45` - El cliente de eventos abre el stream en una ruta que el backend no sirve (`FRN-17C`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `7f945ec` / `5a86dce`).**
+> - Commit `7f945ec`: `src/services/eventsClient.ts:19` define `EVENTS_STREAM_PATH = '/events'`, alineándose con el endpoint servido por el backend en `GET /api/events` (`BAC-21C`).
+> - Pasan 4 de 4 pruebas de `FRN-17C` en `test/front/events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Nico
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C` y `BAC-21C`.
+- **Criterio de éxito:** El cliente conecta a `/api/events?ticket=...` y recibe eventos SSE en tiempo real.
+
+### `FIX-61` - Cerrar sesión y detener reconexiones ante 401 al solicitar el ticket de eventos (`FRN-17C`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `2a2db82` / `5a86dce`).**
+> - Commit `2a2db82`: `src/services/eventsClient.ts:300` invoca `terminate('unauthorized')` y limpia temporizadores de reconexión al recibir un código `401` al solicitar el ticket de stream, delegando la redirección en `AuthProvider`.
+> - Pasan las pruebas correspondientes en `test/front/events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C`, `BAC-21C`.
+- **Criterio de éxito:** Ante 401 en ticket se detienen los reintentos, se cancelan los timers y se cierra la sesión.

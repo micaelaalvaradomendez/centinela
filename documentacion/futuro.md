@@ -342,97 +342,10 @@ Conservar al usuario anterior para auditoría y permitir una cuenta **nueva** co
 > 3. Falta un texto claro, conciso y amigable que explique qué es Centinela y por qué es obligatorio pasar por el doble factor de autenticación (2FA).
 > 4. El botón de acción "Crear instancia" se ubicó en el Dashboard en lugar de la página de Instancias, rompiendo la separación de responsabilidades y la consistencia con el resto de la aplicación.
 
-### `FIX-58` - Reemplazar placeholder textual del logo por el imagotipo/logotipo oficial vectorizado (`FRN-01` / `LOGIN-02`) (Frontend)
-
-- **Área:** Frontend / UI
-- **Asignada:** Belinda / Luz
-- **Estado:** Pendiente
-- **Estimación:** 1 h
-- **Depende de:** `FRN-01` y `LOGIN-02`.
-- **Problema y evidencia:**
-  En la vista de autenticación desplegada (`centinela.tail6bb3f3.ts.net/two-factor/verify`, front `d47999d`), en el encabezado superior izquierdo de la columna lateral se renderiza el texto plano `"logo Centinela"` (con `"logo"` estilizado en color primario/turquesa y `"Centinela"` en texto oscuro). No se está utilizando el imagotipo o logotipo vectorizado (SVG) de Centinela ni un componente de marca unificado, dejando un aspecto de maqueta incompleta en producción/staging.
-- **Dónde corregir:**
-  Componente del layout de autenticación en el frontend (ej. `AuthLayout.tsx` o componente de marca compartido en `src/components/layout/` o `src/pages/Login.tsx` / `LoginContinuation.tsx`).
-- **Entregables:**
-  1. Incorporar el activo gráfico oficial vectorizado de Centinela (archivo SVG o componente React `<CentinelaLogo />` / `<img src="/assets/logo.svg" alt="Centinela" />`).
-  2. Implementar accesibilidad correcta: etiqueta `alt="Centinela"` o `aria-label="Centinela - Panel de Orquestación"` y contraste visual adecuado según los lineamientos de accesibilidad WCAG.
-  3. Asegurar comportamiento responsivo: tamaño proporcional que no desborde en pantallas móviles ni en escritorio, manteniendo alineación con el contenedor principal.
-  4. Si el logo incluye enlace, dirigir al inicio o a `/login` sin provocar bucles de redirección en usuarios no autenticados.
-- **Criterio de éxito:**
-  - En `/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password` y `/change-password` se visualiza el logotipo oficial vectorizado de Centinela en lugar de la cadena de texto `"logo Centinela"`.
-  - El elemento es accesible para lectores de pantalla y mantiene proporciones nítidas en cualquier resolución.
-
-### `FIX-59` - Sustituir el placeholder "imagenes y informacion random" por mensaje informativo y amigable sobre Centinela y 2FA (`FRN-01` / `LOGIN-02`) (Frontend / UX Copy)
-
-- **Área:** Frontend / UX Copy
-- **Asignada:** Luz / Belinda
-- **Estado:** Pendiente
-- **Estimación:** 1,5 h
-- **Depende de:** `FRN-01` y `LOGIN-02`.
-- **Problema y evidencia:**
-  En la columna lateral/carrusel de bienvenida de las pantallas de acceso (`centinela.tail6bb3f3.ts.net/two-factor/verify`), debajo del logo aparece textualmente el placeholder en verde/turquesa `"imagenes y informacion random"`. Este texto de desarrollo quedó expuesto a los usuarios, omitiendo información crucial sobre la plataforma a la que acceden y el propósito del segundo factor de autenticación requerido.
-- **Dónde corregir:**
-  Contenedor de onboarding/carrusel lateral del layout de autenticación (ej. `AuthSidebar.tsx`, `AuthCarousel.tsx` o sección informativa en `AuthLayout.tsx`).
-- **Entregables:**
-  1. Reemplazar completamente el texto placeholder por una sección explicativa con redacción amigable, profesional y resumida que aborde los dos ejes clave del negocio:
-     - **Qué es Centinela:** Panel centralizado y amigable para la orquestación y monitoreo en tiempo real de servidores y entornos virtualizados (máquinas virtuales y contenedores Proxmox VE), diseñado para operar infraestructura de forma simple, ágil y sin riesgos operativos.
-     - **Por qué es fundamental el 2FA:** Al gestionar servidores y servicios de infraestructura crítica (con capacidad de encendido, reinicio, apagado y despliegue), la autenticación de dos pasos garantiza que solo operadores autorizados puedan ejecutar acciones, blindando las instancias frente a accesos indebidos aunque la contraseña se vea comprometida.
-  2. Propuesta de copy lista para implementar (adaptable a vista estática o a las tarjetas/slides del carrusel existente indicado por la flecha de navegación):
-     - **Slide 1 - La Plataforma:**
-       - *Título:* "Tu infraestructura virtual, simplificada y bajo control"
-       - *Descripción:* "Centinela te permite administrar, monitorear y operar tus máquinas virtuales y contenedores Proxmox VE en tiempo real desde un entorno ágil, intuitivo y seguro."
-     - **Slide 2 - Seguridad y Doble Factor (2FA):**
-       - *Título:* "Protección de infraestructura con doble factor"
-       - *Descripción:* "Gestionar servidores requiere la máxima seguridad. El 2FA añade una capa de protección indispensable para salvaguardar tus servicios críticos ante cualquier acceso no autorizado."
-  3. Acompañar el copy con iconografía representativa (ej. iconos de servidor/nube para la plataforma y escudo/candado para el 2FA) o ilustraciones vectoriales acordes a la identidad visual, eliminando cualquier referencia a textos aleatorios o informales.
-  4. Ordenar visualmente la convivencia con el componente de diagnóstico `InfraDeployCheck` ("VERIFICACION DE DEPLOY — INFRA (TEMPORAL)"), ubicándolo de manera discreta al pie del contenedor para no invadir el mensaje de bienvenida y seguridad.
-- **Criterio de éxito:**
-  - El texto `"imagenes y informacion random"` no aparece en ninguna pantalla ni componente del frontend.
-  - La columna lateral presenta el mensaje claro y amigable sobre el propósito de Centinela y el valor del 2FA, estructurado con jerarquía tipográfica adecuada (título destacado y párrafo explicativo).
-  - La navegación del carrusel (si aplica) transiciona suavemente entre los mensajes informativos con sus correspondientes elementos visuales.
-
-### `FIX-60` - Reubicar el botón "Crear instancia" del Dashboard a la página de Instancias (`FRN-19B` / `FRN-20A` / `RF-03` / `RF-07`) (Frontend)
-
-- **Área:** Frontend / UI
-- **Asignada:** Cristian / Luz
-- **Estado:** Pendiente
-- **Estimación:** 1 h
-- **Depende de:** `FRN-19A`, `FRN-19B`, `FRN-20A` y `SEC-03` (`PermissionGate`).
-- **Problema y evidencia:**
-  En la vista del Dashboard (`/dashboard`, `src/pages/Dashboard.tsx`), el frontend incluyó un botón de acción "Crear instancia" (o "Nueva instancia"). Esta ubicación rompe la separación de responsabilidades y la consistencia de experiencia de usuario (UX) de la plataforma:
-  1. **Separación de responsabilidades:** El Dashboard (`RF-02`, `FRN-19A`, `FRN-19B`) es una vista de monitoreo global, telemetría y salud general del nodo físico (medidores de CPU, RAM, disco, uptime y semáforo). Las acciones operativas sobre recursos virtualizados (VMs y contenedores) pertenecen a la vista de Inventario de Instancias (`/instances`, `RF-03`, `FRN-20A`).
-  2. **Inconsistencia con el patrón de la aplicación:** En la gestión de usuarios, el botón "Crear usuario" no se encuentra en el Dashboard ni en la barra de navegación, sino en la cabecera de la tabla de usuarios (`/users`, formalizado en el commit `a387e10`). La creación de instancias debe seguir el mismo patrón de diseño contextual dentro de `/instances`.
-  3. **Fricción de navegación y control de acceso:** Un operador o administrador que gestiona máquinas desde `/instances` no encuentra allí el botón para desplegar una nueva instancia y se ve forzado a regresar al Dashboard. Además, la creación de instancias es una acción reservada para administradores (`ADMIN`), por lo que colocarla en el Dashboard expone un control desalineado en una vista accesible por cualquier usuario (`D1`).
-- **Dónde corregir:**
-  - `src/pages/Dashboard.tsx`: Remover el botón y cualquier trigger o modal de creación de instancia alojado en el Dashboard.
-  - `src/pages/Instances.tsx`: Incorporar el botón "Crear instancia" en la barra de herramientas superior (junto a los filtros por tipo y buscador de `FRN-20B`).
-- **Entregables:**
-  1. Eliminar el botón "Crear instancia" de `Dashboard.tsx`. Asegurar que el Dashboard conserve únicamente los medidores de nodo, el resumen de instancias y el semáforo de salud (`RF-02`).
-  2. Agregar el botón "Crear instancia" (o "Nueva instancia") en la cabecera de `Instances.tsx`, alineado a la derecha de la barra de acciones y filtros.
-  3. Proteger la visualización del botón con `PermissionGate` o el sistema de permisos de `SEC-03`:
-     - Rol `ADMIN`: Visualiza el botón habilitado.
-     - Rol `OPERATOR`: No visualiza el botón (o se muestra con fallback/deshabilitado con tooltip indicando falta de permisos de aprovisionamiento).
-  4. Conectar la acción al modal/asistente de creación de instancia o navegación correspondiente (`RF-07` / wizard paso a paso si ya está maquetado, o placeholder inactivo con tooltip hasta la implementación completa de la Etapa 2).
-  5. Asegurar que las suites de pruebas (`dashboard-node.test.tsx` e `instances-table.test.tsx`) no presenten regresiones y verificar que en `/dashboard` no se renderice el botón.
-- **Criterio de éxito:**
-  - `screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })` devuelve `null` en `/dashboard`.
-  - En `/instances`, un usuario con rol `ADMIN` ve el botón "Crear instancia" en la cabecera del inventario.
-  - Un usuario con rol `OPERATOR` no ve el botón "Crear instancia" en `/instances` ni en `/dashboard`.
-  - El maquetado de ambas vistas se mantiene limpio, responsivo y sin errores de consola.
+> Las tareas de corrección asociadas (`FIX-58`, `FIX-59` y `FIX-60`) se encuentran en [`actual.md`](actual.md).
 
 ---
 
 ## Hallazgo incorporado del PR #3 (06/10/2026)
 
-Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a `FIX-60`. El PR utilizaba `FIX-45` para el siguiente problema, pero ese ID ya identifica la ruta incorrecta del stream en [`actual.md`](actual.md). No se reemplaza ese diagnóstico ni se declara resuelto sin pruebas.
-
-### `FIX-61` - Cerrar sesión y detener reconexiones ante 401 al solicitar el ticket de eventos (`FRN-17C`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estado:** Hallazgo reportado por el PR #3; pendiente de revalidación local.
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-17C`, `BAC-21C` y contrato de autenticación vigente.
-- **Problema y evidencia declarada:** el PR reporta que, en frontend `5a86dce`, el cliente sigue reintentando cuando `POST /api/events/ticket` responde `401`, en lugar de limpiar la sesión y llevar al usuario a `/login`. Es un problema distinto del endpoint incorrecto de `FIX-45`.
-- **Entregable:** reproducir el caso de `events-client.test.tsx`; si falla, detener los reintentos y cerrar la sesión mediante el mecanismo existente de autenticación, redirigiendo a `/login` sin exponer el JWT en la URL.
-- **Criterio de éxito:** el caso de ticket rechazado con `401` pasa, no quedan temporizadores de reconexión y la reconexión por fallos transitorios de red sigue funcionando. Registrar el resultado y la revisión probada; esta integración no ejecutó la suite.
+Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a `FIX-60`. Las correcciones de ticket con 401 (`FIX-61`) y de stream `/events` (`FIX-45`) fueron verificadas con pruebas automatizadas en verde y promovidas a [`terminado.md`](terminado.md).

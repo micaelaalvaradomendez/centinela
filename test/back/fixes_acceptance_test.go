@@ -230,13 +230,13 @@ func TestFixesPendientes(t *testing.T) {
 	})
 
 	t.Run("FIX-68 integracion del cliente de eventos con la ruta real servida por el backend", func(t *testing.T) {
-		clientCode := string(readFile(t, sourcePath("frontend", "centinela/src/services/eventsClient.ts")))
+		clientCode := string(readFile(t, sourcePath("frontend", "src/services/eventsClient.ts")))
 		// 1. Contrato del frontend: EVENTS_STREAM_PATH debe ser '/events' y no '/events/stream'.
 		if strings.Contains(clientCode, "EVENTS_STREAM_PATH = '/events/stream'") {
-			t.Errorf("frontend/centinela/src/services/eventsClient.ts define EVENTS_STREAM_PATH = '/events/stream', ruta inexistente en el backend")
+			t.Errorf("frontend/src/services/eventsClient.ts define EVENTS_STREAM_PATH = '/events/stream', ruta inexistente en el backend")
 		}
 		if !strings.Contains(clientCode, "EVENTS_STREAM_PATH = '/events'") {
-			t.Errorf("frontend/centinela/src/services/eventsClient.ts no define EVENTS_STREAM_PATH = '/events'")
+			t.Errorf("frontend/src/services/eventsClient.ts no define EVENTS_STREAM_PATH = '/events'")
 		}
 
 		// 2. Comprobación en vivo del backend: la ruta /api/events responde con SSE para un ticket válido,

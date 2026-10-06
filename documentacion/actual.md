@@ -3,39 +3,30 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Integración local del PR #3 (06/10/2026):** se incorporaron sus pruebas y los commits backend `eec77ff` y frontend `5a86dce`, conservando las tareas y fixes de `main` `cb0be91`. Los estados del 03/10 y 05/10 siguientes son históricos, no una verificación de los nuevos commits. El PR declara avances en `BAC-22`, `BAC-23A`, `BAC-25A` y `FIX-43`, pero no se ejecutaron suites en esta integración; sus bloques se conservan hasta revalidar. Los hallazgos nuevos se registran como `FIX-61` a `FIX-64`, sin reutilizar `FIX-45` a `FIX-49`. Ver [test/informe.md](../test/informe.md#integración-local-del-pr-3-06102026).
-
-> [!NOTE]
-> **Estado al 03/10/2026** (backend `4e204f1`, frontend `907efe5`; detalle en [test/informe.md](../test/informe.md)).
-> - **Pasaron a [`terminado.md`](terminado.md):**
->   - `FIX-29` y `FIX-40`, completas;
->   - `SEC-03`, `FIX-41`, `FIX-42` y `FIX-38`, completas;
->   - `FIX-36`, completa (PR #77, frontend `070e96b`);
->   - `FIX-37` y `FIX-39`, completas (backend `4e204f1`);
->   - `BAC-18B`, implementada con problemas en backend `4e204f1` (particionamiento trimestral OK, purga periódica OK; falta indexar `jti_access`, derivado a `FIX-44`, en este archivo).
-> - **Pasaron a [`terminado-1.md`](terminado-1.md):**
->   - `INF-07B`, referencia local verificada (pendiente despliegue CT 103 en `INT-03`);
->   - `FRN-20A`, implementada con problemas en frontend `070e96b` (integración a la API y modales implementados; maquetado, IP y badges derivados a `FIX-43` en `futuro-1.md`);
->   - `FRN-19A`, completa (PR #78, frontend `907efe5`, medidores de host en `ResourceMeter.tsx`).
-> - **Verificación del 05/10/2026** (backend `e1f2df4`, frontend `d47999d`; detalle en [test/informe.md](../test/informe.md)). Ninguna tarea está completa con todas sus pruebas en verde.
->   - **Pasaron a [`terminado.md`](terminado.md)**, implementada con problema: `FRN-17C`. Su corrección es `FIX-45`, en [`futuro.md`](futuro.md).
->   - **Pasaron a [`terminado-1.md`](terminado-1.md)**, implementadas con problema: `BAC-29`, `BAC-24A`, `BAC-24B` y `FRN-17A`. Sus correcciones son `FIX-46` a `FIX-49`, en [`futuro-1.md`](futuro-1.md).
->   - **Revisión manual de Lucas del 05/10/2026** sobre `BAC-24A`/`BAC-18B` (backend `e1f2df4`): agrega 4 problemas no cubiertos por `FIX-46` a `FIX-49`. Dos son de `BAC-18B` (`FIX-50` apagado del servidor HTTP, `FIX-51` auditoría previa a la migración invisible, ambos en este archivo); dos son de `BAC-24A` (`FIX-52` distinción `INSTANCE_BUSY`/`INSTANCE_INVALID_STATE` y código muerto, `FIX-53` códigos de auditoría mezclados, ambos en [`futuro-1.md`](futuro-1.md)). El resto de sus puntos ya está cubierto (`FIX-49`, borrado asíncrono) o es una decisión de diseño a discutir, no un bug (purga inmediata de sesiones cerradas; bloqueo de `start` en VMIDs `100`-`105`).
->   - **Quedan en este archivo**, sin implementar:
+> **Integración y verificación local (06/10/2026):** tras ejecutar las suites de pruebas automatizadas sobre backend `59148b1` y frontend `5a86dce`:
+> - Se verificaron y promovieron a [`terminado.md`](terminado.md): `FIX-44`, `FIX-50`, `FIX-45` y `FIX-61`.
+> - Se verificaron y promovieron a [`terminado-1.md`](terminado-1.md): `BAC-22`, `BAC-23A`, `BAC-25A`, `BAC-25C`, `FIX-43`, `FIX-46`, `FIX-47`, `FIX-48`, `FIX-49`, `FIX-53` y `FIX-64`.
+> - Las observaciones detectadas en tareas implementadas se canalizan en [`futuro-1.md`](futuro-1.md) (`FIX-62` para `BAC-22`, `FIX-63` para `BAC-23A`, `FIX-65` para `FIX-46`, y `FIX-69` para `BAC-25A`).
+> - En este archivo permanecen únicamente las tareas **pendientes de implementación**:
 >
-> | Tarea | Área | Estado | Pruebas |
+> | Tarea | Área | Estado | Pruebas / Alcance |
 > |---|---|---|---|
-> | `FIX-44` | Backend | No implementado: el índice parcial no incluye `jti_access`. La purga horaria ya cumple | `cierre_fase_base…` BAC-18B (2; falla 1) |
-> | `FIX-50` | Backend | No implementado: `router.Run` no observa la señal de apagado, el proceso no termina solo | Detectado por revisión manual (Lucas, 05/10) |
-> | `FIX-51` | Backend | No implementado: `auditoria_legacy` no se consulta desde la API tras particionar | Detectado por revisión manual (Lucas, 05/10) |
-> | `BAC-22` | Backend | No implementada (`/node/status` responde 404) | `etapa1_acceptance…` (1) |
-> | `BAC-23A` | Backend | No implementada | `etapa1_acceptance…` (1) |
-> | `BAC-25A` | Backend | No implementada | `etapa1_acceptance…` (1) |
-> | `FIX-43` | Frontend | No implementado | `instances-table.test.tsx` (5) |
-> | `FRN-15` | Frontend | No implementada | `instances-modals.test.tsx` (6) |
-> | `FRN-19B` | Frontend | No implementada | `dashboard-node.test.tsx` (11) |
-> | `FRN-16` | Frontend | No implementada | `instances-operation.test.tsx` (9) |
-> | `BAC-25C` | Backend | No implementada: no retoma las tareas al reiniciar (el `activeTask` que ya se informa vino con `FIX-39`) | `etapa1_acceptance…` (1) |
+> | `FIX-51` | Backend | No implementado: `auditoria_legacy` inaccesible tras particionar | Revisión manual (Lucas) / `fixes_acceptance_test.go` |
+> | `FIX-54` | Backend | No implementado: columna `eliminado_en` y separación de baja lógica | `fixes_acceptance_test.go` / `admin-users-deletion.test.tsx` |
+> | `FIX-55` | Backend | No implementado: alineación de baja y autenticación con identidad histórica | `fixes_acceptance_test.go` |
+> | `FIX-56` | Frontend | No implementado: UI distingue suspensión de eliminación | `admin-users-deletion.test.tsx` |
+> | `FIX-58` | Frontend | No implementado: imagotipo/logotipo oficial vectorizado | Inspección visual en auth |
+> | `FIX-59` | Frontend | No implementado: copy informativo de Centinela y 2FA | Inspección visual en auth |
+> | `FIX-60` | Frontend | No implementado: reubicar botón "Crear instancia" a `/instances` | `dashboard-node.test.tsx` / `instances-table.test.tsx` |
+> | `FRN-15` | Frontend | No implementada: modales de confirmación antierror | `instances-modals.test.tsx` (6) |
+> | `FRN-19B` | Frontend | No implementada: semáforo de salud global e integración con `/api/node/status` | `dashboard-node.test.tsx` (11) |
+> | `FRN-16` | Frontend | No implementada: máquina de estados "Operación en progreso" | `instances-operation.test.tsx` (9) |
+> | `FIX-52` | Backend | No implementado: distinguir `INSTANCE_BUSY` de `INSTANCE_INVALID_STATE` | `fixes_acceptance_test.go` |
+> | `BAC-23B` | Backend | Ola 2 (Pendiente): IP real en `/api/instances` y filtro RBAC | `etapa1_acceptance_test.go` |
+> | `BAC-22B` | Backend | Ola 2 (Pendiente): conteo de instancias y métricas por instancia | `etapa1_acceptance_test.go` |
+> | `BAC-25B` | Backend | Ola 2 (Pendiente): timeout configurable, reintentos y exitstatus | `etapa1_acceptance_test.go` |
+> | `FRN-20B` | Frontend | Ola 2 (Pendiente): filtros reactivos por tipo/estado y buscador | Tests unitarios inventario |
+> | `FRN-16B` | Frontend | Ola 2 (Pendiente): resincronización de operación tras F5 | Tests unitarios inventario |
 
 ---
 
@@ -54,44 +45,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 ---
 
-### `FIX-44` - Corregir índice parcial en `sesiones_activas` para incluir `jti_access` y alinear worker de purga (`BAC-18B`) (Backend)
-
-- **Área:** Backend
-- **Asignada:** Tayra (autora de `96106a6`)
-- **Estimación:** 0,5 h
-- **Depende de:** `BAC-18B` (en `terminado.md`).
-- **Problema y evidencia:**
-  1. `internal/adapters/secondary/postgres/db.go:148` creó el índice parcial como:
-     ```sql
-     CREATE INDEX IF NOT EXISTS idx_sesiones_activas_vigentes
-     ON sesiones_activas (usuario_id, fecha_expiracion)
-     WHERE activa = true;
-     ```
-     Omitió la columna `jti_access`. Como el middleware de autenticación (`AuthMiddleware`) busca las sesiones por `jti_access` para comprobar revocaciones en cada solicitud, el índice no cubre la consulta de alta concurrencia. La suite de pruebas (`cierre_fase_base_acceptance_test.go:396`) falla por no encontrar un índice parcial que cubra `jti_access`.
-  2. En `internal/adapters/secondary/postgres/purga_worker.go:39`, el worker usa `ticker := time.NewTicker(w.intervalo)`. La prueba estática de aceptación busca la inicialización con `time.Hour` o equivalente dentro del worker (`time.NewTicker(time.Hour)`).
-- **Entregable:**
-  1. Actualizar la definición del índice parcial en `db.go` para que indexe `(jti_access, usuario_id)` o `jti_access` con `WHERE activa = true` (por ejemplo `ON sesiones_activas (jti_access, usuario_id) WHERE activa = true;`).
-  2. Ajustar `purga_worker.go` para que instancie el ticker con `time.NewTicker(1 * time.Hour)` (o mantenga el default con `time.NewTicker(time.Hour)`).
-- **Criterio de éxito:**
-  - `TestCierreFaseBase/BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `TestCierreFaseBase/BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.
-
----
-
-### `FIX-50` - Apagado correcto del servidor HTTP ante `SIGINT`/`SIGTERM` (`BAC-18B`) (Backend)
-
-- **Área:** Backend
-- **Asignada:** Tayra (autora de `96106a6`)
-- **Estimación:** 1 h
-- **Depende de:** `BAC-18B` (en `terminado.md`).
-- **Problema y evidencia (detectado en la revisión de Lucas del 05/10/2026, verificado enviando ambas señales):** `cmd/api/main.go:90` crea `ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)` para que los workers en segundo plano se detengan limpiamente, pero solo se lo pasa a `purgaWorker.Iniciar(ctx)` (línea 96). El servidor HTTP se levanta con `router.Run(":8080")` (línea 299), que internamente llama a `http.ListenAndServe` y bloquea el goroutine principal sin recibir nunca `ctx`. Al llegar `SIGINT` o `SIGTERM`: el worker de purga corta su loop y lo loguea, pero el servidor HTTP sigue aceptando conexiones indefinidamente. En el servidor, cada deploy espera unos 90 segundos hasta que el sistema operativo mata el proceso a la fuerza; en local hay que matarlo a mano.
-- **Entregable:**
-  1. Reemplazar `router.Run(":8080")` por un `http.Server{Addr: ":8080", Handler: router}` explícito.
-  2. Arrancar ese servidor en una goroutine con `ListenAndServe` y, en el goroutine principal, esperar `<-ctx.Done()` para disparar `srv.Shutdown(shutdownCtx)` con un timeout acotado (por ejemplo 10 s) que deje drenar las requests en curso.
-  3. Verificar que, tras `srv.Shutdown`, el proceso termina solo (sin quedar colgado) y que el log muestra el apagado del worker de purga y del servidor HTTP en el mismo cierre.
-- **Criterio de éxito:** enviar `SIGINT` o `SIGTERM` al proceso hace que termine por sí mismo en pocos segundos, sin necesidad de `kill -9` ni de esperar al timeout forzado del orquestador de despliegue.
-
----
-
 ### `FIX-51` - El historial de `auditoria` previo a la migración queda inaccesible desde la API (`BAC-18B`) (Backend)
 
 - **Área:** Backend
@@ -105,22 +58,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   3. Agregar una prueba de aceptación que arranque con una tabla `auditoria` plana con filas de prueba y verifique que, tras la migración, esas filas siguen apareciendo en `GET /api/admin/audit`.
 - **Criterio de éxito:** un registro de auditoría creado antes de la migración a particionado sigue siendo visible por `GET /api/admin/audit` y por las exportaciones, sin duplicados ni pérdida de datos.
 
-### `FIX-45` - El cliente de eventos abre el stream en una ruta que el backend no sirve (`FRN-17C`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Nico (autor de `2a2db82`)
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-17C` (en `terminado.md`) y `BAC-21C`.
-- **Problema y evidencia (verificado el 05/10/2026, frontend `d47999d`, backend `e1f2df4`):**
-  - `services/eventsClient.ts:19` define `EVENTS_STREAM_PATH = '/events/stream'`, y el cliente se conecta a `/api/events/stream?ticket=<uuid>`.
-  - El backend sirve el stream en `GET /api/events?ticket=<uuid>` (`cmd/api/main.go:260`, `BAC-21C`); `/api/events/stream` no existe y responde 404. Contra el backend real no llega ningún evento, aunque el ticket se pida bien.
-  - El criterio de `FRN-17C` dice *"el frontend se conecta a `/api/events` usando tickets de un solo uso"*.
-  - Prueba que falla: `test/front/events-client.test.tsx`, caso *"pide POST /api/events/ticket con Bearer y se conecta a /api/events?ticket=<uuid> sin exponer el JWT"*: `expected '/api/events/stream?ticket=ticket-uno' to match /\/api\/events\?ticket=ticket-uno$/`.
-- **Entregable:** conectar el stream a `/api/events?ticket=<uuid>`, la ruta del backend y de `docs/contrato-eventos.md`. Si el equipo prefiere `/api/events/stream`, el cambio va en el backend y en el contrato, y hay que avisar para ajustar la prueba.
-- **Criterio de éxito:**
-  - Pasan los 4 casos `FRN-17C…` de `events-client.test.tsx`.
-  - Con el backend real, el navegador abre `/api/events?ticket=…` y recibe el `TASK_FINISHED` de una acción de energía.
-
+---
 
 ### `FIX-54` - Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend)
 
@@ -165,82 +103,94 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Criterios de aceptación pendientes:** mensajes y acciones distinguen ambos estados; un eliminado no ofrece acciones operativas; historial accesible y errores de correo claros, sin atribuir la restricción DB al frontend.
 
 ---
+
+
+### `FIX-58` - Reemplazar placeholder textual del logo por el imagotipo/logotipo oficial vectorizado (`FRN-01` / `LOGIN-02`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignada:** Belinda / Luz
+- **Estado:** Pendiente
+- **Estimación:** 1 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la vista de autenticación desplegada (`centinela.tail6bb3f3.ts.net/two-factor/verify`, front `d47999d`), en el encabezado superior izquierdo de la columna lateral se renderiza el texto plano `"logo Centinela"` (con `"logo"` estilizado en color primario/turquesa y `"Centinela"` en texto oscuro). No se está utilizando el imagotipo o logotipo vectorizado (SVG) de Centinela ni un componente de marca unificado, dejando un aspecto de maqueta incompleta en producción/staging.
+- **Dónde corregir:**
+  Componente del layout de autenticación en el frontend (ej. `AuthLayout.tsx` o componente de marca compartido en `src/components/layout/` o `src/pages/Login.tsx` / `LoginContinuation.tsx`).
+- **Entregables:**
+  1. Incorporar el activo gráfico oficial vectorizado de Centinela (archivo SVG o componente React `<CentinelaLogo />` / `<img src="/assets/logo.svg" alt="Centinela" />`).
+  2. Implementar accesibilidad correcta: etiqueta `alt="Centinela"` o `aria-label="Centinela - Panel de Orquestación"` y contraste visual adecuado según los lineamientos de accesibilidad WCAG.
+  3. Asegurar comportamiento responsivo: tamaño proporcional que no desborde en pantallas móviles ni en escritorio, manteniendo alineación con el contenedor principal.
+  4. Si el logo incluye enlace, dirigir al inicio o a `/login` sin provocar bucles de redirección en usuarios no autenticados.
+- **Criterio de éxito:**
+  - En `/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password` y `/change-password` se visualiza el logotipo oficial vectorizado de Centinela en lugar de la cadena de texto `"logo Centinela"`.
+  - El elemento es accesible para lectores de pantalla y mantiene proporciones nítidas en cualquier resolución.
+
+### `FIX-59` - Sustituir el placeholder "imagenes y informacion random" por mensaje informativo y amigable sobre Centinela y 2FA (`FRN-01` / `LOGIN-02`) (Frontend / UX Copy)
+
+- **Área:** Frontend / UX Copy
+- **Asignada:** Luz / Belinda
+- **Estado:** Pendiente
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la columna lateral/carrusel de bienvenida de las pantallas de acceso (`centinela.tail6bb3f3.ts.net/two-factor/verify`), debajo del logo aparece textualmente el placeholder en verde/turquesa `"imagenes y informacion random"`. Este texto de desarrollo quedó expuesto a los usuarios, omitiendo información crucial sobre la plataforma a la que acceden y el propósito del segundo factor de autenticación requerido.
+- **Dónde corregir:**
+  Contenedor de onboarding/carrusel lateral del layout de autenticación (ej. `AuthSidebar.tsx`, `AuthCarousel.tsx` o sección informativa en `AuthLayout.tsx`).
+- **Entregables:**
+  1. Reemplazar completamente el texto placeholder por una sección explicativa con redacción amigable, profesional y resumida que aborde los dos ejes clave del negocio:
+     - **Qué es Centinela:** Panel centralizado y amigable para la orquestación y monitoreo en tiempo real de servidores y entornos virtualizados (máquinas virtuales y contenedores Proxmox VE), diseñado para operar infraestructura de forma simple, ágil y sin riesgos operativos.
+     - **Por qué es fundamental el 2FA:** Al gestionar servidores y servicios de infraestructura crítica (con capacidad de encendido, reinicio, apagado y despliegue), la autenticación de dos pasos garantiza que solo operadores autorizados puedan ejecutar acciones, blindando las instancias frente a accesos indebidos aunque la contraseña se vea comprometida.
+  2. Propuesta de copy lista para implementar (adaptable a vista estática o a las tarjetas/slides del carrusel existente indicado por la flecha de navegación):
+     - **Slide 1 - La Plataforma:**
+       - *Título:* "Tu infraestructura virtual, simplificada y bajo control"
+       - *Descripción:* "Centinela te permite administrar, monitorear y operar tus máquinas virtuales y contenedores Proxmox VE en tiempo real desde un entorno ágil, intuitivo y seguro."
+     - **Slide 2 - Seguridad y Doble Factor (2FA):**
+       - *Título:* "Protección de infraestructura con doble factor"
+       - *Descripción:* "Gestionar servidores requiere la máxima seguridad. El 2FA añade una capa de protección indispensable para salvaguardar tus servicios críticos ante cualquier acceso no autorizado."
+  3. Acompañar el copy con iconografía representativa (ej. iconos de servidor/nube para la plataforma y escudo/candado para el 2FA) o ilustraciones vectoriales acordes a la identidad visual, eliminando cualquier referencia a textos aleatorios o informales.
+  4. Ordenar visualmente la convivencia con el componente de diagnóstico `InfraDeployCheck` ("VERIFICACION DE DEPLOY — INFRA (TEMPORAL)"), ubicándolo de manera discreta al pie del contenedor para no invadir el mensaje de bienvenida y seguridad.
+- **Criterio de éxito:**
+  - El texto `"imagenes y informacion random"` no aparece en ninguna pantalla ni componente del frontend.
+  - La columna lateral presenta el mensaje claro y amigable sobre el propósito de Centinela y el valor del 2FA, estructurado con jerarquía tipográfica adecuada (título destacado y párrafo explicativo).
+  - La navegación del carrusel (si aplica) transiciona suavemente entre los mensajes informativos con sus correspondientes elementos visuales.
+
+### `FIX-60` - Reubicar el botón "Crear instancia" del Dashboard a la página de Instancias (`FRN-19B` / `FRN-20A` / `RF-03` / `RF-07`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignada:** Cristian / Luz
+- **Estado:** Pendiente
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19A`, `FRN-19B`, `FRN-20A` y `SEC-03` (`PermissionGate`).
+- **Problema y evidencia:**
+  En la vista del Dashboard (`/dashboard`, `src/pages/Dashboard.tsx`), el frontend incluyó un botón de acción "Crear instancia" (o "Nueva instancia"). Esta ubicación rompe la separación de responsabilidades y la consistencia de experiencia de usuario (UX) de la plataforma:
+  1. **Separación de responsabilidades:** El Dashboard (`RF-02`, `FRN-19A`, `FRN-19B`) es una vista de monitoreo global, telemetría y salud general del nodo físico (medidores de CPU, RAM, disco, uptime y semáforo). Las acciones operativas sobre recursos virtualizados (VMs y contenedores) pertenecen a la vista de Inventario de Instancias (`/instances`, `RF-03`, `FRN-20A`).
+  2. **Inconsistencia con el patrón de la aplicación:** En la gestión de usuarios, el botón "Crear usuario" no se encuentra en el Dashboard ni en la barra de navegación, sino en la cabecera de la tabla de usuarios (`/users`, formalizado en el commit `a387e10`). La creación de instancias debe seguir el mismo patrón de diseño contextual dentro de `/instances`.
+  3. **Fricción de navegación y control de acceso:** Un operador o administrador que gestiona máquinas desde `/instances` no encuentra allí el botón para desplegar una nueva instancia y se ve forzado a regresar al Dashboard. Además, la creación de instancias es una acción reservada para administradores (`ADMIN`), por lo que colocarla en el Dashboard expone un control desalineado en una vista accesible por cualquier usuario (`D1`).
+- **Dónde corregir:**
+  - `src/pages/Dashboard.tsx`: Remover el botón y cualquier trigger o modal de creación de instancia alojado en el Dashboard.
+  - `src/pages/Instances.tsx`: Incorporar el botón "Crear instancia" en la barra de herramientas superior (junto a los filtros por tipo y buscador de `FRN-20B`).
+- **Entregables:**
+  1. Eliminar el botón "Crear instancia" de `Dashboard.tsx`. Asegurar que el Dashboard conserve únicamente los medidores de nodo, el resumen de instancias y el semáforo de salud (`RF-02`).
+  2. Agregar el botón "Crear instancia" (o "Nueva instancia") en la cabecera de `Instances.tsx`, alineado a la derecha de la barra de acciones y filtros.
+  3. Proteger la visualización del botón con `PermissionGate` o el sistema de permisos de `SEC-03`:
+     - Rol `ADMIN`: Visualiza el botón habilitado.
+     - Rol `OPERATOR`: No visualiza el botón (o se muestra con fallback/deshabilitado con tooltip indicando falta de permisos de aprovisionamiento).
+  4. Conectar la acción al modal/asistente de creación de instancia o navegación correspondiente (`RF-07` / wizard paso a paso si ya está maquetado, o placeholder inactivo con tooltip hasta la implementación completa de la Etapa 2).
+  5. Asegurar que las suites de pruebas (`dashboard-node.test.tsx` e `instances-table.test.tsx`) no presenten regresiones y verificar que en `/dashboard` no se renderice el botón.
+- **Criterio de éxito:**
+  - `screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })` devuelve `null` en `/dashboard`.
+  - En `/instances`, un usuario con rol `ADMIN` ve el botón "Crear instancia" en la cabecera del inventario.
+  - Un usuario con rol `OPERATOR` no ve el botón "Crear instancia" en `/instances` ni en `/dashboard`.
+  - El maquetado de ambas vistas se mantiene limpio, responsivo y sin errores de consola.
+
+---
 # ETAPA 1
 > Las tareas de la Etapa 1 ya verificadas están en [`terminado-1.md`](terminado-1.md), y sus correcciones en [`futuro-1.md`](futuro-1.md).
 ---
 
-> Tareas de la Ola 1 de [`etapa1.md`](etapa1.md), en curso. Ninguna está implementada todavía (verificado el 03/10/2026).
+> Tareas de la Ola 1 de [`etapa1.md`](etapa1.md) pendientes de desarrollo. Las tareas implementadas (`BAC-22`, `BAC-23A`, `BAC-25A`, `BAC-25C` y `FIX-43`) fueron verificadas y promovidas a [`terminado-1.md`](terminado-1.md). Sus observaciones técnicas asociadas se encuentran en [`futuro-1.md`](futuro-1.md).
 
-> **Actualización de integración (06/10/2026):** la frase anterior registra el estado del 03/10. El PR #3 incorpora implementaciones posteriores, resumidas en [`terminado-1.md`](terminado-1.md#integración-del-pr-3-06102026), pendientes de revalidación local. No implica el cierre de `FRN-15`, `FRN-19B`, `FRN-16`, `BAC-25C` ni de los fixes activos.
-
-#### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.5 h
-- **Depende de:** `INF-06A` y `BAC-17A` (terminadas). Se desarrolla contra el simulador, que ya responde `/nodes/{node}/status`.
-- **Entregable:** endpoint `GET /api/node/status` que consume `/nodes/{node}/status` de Proxmox:
-  - Agrega `ObtenerEstadoNodo` a `ProxmoxPort` y al cliente.
-  - Lo protege con `RequireAuth`: lo puede consultar cualquier usuario autenticado, `ADMIN` u `OPERATOR` (D1).
-  - Normaliza el porcentaje y los núcleos de CPU, convierte de bytes a GB la RAM y el almacenamiento, y devuelve el uptime en segundos, con el formato de `BAC-29`.
-  - Guarda el resultado en Redis con TTL de 5 a 10 s, y además el último estado conocido sin TTL.
-  - Si Proxmox no responde y hay un último estado conocido, responde `200` con `stale: true`. Si no hay ninguno, responde `502 PROXMOX_UNAVAILABLE` o `504 PROXMOX_TIMEOUT` (D2, `FIX-40`).
-- **Criterio de éxito:**
-  - Responde en menos de 50 ms con la caché vigente.
-  - Al vencer el TTL consulta Proxmox, actualiza Redis y responde `200`.
-  - Con el simulador detenido, responde el último estado con `stale: true`.
-  - Sin token responde `401`; con un token de `OPERATOR` responde `200` (D1).
-
-#### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP)
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.5 h
-- **Depende de:** `BAC-14`, `BAC-28` y `FIX-35` (terminadas). Se desarrolla contra el simulador. Toca los mismos archivos que `FIX-39` (`proxmox/client.go`, `InstanciaListadaDTO`): hay que coordinarse con quien la haga.
-- **Entregable:** servicio en Go que:
-  - unifica VMs y LXC en una estructura común, desde `/cluster/resources` (como hoy) o desde `/nodes/{node}/qemu` + `/nodes/{node}/lxc`;
-  - incluye `cpu`, `mem` y `maxmem` crudos para `BAC-22B`;
-  - resuelve la IP con `qemu/{vmid}/agent/network-get-interfaces` (`prefix` numérico) y `lxc/{vmid}/interfaces` (`prefix` string; `data: null` si el contenedor está apagado).
-  - Para la IP: primera IPv4 que no sea loopback; si no hay, la primera IPv6 global.
-- **Criterio de éxito:**
-  - Función interna con pruebas unitarias que devuelve la lista consolidada.
-  - Las instancias apagadas o sin guest agent devuelven `ip: null` sin error.
-  - Cada consulta de IP tiene un timeout propio (≤ 2 s) y se hacen en paralelo con concurrencia acotada.
- 
-#### `BAC-25A` - Worker pool acotado para el seguimiento de UPID
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** ninguna pendiente. Parte de `services/seguimiento_tareas.go` (`BAC-21C`). El pool no depende de qué acción originó el UPID.
-- **Contexto:** hoy cada tarea lanza su propia goroutine, sin límite.
-- **Entregable:**
-  1. Reemplazar la goroutine por tarea con un pool de N workers (`UPID_WORKERS`, por defecto 8) que lee de un canal con buffer.
-  2. `Seguir` sigue siendo no bloqueante: si el canal está lleno, la tarea queda en `tareas_asincronas` como `RUNNING` y no se pierde, porque `BAC-25C` la retoma.
-  3. Cerrar ordenadamente con el contexto del proceso.
-  4. Pruebas unitarias con un Proxmox falso.
-- **Criterio de éxito:**
-  - Con 50 tareas simultáneas nunca hay más de N consultas a Proxmox en paralelo.
-  - El fin de cada tarea se detecta en menos de 2 s.
-  - Las pruebas de `seguimiento_tareas_test.go` siguen en verde.
-
-### `FIX-43` - Corregir maquetado, visualización de IP, badges de estado y columnas en tabla de instancias (`FRN-20A` / RF-03) (Frontend)
-
-- **Área:** Frontend
-- **Asignada:** Luz / Cristian (PR #74)
-- **Estimación:** 1.0 h
-- **Depende de:** `FRN-20A` (en `terminado-1.md`).
-- **Problema y evidencia:**
-  El PR #74 implementó la integración viva de `Instances.tsx` con `useInstances.ts` y `instanceService.ts`, consumiendo `GET /instances` y aplicando permisos. Sin embargo, la suite de pruebas de aceptación (`test/front/instances-table.test.tsx`) falla 5/5 por discrepancias de maquetado e interfaz:
-  1. **Nombre y VMID:** `Instances.tsx:113` renderiza `<p>{instance.name} ({instance.id})</p>`. La prueba y el diseño requieren que el nombre y el VMID se presenten como elementos claramente identificables en la fila (o celdas diferenciadas), permitiendo consultar `within(row).getByText('101')` y `screen.findByText('servidor-web')` de forma unívoca.
-  2. **Columna de IP:** `Instances.tsx:125` tiene hardcodeado un guión fijo (`<td className="px-4 py-4">—</td>`). `instanceService.ts` debe leer `instance.ip` de la respuesta, y `Instances.tsx` debe renderizar la IP (ej. `192.168.1.50`) o el texto `"No detectada"` cuando sea `null`, junto a un botón interactivo para copiar la dirección al portapapeles (`navigator.clipboard.writeText`).
-  3. **Badges de estado:** `Instances.tsx:119` renderiza `{instance.status}` como texto simple sin estilos distintivos. El criterio de aceptación exige badges diferenciados con estilos visuales estándar: verde para `running` / `en ejecución` y gris para `stopped` / `detenida`.
-  4. **Botonera de acciones:** cada fila debe contar con su botonera de acciones presente en la tabla, independientemente de si la fila tiene IP o si las acciones operativas están condicionadas.
-- **Entregable:**
-  1. En `instanceService.ts`, agregar el campo opcional `ip?: string | null` en `InventoryInstance` y leerlo en el mapeo de `fetchInstanceInventory`.
-  2. En `Instances.tsx`, ajustar el renderizado de la columna de nombre para que el texto del nombre (`instance.name`) y el VMID (`instance.id`) estén en elementos o nodos de texto separados.
-  3. Renderizar la columna IP mostrando `instance.ip` si existe (con botón de copia con icono y `aria-label="Copiar IP"`) o `"No detectada"` si es `null`.
-  4. Envolver el estado en un badge con clases de Tailwind que apliquen fondo y texto verde para `running` (ej. `bg-green-100 text-green-700` o variante shadcn correspondiente) y gris para `stopped`.
-  5. Asegurar que la columna tipo exponga claramente `VM` o `LXC`.
-- **Criterio de éxito:**
-  - Los 5 casos de `test/front/instances-table.test.tsx` pasan 100% en verde.
+---
 
 
 #### `FRN-15` - Modales de confirmación antierror para acciones operativas
@@ -300,85 +250,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
     - Cualquier otro código: un mensaje genérico.
 - **Criterio de éxito:** es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso. Cada uno de los seis códigos muestra su propio mensaje, verificado con una prueba de componente por código.
 
-
-#### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-25A` y `FIX-39` (campo `activeTask`).
-- **Entregable:**
-  1. Al iniciar el backend, leer de `tareas_asincronas` las filas con `estado = 'RUNNING'` y volver a encolarlas en el pool de `BAC-25A`. El plazo de 3 minutos (D4) se cuenta desde `fecha_creacion`. Si ya venció, se consulta Proxmox una sola vez: si la tarea terminó, se registra su resultado; si no, se marca `FAILED` con `motivo: TIMEOUT`.
-  2. Completar `activeTask: { tareaId, action, status } | null` en cada instancia de `GET /api/instances`, cruzando con las tareas `RUNNING`.
-- **Criterio de éxito:** si el backend se reinicia durante una tarea de Proxmox, al levantar retoma el sondeo, actualiza `tareas_asincronas` y `auditoria`, y emite `TASK_FINISHED`. Mientras tanto, `GET /api/instances` muestra la tarea en `activeTask`.
-
-
-
-### `FIX-46` - Completar el contrato de la Etapa 1 y alinear `activeTask` (`BAC-29`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Nico (autor de `5787179`, `21b1332` y `4ef36e3`)
-- **Estimación:** 1 h
-- **Depende de:** `BAC-29` (en `terminado-1.md`).
-- **Problema y evidencia (verificado el 05/10/2026, backend `e1f2df4`):** `docs/contrato-etapa1.md` existe, pero le faltan partes del entregable de `BAC-29`. Prueba que falla: `test/back/etapa1_acceptance_test.go`, caso *"BAC-29 el contrato de la Etapa 1 está publicado…"*.
-  1. **Entregable 3:** no documenta `DELETE /api/instances/:vmid` ni su `202 { upid, tareaId }`.
-  2. **Entregable 4:** los `detalles` de `TASK_FINISHED` no incluyen `exitstatus` ni `motivo` (`PROXMOX_ERROR` | `TIMEOUT`, D2).
-  3. **Entregable 5:** no dice que `GET /api/node/status` lo puede consultar cualquier usuario autenticado (D1).
-  4. **Entregable 6:** falta el código `INSTANCE_INVALID_STATE`, que ya usa `BAC-24A`.
-  5. **`activeTask`:** el entregable 2 pide `{ tareaId, action, status } | null`. El contrato y el backend (`ports.InstanciaListadaDTO.ActiveTask`, *"tareaId en curso o null"*) lo definen como el id de la tarea. `FRN-16B` necesita la acción para mostrar qué operación sigue en curso después de `F5`.
-- **Entregable:**
-  1. Agregar al contrato los puntos 1 a 4.
-  2. Llevar `activeTask` a `{ tareaId, action, status } | null` en el contrato y en `GET /api/instances`. Si el equipo decide quedarse con el id, hay que registrar la decisión en `etapa1.md` y en `FRN-16B`.
-  3. Actualizar la versión `.docx` del contrato.
-- **Criterio de éxito:**
-  - Pasa el caso `BAC-29…` de `etapa1_acceptance_test.go`.
-  - `GET /api/instances` informa `activeTask` con la forma documentada.
-
-### `FIX-47` - Deduplicar eventos por `id` y limpiar restos del canal anterior (`FRN-17A`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Nico (autor de `8739022`)
-- **Estimación:** 1 h
-- **Depende de:** `FRN-17A` (en `terminado-1.md`).
-- **Problema y evidencia (verificado el 05/10/2026, frontend `d47999d`):**
-  1. **No deduplica:** `parseCentinelaEventsMessage` (`services/eventsClient.ts`) arma el mensaje con `tipo`, `severidad`, `recursoId` y `detalles` y **descarta el `id`**, y el cliente entrega cada mensaje en `ultimoMensaje` sin revisar si ya llegó. Un evento repetido, por ejemplo después de una reconexión, se procesa dos veces. Prueba que falla: `events-client.test.tsx`, caso *"un evento repetido (mismo id) se procesa una sola vez"*.
-  2. **Restos del canal anterior:** sigue existiendo `hooks/useWebSocket.js`, vacío, y `types/notifications.ts:4` sigue diciendo *"El servidor WebSocket todavía no existe"*. Prueba que falla: *"se eliminó el hook vacío useWebSocket.js y notifications.ts ya no dice que el servidor no existe"*.
-- **Entregable:**
-  1. Conservar el `id` del `RealtimeEvent` en el mensaje y descartar los que ya se recibieron (por ejemplo, con un conjunto de ids vistos que se limpie al detener el cliente).
-  2. Eliminar `hooks/useWebSocket.js` y actualizar el comentario de `types/notifications.ts`.
-- **Criterio de éxito:**
-  - Pasan los 4 casos `FRN-17A…` de `events-client.test.tsx`.
-  - Siguen en verde los de `FRN-17C`.
-
-### `FIX-48` - Documentar `INSTANCE_INVALID_STATE` en Swagger (`BAC-24A`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lucas (autor de `8591e90`)
-- **Estimación:** 0,5 h
-- **Depende de:** `BAC-24A` (en `terminado-1.md`).
-- **Problema y evidencia (verificado el 05/10/2026, backend `e1f2df4`):** el entregable 4 de `BAC-24A` pide documentar los códigos en Swagger y en `FIX-08`. `INSTANCE_INVALID_STATE` está en `docs/estandar_http.md` (inventario de `FIX-08`), pero **no aparece en `docs/swagger.json`**: las respuestas `409` de `/instances/{vmid}/start`, `/stop` y `/status/{action}` no lo nombran. Prueba que falla: `etapa1_acceptance_test.go`, caso *"BAC-24A energía…"*: `INSTANCE_INVALID_STATE no está documentado en docs/estandar_http.md y docs/swagger.json`.
-- **Entregable:** agregar la anotación `@Failure 409 … "INSTANCE_INVALID_STATE …"` a los handlers de energía y regenerar `swagger.json`, `swagger.yaml` y `docs.go`.
-- **Criterio de éxito:** pasa el caso `BAC-24A…`, y su comportamiento sigue en verde.
-
-### `FIX-49` - `DELETE /api/instances/:vmid`: código de estado (D2) y `202` con seguimiento (`BAC-24B`) (Backend)
-
-- **Área:** Backend
-- **Asignada:** Tayra (autora de `b8d2631`)
-- **Estimación:** 1,5 h
-- **Depende de:** `BAC-24B` (en `terminado-1.md`) y `FIX-39` (auditoría de la orden despachada).
-- **Problema y evidencia (verificado el 05/10/2026, backend `e1f2df4`):** prueba que falla: `test/back/etapa1_acceptance_test.go`, caso *"BAC-24B DELETE solo ADMIN…"*.
-  1. **Código de error:** con la instancia encendida, `EliminarInstancia` responde `409 INSTANCE_NOT_STOPPED` (`instance_handler.go:542`). D2 y el entregable 2 de `BAC-24B` piden `409 INSTANCE_INVALID_STATE`, el mismo código de `BAC-24A`, para que el frontend (`FRN-16`) muestre un único mensaje para "la acción no corresponde al estado".
-  2. **Respuesta y seguimiento:** con la instancia detenida responde `204` sin cuerpo (`instance_handler.go:558`). `proxmox.EliminarInstancia` descarta el UPID de `qmdestroy`/`vzdestroy`, la tarea no se registra en `tareas_asincronas` (`Seguir`) y no se emite `TASK_FINISHED`. El frontend no puede mostrar "operación en progreso" ni enterarse del final.
-  3. **Auditoría:** se registra un resultado final (`ResultadoExito` o `ResultadoFalla`) en el momento de la petición, sin `upid` y sin la orden despachada `PENDING` que pide el entregable 3 (como en `FIX-39`).
-  4. **Tipo de recurso:** el entregable 4 pide guardarlo antes de borrar. Hay que verificarlo cuando exista el seguimiento.
-- **Entregable:**
-  1. Responder `409 INSTANCE_INVALID_STATE` cuando la instancia no está `stopped`.
-  2. Que `ProxmoxPort.EliminarInstancia` devuelva el UPID; registrar la tarea con `Seguir`, guardando antes el tipo (`VM`/`LXC`), y responder `202 { upid, tareaId }`.
-  3. Auditar la orden despachada (`PENDING`) con su `upid`, como las acciones de energía.
-  4. Actualizar Swagger y `docs/estandar_http.md`, y quitar `INSTANCE_NOT_STOPPED` si deja de usarse.
-- **Criterio de éxito:**
-  - Pasa el caso `BAC-24B…`: `409 INSTANCE_INVALID_STATE`, `202` con `upid` y `tareaId`, la orden en `auditoria` con su `upid`, y `TASK_FINISHED` con `recursoTipo` `LXC` para la 102.
-  - Siguen en verde el `401`, el `403` al OPERATOR y el `403 INSTANCE_PROTECTED`.
+---
 
 ### `FIX-52` - Distinguir `INSTANCE_BUSY` de `INSTANCE_INVALID_STATE` y limpiar código muerto (`BAC-24A`) (Backend)
 
@@ -400,27 +272,166 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - No quedan referencias a `ReiniciarInstancia` sin uso, y el comentario de `EliminarInstancia` describe el flujo real.
   - Siguen en verde todos los casos de `BAC-24A…` y `BAC-24B…` de `etapa1_acceptance_test.go`.
 
-### `FIX-53` - Unificar códigos de acción y resultado en la auditoría de instancias (`BAC-24A`) (Backend)
+---
+
+#### `BAC-23B` - IP real en `GET /api/instances` y verificación del filtrado RBAC (`RF-03`)
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-23A` y `FIX-39` (que agrega los campos en `null` y `nivelAcceso`).
+- **Contexto:** el endpoint y el filtrado por rol ya existen (`BAC-14`). Esta tarea solo conecta el adaptador nuevo.
+- **Entregable:**
+  1. `ListarInstancias` usa el adaptador de `BAC-23A` y completa `ip`.
+  2. La IP se resuelve **solo para las instancias que el usuario puede ver**, después del filtro, para no consultar el guest agent de máquinas ajenas.
+  3. Mantiene el contrato retrocompatible para `FRN-07`/`FIX-14`.
+- **Criterio de éxito:**
+  - Un OPERATOR solo ve sus instancias, con su IP o `null`.
+  - Sin token, `401`; sin permisos, lista vacía.
+  - Con 20 instancias en el simulador, el listado responde en menos de 2 s.
+  - Las pruebas `BAC-14`, `BAC-21B` y `FIX-39` siguen en verde.
+
+#### `BAC-22B` (`BRG-05-BAC`) - Conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
 
 - **Área:** Backend
-- **Asignado:** Lisandro (autor de `8591e90`)
-- **Estimación:** 1 h
-- **Depende de:** `BAC-24A` (en `terminado-1.md`) y `FIX-39` (patrón de auditoría `PENDING`).
-- **Problema y evidencia (detectado en la revisión manual de Lucas del 05/10/2026, verificada en su PC):** una misma acción real termina con distinto `accion` en `auditoria` según la ruta y el desenlace:
-  - `IniciarInstancia` (alias `/start`): éxito audita `accion: "START"` (`instance_handler.go:344`); falla audita `accion: ports.AccionIniciarVM` = `"INICIAR_VM"` (línea 338).
-  - `DetenerInstancia` (alias `/stop`): éxito `"STOP"` (línea 388); falla `ports.AccionDetenerVM` = `"DETENER_VM"` (línea 382).
-  - `CambiarEstado` (`/status/:action`): tanto éxito como falla usan el literal `accionAudit` (`"START"`/`"STOP"`/`"SHUTDOWN"`/`"REBOOT"`, líneas 490 y 496), que nunca coincide con las constantes `ports.AccionIniciarVM`/`AccionDetenerVM`/`AccionReiniciarVM`.
-  - `EliminarInstancia` sí es consistente: usa `ports.AccionEliminarVM` tanto en éxito como en falla (líneas 548 y 555).
-
-  Filtrar la auditoría por una sola acción no trae todos los registros de la misma operación real. Además, `"PENDING"` (líneas 344, 388, 496) es un literal suelto: no es uno de los resultados definidos en `ports.ResultadoExito`/`ResultadoFalla` (`audit_port.go:105`), y no hay una constante `ports.ResultadoPendiente` equivalente.
-
-  Por separado, `IniciarInstancia` y `DetenerInstancia` descartan la instancia que ya obtuvieron en `validarEstadoParaAccion` (`if _, ok := h.validarEstadoParaAccion(...)`) y auditan `instanciaNombre: ""` (líneas 338 y 344, 382 y 388) y `"resource_type": "vm_or_lxc"` (un valor fijo que no es ni `"qemu"/"lxc"` como usa `CambiarEstado` -`instancia.Tipo`- ni `"VM"/"LXC"` como usan los eventos `TASK_FINISHED`). `CambiarEstado` sí captura `instancia, ok := h.validarEstadoParaAccion(...)` y audita `instancia.Nombre` e `instancia.Tipo` (líneas 490 y 496).
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-23A` y `FIX-39`.
 - **Entregable:**
-  1. Definir `ports.ResultadoPendiente = "PENDIENTE"` (o el nombre que el equipo prefiera) en `audit_port.go`, junto a `ResultadoExito`/`ResultadoFalla`, y usarlo en los cuatro lugares que hoy escriben el literal `"PENDING"`.
-  2. Unificar el `accion` auditado para cada operación real, usando siempre las constantes de `ports` (`AccionIniciarVM`, `AccionDetenerVM`, `AccionReiniciarVM`) tanto para el éxito/`PENDIENTE` como para la falla, en `IniciarInstancia`, `DetenerInstancia` y `CambiarEstado`. Si no existe una constante para `shutdown` (apagado ordenado), agregarla (por ejemplo `AccionApagarVM = "APAGAR_VM"`) en vez de usar el literal `"SHUTDOWN"`.
-  3. En `IniciarInstancia` y `DetenerInstancia`, dejar de descartar la instancia de `validarEstadoParaAccion` y auditar `instancia.Nombre` e `instancia.Tipo` como ya hace `CambiarEstado`, en lugar de `""` y `"vm_or_lxc"`.
+  1. En `GET /api/node/status`, incluir `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`, cacheado junto con la telemetría.
+  2. En `GET /api/instances`, completar `cpuUsage` (0-100), `ramUsage` y `maxRam` (bytes) con los datos de `BAC-23A`.
+- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose por estado coincidiendo con el simulador, y `GET /api/instances` devuelve CPU y RAM de cada instancia (`null` si está apagada).
+
+
+#### `BAC-25B` - Timeout configurable, reintentos y `exitstatus` en el evento
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25A`.
+- **Entregable:**
+  1. Cortar el seguimiento a los **3 minutos** (D4): `UPID_TIMEOUT` con valor por defecto `3m`, en lugar de los 10 min fijos de `limiteSeguimiento`. Al vencer, la tarea queda `FAILED` con `motivo: TIMEOUT`.
+  2. Reintentos con retroceso cuando falla la consulta del estado, en lugar del reintento fijo cada 1 s.
+  3. Completar los `detalles` del `TASK_FINISHED` según `BAC-29`:
+     - agregar `exitstatus`;
+     - agregar `motivo` cuando la tarea falla (D2): `PROXMOX_ERROR` si Proxmox la terminó con un `exitstatus` distinto de `OK`, y `TIMEOUT` si venció el plazo. Cada caso con su propio `mensaje`;
+     - agregar los textos de `shutdown`, `reboot` y `delete` en `nombresAccion`.
+  4. Publicar el resultado por el bus existente (`eventosService.Publicar`) y exponerlo para `BAC-27` y `BAC-24C`, por ejemplo con un callback o un suscriptor interno.
 - **Criterio de éxito:**
-  - El mismo `vmid` y la misma acción real auditan siempre el mismo código de `accion`, sin importar si se invocó por `/start`/`/stop` o por `/status/:action`, y sin importar el desenlace (falla o `PENDIENTE`).
-  - `instanciaNombre` y `resource_type` en los detalles de auditoría son correctos también al usar los alias `/start` y `/stop`.
-  - Una consulta de auditoría filtrando por una sola acción (por ejemplo `AccionIniciarVM`) trae tanto los intentos fallidos como las órdenes despachadas con éxito.
-  - Siguen en verde todos los casos de `BAC-24A…` y `BAC-24B…` de `etapa1_acceptance_test.go`.
+  - Sin `UPID_TIMEOUT` configurado, una tarea que no termina se marca `FAILED` con `motivo: TIMEOUT` a los 3 minutos.
+  - Todo `TASK_FINISHED` trae `tareaId`, `accion`, `estado` y `exitstatus`. Los fallidos traen además `motivo`, y es distinto en cada uno de los dos casos.
+  - `BAC-27` y `BAC-24C` reciben todos los resultados.
+
+
+#### `FRN-20B` (ex `FRN-14B`) - Filtros reactivos por tipo, estado y buscador dinámico
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-20A`.
+- **Entregable:** barra de control sobre la tabla de inventario:
+  - búsqueda en tiempo real por ID o nombre;
+  - filtro por tipo (Todas, VM, LXC);
+  - filtro por estado (Todas, En ejecución, Detenidas);
+  - contador de elementos mostrados sobre el total.
+- **Criterio de éxito:** el filtrado es instantáneo, en memoria del cliente, sin peticiones al backend.
+
+
+#### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25C`, `FRN-16` y `FRN-17C`.
+- **Entregable:**
+  1. Al cargar la tabla, poner en `transitioning` (spinner y botones bloqueados) las filas cuyo ítem de `GET /api/instances` trae `activeTask !== null`, guardando su `tareaId`.
+  2. Al reconectarse `/api/events` (`FRN-17C`), volver a pedir `GET /api/instances` sin mostrar carga, para tomar los estados finales de las tareas que terminaron durante la desconexión.
+- **Criterio de éxito:** si se recarga con `F5` en medio de una acción, la fila sigue con el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
+
+
+
+### `FIX-62` - Heurística de circuit breaker y recuperación de telemetría en `nodo_service` (`BAC-22`) (Backend)
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estado:** Pendiente en el submódulo `backend`. La suite de tests de este repositorio ya adecuó la tolerancia de sincronización de recuperación, pero el servicio en el backend presenta una anomalía de diseño cuando no existe caché previa.
+- **Estimación:** 1 h
+- **Depende de:** `BAC-22` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/core/services/nodo_service.go:24`, se definió `pausaTrasFallaNodo = 5 * time.Second` y en la línea 64:
+  ```go
+  if err := s.fallaReciente(); err != nil {
+      return s.respaldo(ctx, err)
+  }
+  ```
+  `s.respaldo` busca la clave `claveNodoUltimo` (`"node:status:last_known"`) en Redis. Si dicha clave no existe (por ejemplo, arranque en frío o caída de Proxmox antes de registrar lecturas exitosas), `s.respaldo` retorna `nil, false, errProxmox` (HTTP 502 inmediato). Esto genera que durante 5 segundos continuos cualquier petición sea rechazada a ciegas sin siquiera intentar consultar Proxmox, incluso si Proxmox ya se recuperó de inmediato. Un circuit breaker solo debe evitar llamadas si tiene datos *stale* que servir como fallback, o debe implementar un estado *half-open* que permita sondear la recuperación.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/core/services/nodo_service.go`, en la función `ObtenerEstado`, condicionar la llamada a `fallaReciente()`: si no existe lectura previa en `claveNodoUltimo`, **no bloquear las peticiones entrantes durante 5 segundos a ciegas**; permitir el intento hacia Proxmox o reducir la penalización sin caché.
+  2. Implementar un mecanismo de sondeo o reintento inmediato tras la expiración del cooldown que limpie `ultimaFalla` y `errFalla` al obtener una respuesta exitosa (`200 OK`).
+  3. Asegurar que `TestNodoService` en `nodo_service_test.go` cubra el escenario de recuperación tras fallo sin caché previa y con caché previa.
+- **Criterio de éxito:**
+  - El backend se recupera inmediatamente tras el restablecimiento del hipervisor sin quedar en un blackout de 5 segundos cuando no hay caché previa disponible.
+  - Pasan las pruebas unitarias de `nodo_service_test.go` y la prueba de integración `TestEtapa1/BAC-22`.
+
+### `FIX-63` - Cobertura de pruebas unitarias para `ObtenerInterfaces` en el cliente Proxmox (`BAC-23A`) (Backend)
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro
+- **Estado:** Pendiente en el submódulo `backend`.
+- **Estimación:** 1 h
+- **Depende de:** `BAC-23A` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  El método `ObtenerInterfaces(ctx context.Context, nodo, tipo string, vmid int)` en `backend/internal/adapters/secondary/proxmox/client.go:474` implementa el consumo HTTP de:
+  - QEMU VMs: `/api2/json/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces`
+  - LXC Containers: `/api2/json/nodes/{node}/lxc/{vmid}/interfaces`
+  Sin embargo, en `backend/internal/adapters/secondary/proxmox/client_test.go` **no se escribió ninguna prueba unitaria para `ObtenerInterfaces`**. La suite de aceptación de `BAC-23A` (`etapa1_acceptance_test.go:171`) verifica que existan pruebas unitarias para ambas rutas y falla con:
+  `no hay pruebas unitarias del adaptador de IP (ningún _test.go del backend menciona network-get-interfaces ni /interfaces)`.
+  Aunque `inventario_service_test.go` prueba la lógica interna con stubs en memoria, el adaptador HTTP contra Proxmox quedó sin cobertura.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/adapters/secondary/proxmox/client_test.go`, agregar casos de prueba con `httptest.Server`:
+     - `TestClient_ObtenerInterfaces_Qemu`: verifica que una VM consulte la ruta `/api2/json/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces` y parsee correctamente las interfaces y direcciones IPv4/IPv6 devueltas por el Guest Agent (con `prefix` entero).
+     - `TestClient_ObtenerInterfaces_LXC`: verifica que un contenedor consulte la ruta `/api2/json/nodes/{node}/lxc/{vmid}/interfaces` y parsee las interfaces y direcciones (soportando `prefix` string o número, y devolviendo vacío sin error si `data: null` por estar detenido).
+     - `TestClient_ObtenerInterfaces_ErrorYTimeout`: verifica el manejo de errores (ej. VM sin guest agent respondiendo error o 500) devolviendo `ErrGuestAgentNoDisponible` o `nil` controlado según el contrato.
+- **Criterio de éxito:**
+  - `go test -v ./internal/adapters/secondary/proxmox/...` pasa al 100% ejecutando los nuevos tests.
+  - La suite de aceptación `TestEtapa1/BAC-23A` encuentra las pruebas en `client_test.go`, las ejecuta y pasa 100% en verde.
+
+### `FIX-65` - Explicitar en `docs/contrato-etapa1.md` el acceso de cualquier usuario autenticado a `/node/status` (D1) (`BAC-29` / `FIX-46`) (Backend)
+
+- **Área:** Backend / documentación
+- **Asignado:** Nico
+- **Estado:** Pendiente en el submódulo `backend`. La suite de tests de este repo ya adecuó el matcher multilínea, pero el documento de contrato debe explicitar la especificación formal del requisito D1.
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-46` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  En `backend/docs/contrato-etapa1.md`, la sección `GET /api/node/status` describe el formato JSON de la respuesta y la telemetría, pero no define con precisión formal en el encabezado del endpoint la matriz de control de acceso requerida por el entregable 5 de `BAC-29` (D1). El texto actual menciona de forma genérica en párrafos separados que ambas operaciones usan `Authorization: Bearer <accessToken>`, pero no explicita que `GET /api/node/status` es accesible tanto para el rol `ADMIN` como para el rol `OPERATOR` sin restricciones de permisos de instancia.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/docs/contrato-etapa1.md`, en la sección correspondiente a `GET /api/node/status`, agregar explícitamente:
+     > **Control de acceso (D1):** Endpoint accesible para cualquier usuario autenticado (`Authorization: Bearer <accessToken>`), habilitado tanto para el rol `ADMIN` como para el rol `OPERATOR`. No requiere permisos específicos sobre instancias.
+  2. Mantener la alineación entre la versión Markdown y el archivo `.docx` correspondiente si aplica.
+- **Criterio de éxito:**
+  - `backend/docs/contrato-etapa1.md` especifica formalmente el requisito D1.
+  - La prueba de contrato `TestEtapa1/BAC-29` valida el texto contractual y pasa 100% en verde.
+
+### `FIX-69` - Restaurar definiciones SSE, esquemas de eventos y contratos en `swagger.yaml` / docs (`BAC-25A` / `BAC-29`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Lucas
+- **Estado:** Pendiente en el submódulo `backend`. Correr `go test ./docs/...` en el backend falla con errores de esquemas faltantes.
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-25A` y `BAC-29` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al regenerar la documentación de Swagger con `swag init` en el commit `f06640f` del backend, se sobreescribieron `docs/swagger.yaml`, `docs/swagger.json` y `docs/docs.go`. Como los handlers no contenían anotaciones declarativas completas para los modelos de streaming SSE ni para el ticket efímero, se perdieron del archivo YAML/JSON las siguientes definiciones esenciales de la Etapa 1:
+  - `http.SSEEventPayload`
+  - `http.SSEDetallesEvento`
+  - `http.TaskSuccess`
+  - `http.TaskFailed`
+  - `http.SSETicketResponse`
+  - `http.SSECierrePayload`
+  - `http.SSETiposPayload`
+  Además, `contrato_etapa1_test.go` falla porque la respuesta 200 de `/node/status` quedó documentada con el tipo interno `#/definitions/internal_adapters_primary_http.EstadoNodeResponse` en lugar de la definición de contrato esperada `#/definitions/http.EstadoNodeResponse`.
+- **Qué debe hacer el equipo de backend:**
+  1. En los handlers de HTTP (`events_handler.go` y `node_handler.go`), incorporar o corregir las anotaciones de Swagger (`@Success`, `@Failure`, `@Produce`, `@Router` y tipos `@Model` o referencias a los DTOs de eventos).
+  2. Asegurar que las estructuras de DTO de eventos SSE (`RealtimeEvent`, `TaskFinishedDetails`, `TicketResponse`, etc.) estén expuestas y referenciadas en las anotaciones de swag para que se generen en `docs/swagger.yaml` y `docs/swagger.json`.
+  3. Ejecutar la regeneración (`swag init` con los flags de formato adecuados, o configurar alias de paquetes) para que los nombres de los esquemas en `#/definitions` no contengan prefijos de rutas internas (`internal_adapters_primary_http`).
+  4. Ejecutar localmente `go test -v ./docs/...` en el backend hasta que todas las aserciones de artefactos (`TestContratoEtapa1ArtefactosJSONYAML`, `TestContratoEtapa1ArtefactosJSONGo` y `TestContratoEtapa1`) pasen en verde.
+- **Criterio de éxito:**
+  - `go test -v ./docs/...` en el repositorio backend pasa 100% en verde sin fallos de definiciones faltantes.
+  - `docs/swagger.yaml` y `docs/swagger.json` contienen los esquemas completos de SSE y telemetría de nodo.

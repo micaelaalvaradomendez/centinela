@@ -251,6 +251,7 @@ flowchart TD
 | **3** | `BAC-24C`, `BAC-25C`, `BAC-26`, `BAC-27`, `FRN-16`, `FRN-19C`, `FRN-20C` | Ola 2. `BAC-27` necesita además `BAC-18B` mergeada |
 | **4** | `FRN-16B`, `FRN-17B`, `INT-01` | Ola 3 |
 | **5** | `INT-02`, y después `INT-03` | Todo lo anterior. `INT-03` necesita además `INF-06B` e `INF-08A` |
+| **6 (Puente a Etapa 2)** | `BAC-30`, `BAC-31`, `BAC-32`, `BAC-33`, `FRN-21`, `INF-09`, `INF-07C` | Olas 4 y 5 de Etapa 1. Cubren los baches operativos y de entorno para habilitar la Etapa 2 |
 
 **De `futuro.md` se cargan junto con la Ola 1:** `FIX-39` (completa `BAC-21B`) y `FIX-40` (D2: `504 PROXMOX_TIMEOUT`).
 
@@ -459,6 +460,116 @@ flowchart TD
 
 ---
 
+### Bloque 7: Tareas Puente (Bridge) y Cierre de Baches para el Paso a la Etapa 2
+
+> [!IMPORTANT]
+> **Cierre de Brechas Operativas y de Entorno Local:**
+> Estas tareas cubren los baches técnicos y arquitectónicos detectados en la verificación de la Etapa 1 que destraban directamente el inicio sin fricciones de la Etapa 2 (Aprovisionamiento, Telemetría Avanzada y Edición):
+> 1. El simulador de Proxmox en local debe soportar creación, edición y series de métricas para que el equipo desarrolle la Etapa 2 en local sin depender de la infraestructura física del servidor.
+> 2. Proxmox reutiliza VMIDs con `/cluster/nextid`; sin endpoints para consultar storage/templates y autoasignar permisos tras la creación, el asistente de aprovisionamiento no puede funcionar.
+> 3. El frontend carece de una vista de Detalle de Instancia (`/instances/:vmid`); sin ella, no existe el contenedor de interfaz donde alojar los gráficos de métricas (`RF-05`) ni el modal de edición (`RF-10`).
+> 4. Nginx en el borde fue configurado solo para SSE en `INF-07B`; requiere actualización para soportar WebSockets y streaming bidireccional.
+
+#### `BAC-30` (`BRG-06-BAC`) - Extensión del simulador de Proxmox para Aprovisionamiento, Storages y RRDdata (`RF-05`, `RF-07`)
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-28` y `FIX-35` (en `terminado-1.md`).
+- **Problema:** El simulador actual solo responde a acciones de ciclo de vida de energía, inventario, borrado e interfaces de red. Para desarrollar y probar la Etapa 2 en local (siguiendo la premisa de no depender del servidor real), el simulador debe soportar:
+  1. `POST /nodes/{node}/qemu` y `POST /nodes/{node}/lxc`: retornar un UPID válido de tipo `qmcreate` / `vzcreate`.
+  2. `PUT /nodes/{node}/{tipo}/{vmid}/config`: actualizar núcleos y memoria simulados.
+  3. `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content`: listar storages (`local`, `local-lvm`) y contenidos (templates LXC e imágenes ISO).
+  4. `GET /nodes/{node}/{tipo}/{vmid}/rrddata`: retornar array de métricas simuladas (CPU, RAM, red, disco).
+- **Entregable:**
+  - Nuevos handlers y rutas en `backend/cmd/proxmox-simulador`.
+  - Casos de prueba en `backend/cmd/proxmox-simulador/simulador_test.go` verificando respuestas y tipos de datos idénticos a Proxmox VE 9.x.
+- **Criterio de éxito:** Las suites de prueba y el desarrollo de la Etapa 2 pueden crear, editar y consultar métricas contra el simulador local sin errores `501 Not Implemented`.
+
+#### `BAC-31` (`BRG-07-BAC`) - Endpoints de inventario de Almacenamiento, Plantillas e ISOs (`RF-07`)
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-14`, `BAC-30`.
+- **Problema:** El asistente de creación (Paso 3 de `RF-07`) requiere seleccionar en qué storage se creará el disco y qué plantilla LXC o imagen ISO se usará. Actualmente el backend no expone ningún endpoint de storages ni de contenidos del hipervisor.
+- **Entregable:**
+  1. Método en el cliente Proxmox para consumir `/nodes/{node}/storage` y `/nodes/{node}/storage/{storage}/content`.
+  2. Endpoints protegidos con rol `ADMIN`:
+     - `GET /api/node/storages`: lista storages habilitados con tipo, espacio total y libre.
+     - `GET /api/node/templates`: lista imágenes ISO y templates LXC disponibles normalizados.
+  3. Documentación en Swagger e inventario de errores.
+- **Criterio de éxito:** Un administrador consulta `GET /api/node/storages` y `GET /api/node/templates` y recibe el listado estructurado de discos e imágenes disponibles. Un operador recibe `403 Forbidden`.
+
+#### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-25B`, `BAC-24C`.
+- **Problema:** En la Etapa 1, el worker de seguimiento de UPID solo maneja acciones de energía y borrado. Cuando se crea una instancia (`qmcreate`/`vzcreate`), la máquina aún no existe en el inventario durante la tarea. Al finalizar la creación con éxito:
+  1. El creador debe quedar automáticamente registrado con `FULL_ACCESS` en `permisos_instancia` para ese nuevo `vmid` (`RF-07`).
+  2. El evento `TASK_FINISHED` debe emitirse con `accion: "create"` y `recursoId: vmid`.
+- **Entregable:**
+  - Soporte de acciones `create` en `seguimiento_tareas.go`.
+  - Integración con el repositorio de permisos: al registrarse `COMPLETED` para una tarea `create`, insertar atómicamente `(usuario_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
+- **Criterio de éxito:** Al concluir una tarea de creación, el usuario creador ve inmediatamente la instancia asignada con permisos operativos y recibe el evento `TASK_FINISHED` correspondiente.
+
+#### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-29`.
+- **Problema:** `GET /api/node/status` informa el consumo físico actual del nodo, pero el asistente de creación necesita saber exactamente cuánta memoria RAM y disco pueden asignarse con seguridad sin comprometer la estabilidad del host físico (margen de seguridad / headroom).
+- **Entregable:**
+  - Exponer en `GET /api/node/status` (o endpoint auxiliar `GET /api/node/quota`) el objeto `allocatable`:
+    `{ maxCpuCores: number, freeRamMb: number, freeStorageGb: number, headroomPercent: number }`, reservando un 15% de RAM física para el sistema operativo base de Proxmox.
+- **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
+
+#### `FRN-21` (`BRG-06-FRN`) - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde notificaciones (`RF-03`, `RF-11`)
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-20A`, `FRN-17B`.
+- **Problema:** En `etapa1.md`, la nota 45 pospuso el enlace de los toasts al detalle de la instancia porque la vista no existía. Sin esta pantalla, la Etapa 2 no tiene contenedor donde montar los gráficos de métricas (`RF-05`) ni la edición de recursos (`RF-10`).
+- **Entregable:**
+  1. Ruta `/instances/:vmid` bajo `ProtectedLayout` con guard de sesión y permiso de acceso.
+  2. Componente de vista `InstanceDetailPage.tsx` con:
+     - Cabecera con nombre, ID, tipo, IP, badge de estado y botonera de acciones (`InstanceAction.tsx`).
+     - Navegación por pestañas: "General" (información básica y métricas estáticas), "Métricas" (contenedor placeholder para gráficos de Etapa 2) y "Configuración" (contenedor placeholder para edición de Etapa 2).
+     - Botón de retorno / breadcrumb hacia `/instances`.
+  3. Vincular la tabla de inventario (`Instances.tsx`) y los toasts de notificación (`FRN-17B`) con enlace directo a `/instances/:vmid`.
+- **Criterio de éxito:** Al hacer clic en una fila o en un toast de tarea completada, la aplicación navega a `/instances/:vmid` mostrando los datos reales de la máquina y sus pestañas base listas.
+
+#### `INF-09` (`BRG-06-INF`) - Configuración de Nginx para WebSockets y Streaming bidireccional (`RNF-06`)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-07B`.
+- **Problema:** `INF-07B` configuró Nginx para SSE unidereccional. La telemetría en tiempo real de la Etapa 2 (`RF-05`) utiliza WebSockets (`/api/ws/*` o `/ws/*`), que requieren encabezados `Upgrade` y `Connection: "upgrade"`, además de timeouts extendidos para no interrumpir sesiones activas de monitoreo.
+- **Entregable:**
+  - Actualizar `docker/nginx-edge.conf` y la plantilla de despliegue del CT 103 con soporte de WebSockets:
+    `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s;`.
+- **Criterio de éxito:** Una conexión WebSocket establecida a través de Nginx completa el handshake HTTP 101 y se mantiene abierta transmitiendo datos sin cortes por buffer o timeout.
+
+#### `INF-07C` (`BRG-07-INF`) - Ampliación de privilegios del Token de Proxmox para Aprovisionamiento (`RF-07`, `RF-10`)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico / Lucas
+- **Estimación:** 1.0 h
+- **Depende de:** `INF-07`.
+- **Problema:** El API Token actual (`centi-api@pve!backend-token`) solo posee `VM.PowerMgmt`, `Sys.Audit` y lectura. Si intenta crear instancias o reconfigurar cores/RAM en la Etapa 2, Proxmox rechazará las peticiones con `403 Permission check failed`.
+- **Entregable:**
+  - Incorporar los permisos `VM.Allocate`, `Datastore.AllocateSpace`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network` al rol del token en Proxmox VE.
+  - Verificar permisos con `pveum user permissions` o llamada de prueba con `curl`.
+  - Actualizar la documentación en `documentacion/api-proxmox.md`.
+- **Criterio de éxito:** El token permite consultar storages, crear contenedores de prueba y modificar configuraciones sin errores de autorización.
+
+---
+
 ## 7. Resumen de Distribución y Carga de Trabajo
 
 **Ya terminadas (no se cargan):** `BAC-28`, `FIX-32`, `FIX-33` y `FIX-35`, en `terminado-1.md`.
@@ -494,17 +605,25 @@ flowchart TD
 | 4 | `INT-01` | Testing | Tayra, Cristian | 2.5 h | — | Bloques 2 y 3 |
 | 5 | `INT-02` | Integración | Equipo completo | 2.0 h | — | Toda la etapa, más `FIX-37`, `SEC-03`, `FIX-38` y `FRN-17C` |
 | 5 | `INT-03` | Integración / Infra | Nico + backend | 1.5 h | — | `INT-02`, `INF-07`, `INF-07B`, `INF-06B`, `INF-08A` |
-| | **Total** | | | **50.5 h** | | **29 tareas, promedio 1.74 h** |
+| 6 | `BAC-30` (BRG-06) | Testing / Back | Lisandro | 2.0 h | `BAC-28`, `FIX-35` | — |
+| 6 | `BAC-31` (BRG-07) | Backend | Tayra | 2.0 h | `BAC-14`, `BAC-30` | — |
+| 6 | `BAC-32` (BRG-08) | Backend | Lisandro | 2.0 h | `BAC-25B`, `BAC-24C` | — |
+| 6 | `BAC-33` (BRG-09) | Backend | Tayra | 1.5 h | `BAC-22`, `BAC-29` | — |
+| 6 | `FRN-21` (BRG-06) | Frontend | Cristian / Belinda | 2.5 h | `FRN-20A`, `FRN-17B` | — |
+| 6 | `INF-09` (BRG-06) | Infraestructura | Nico | 1.5 h | `INF-07B` | — |
+| 6 | `INF-07C` (BRG-07) | Infraestructura | Nico / Lucas | 1.0 h | `INF-07` | — |
+| | **Total** | | | **63.0 h** | | **36 tareas, promedio 1.75 h** |
 
 **Carga por persona en la Etapa 1:**
 
 | Persona | Horas | Tareas | Además tiene en la fase base |
 |---|---:|---|---|
-| Lisandro | 12.0 | `BAC-29`, `BAC-23A`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25A`, `BAC-25C` | `FIX-39` (compartida) |
-| Tayra | 9.5 + `INT-01` | `BAC-22`, `BAC-22B`, `BAC-25B`, `BAC-24C`, `BAC-26`, `BAC-27` | `FIX-39` (compartida), `BAC-18B` |
-| Belinda | 7.5 | `FRN-19A`, `FRN-19B`, `FRN-19C`, `FRN-15` | `SEC-03`, `FIX-38` |
+| Lisandro | 16.0 | `BAC-29`, `BAC-23A`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25A`, `BAC-25C`, `BAC-30`, `BAC-32` | `FIX-39` (compartida) |
+| Tayra | 13.0 + `INT-01` | `BAC-22`, `BAC-22B`, `BAC-25B`, `BAC-24C`, `BAC-26`, `BAC-27`, `BAC-31`, `BAC-33` | `FIX-39` (compartida), `BAC-18B` |
+| Belinda | 8.75 | `FRN-19A`, `FRN-19B`, `FRN-19C`, `FRN-15`, `FRN-21` (compartida) | `SEC-03`, `FIX-38` |
 | Luz | 6.0 | `FRN-20A`, `FRN-20B`, `FRN-20C` | `FIX-29` |
-| Cristian | 7.5 + `INT-01` | `FRN-16`, `FRN-16B`, `FRN-17A`, `FRN-17B` | `FRN-17C`, `FIX-36`, `SEC-03`, `FIX-38` |
-| Nico | 2.0 + `INT-03` | `INF-07`, `INF-07B` | `INF-06B`, `INF-08A` |
+| Cristian | 8.75 + `INT-01` | `FRN-16`, `FRN-16B`, `FRN-17A`, `FRN-17B`, `FRN-21` (compartida) | `FRN-17C`, `FIX-36`, `SEC-03`, `FIX-38` |
+| Nico | 3.5 + `INT-03` | `INF-07`, `INF-07B`, `INF-09`, `INF-07C` (compartida) | `INF-06B`, `INF-08A` |
+| Lucas | 0.5 | `INF-07C` (compartida) | — |
 
 > `BAC-23B` pasó de Tayra a Lisandro para equilibrar la carga, porque Tayra además tiene `BAC-18B` y `FIX-39` en la fase base. `FIX-37` (backend, "A definir") conviene asignarla a Lisandro o a Tayra según quién termine primero `FIX-39`, porque toca `permisos_instancia`.
