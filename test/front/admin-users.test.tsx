@@ -252,6 +252,94 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
       expect(deleteCall![0]).toMatch(/\/admin\/users\/u2$/);
     });
   });
+
+  it('eliminar un usuario desde la tabla y navegar a "Nuevo usuario" permite dar de alta otro usuario', async () => {
+    let usersList = [
+      { id: 'u1', nombreCompleto: 'Ada Lovelace', nombreUsuario: 'ada', emailUsuario: 'ada@centinela.local', rol: 'ADMIN', activo: true, totpVinculado: true },
+      { id: 'u2', nombreCompleto: 'Charles Babbage', nombreUsuario: 'charles', emailUsuario: 'charles@centinela.local', rol: 'OPERATOR', activo: true, totpVinculado: false },
+    ];
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.includes('/admin/users/u2') && method === 'DELETE') {
+        usersList = usersList.map((u) => u.id === 'u2' ? { ...u, activo: false } : u);
+        return Promise.resolve(jsonResponse(null, 204));
+      }
+      if (url.includes('/admin/users') && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        return Promise.resolve(jsonResponse({ id: 'u3', ...body, activo: true }, 201));
+      }
+      if (url.includes('/admin/users') && method === 'GET') {
+        return Promise.resolve(jsonResponse({
+          summary: { total: usersList.length, admins: 1, operators: usersList.length - 1 },
+          users: usersList,
+        }));
+      }
+      return Promise.resolve(jsonResponse({}, 200));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const user = userEvent.setup();
+
+    const router = createMemoryRouter([
+      { path: '/users', Component: Users },
+      { path: '/users/new', Component: CrearUsuarios },
+    ], { initialEntries: ['/users'] });
+
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    // Eliminar u2 usando el menú de acciones
+    const actionButtons = await screen.findAllByRole('button', { name: /acciones para/i });
+    await user.click(actionButtons[1]);
+    const deleteButton = await screen.findByRole('button', { name: /eliminar usuario/i });
+    await user.click(deleteButton);
+    await confirmIfAsked(user);
+
+    await waitFor(() => {
+      const deleteCall = callsOf(fetchMock).find(([, init]) => init?.method === 'DELETE');
+      expect(deleteCall, 'no se envió la llamada de eliminación').toBeDefined();
+      expect(deleteCall![0]).toMatch(/\/admin\/users\/u2$/);
+    });
+
+    // Navegar a Nuevo usuario
+    const newUserBtn = await screen.findByRole('button', { name: /nuevo usuario/i });
+    await user.click(newUserBtn);
+    expect(router.state.location.pathname).toBe('/users/new');
+
+    // Completar el alta del nuevo usuario
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    await waitFor(() => {
+      const postCall = callsOf(fetchMock).find(([, init]) => init?.method === 'POST');
+      expect(postCall, 'no se envió el alta a /admin/users').toBeDefined();
+      expect(postCall![0]).toMatch(/\/admin\/users$/);
+    });
+  });
+
+  it('dar de alta un usuario con correo o username duplicado (409 USER_CONFLICT) muestra advertencia de datos ya registrados', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
+      { errorCode: 'USER_CONFLICT', message: 'El correo electrónico o nombre de usuario ya está registrado en la organización' }, 409,
+    )));
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const router = createMemoryRouter([
+      { path: '/users/new', Component: CrearUsuarios },
+      { path: '/users', element: <h1>Gestión de usuarios</h1> },
+    ], { initialEntries: ['/users/new'] });
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    await waitFor(() => {
+      const notices = screen.getAllByText(/datos ya registrados/i);
+      expect(notices.length).toBeGreaterThan(0);
+      const errors = screen.getAllByText(/no se creó el usuario/i);
+      expect(errors.length).toBeGreaterThan(0);
+    });
+    expect(router.state.location.pathname).toBe('/users/new');
+  });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {

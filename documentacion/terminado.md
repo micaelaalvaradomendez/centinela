@@ -141,6 +141,9 @@
 - **Criterio de éxito:** el dominio o IP local resuelve, el frontend alcanza el backend y el backend alcanza PostgreSQL y Proxmox VE sin exponer la base públicamente.
 
 ### BAC-06B — Edición de Usuario y Cambio de Rol (PUT /api/admin/users/{id}):
+
+> **Nota de alcance (06/10/2026, revisión estática):** la edición de `activo` contempla desactivar/reactivar, pero hoy no distingue suspensión de eliminación por `DELETE`. La separación y el bloqueo de reactivación de eliminados quedan pendientes en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend); no se ejecutaron nuevas pruebas.
+
 - Asignado: Lisandro | Estimación: 2h
 - Depende de: BAC-06
 - Entregable: Endpoint PUT /api/admin/users/{id} para actualizar nombre, correo, estado (isActive) y rol (role: ADMIN u OPERATOR).  
@@ -161,6 +164,8 @@
 - **Criterio de éxito:** la migración se ejecuta desde cero, crea las relaciones y carga un administrador inicial.
 
 ### `BAC-06` - CRUD de usuarios para administradores
+
+> **Nota de alcance (06/10/2026, revisión estática):** el recorrido previamente verificado de crear/listar/desactivar no cubre recrear una cuenta con el correo de otra eliminada conservando su identidad y auditoría. Esa brecha queda pendiente en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend); no se ejecutaron nuevas pruebas.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -733,6 +738,8 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
 
 ### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
+
+> **Nota de alcance (06/10/2026, revisión estática):** la baja implementada envía `DELETE` y espera `204`, pero conserva el correo reservado en backend. Las verificaciones anteriores no cubren su reutilización; la distinción suspensión/eliminación y sus mensajes quedan pendientes en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend). No se ejecutaron nuevas pruebas.
 
 > [!NOTE]
 > **Actualización (01/10/2026):** el entregable 2 se corrigió con `FIX-27` (commit `3ea7fa4`). FRN-06 pasa 6/6.

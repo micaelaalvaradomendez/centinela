@@ -141,6 +141,13 @@ func TestEtapa1(t *testing.T) {
 		}
 		expectNumber(t, body, 266400, 0, "uptimeSeconds")
 		startProxmoxStub(t)
+
+		// Paso 7 (FIX-62). Al restablecer Proxmox y vencer el TTL, el endpoint debe recuperarse: 200 con stale false y telemetría actualizada.
+		time.Sleep(11 * time.Second)
+		status, body = requestJSON(t, http.MethodGet, "/node/status", adminToken, nil)
+		if status != http.StatusOK || body["stale"] != false {
+			t.Errorf("tras restablecer Proxmox y vencer el TTL: esperado 200 con stale false (recuperación de telemetría), recibido %d: %#v", status, body)
+		}
 	})
 
 	t.Run("BAC-23A el adaptador de inventario resuelve la IP con guest agent e interfaces de LXC y tiene pruebas unitarias", func(t *testing.T) {
@@ -181,7 +188,9 @@ func TestEtapa1(t *testing.T) {
 			if status != http.StatusAccepted {
 				t.Fatalf("start de la 102: esperado 202, recibido %d: %#v", status, body)
 			}
-			ids = append(ids, "'"+requiredString(t, body, "tareaId")+"'")
+			tareaID := requiredString(t, body, "tareaId")
+			ids = append(ids, "'"+tareaID+"'")
+			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
 		dispatched := time.Now()
 		query := fmt.Sprintf("SELECT count(*) FROM tareas_asincronas WHERE id IN (%s) AND estado = 'COMPLETED';", strings.Join(ids, ","))
@@ -259,7 +268,8 @@ func TestEtapa1(t *testing.T) {
 				continue
 			}
 			requiredString(t, body, "upid")
-			requiredString(t, body, "tareaId")
+			tareaID := requiredString(t, body, "tareaId")
+			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
 		// 6. Entregable 4: códigos documentados en el inventario de FIX-08 y en Swagger.
 		inventory := string(readFile(t, sourcePath("backend", "docs/estandar_http.md")))
@@ -386,7 +396,7 @@ func stubWrites(t *testing.T, vmid int) int {
 }
 
 func stubDeletes(t *testing.T, vmid int) int {
-	return stubLogCount(t, fmt.Sprintf(`"DELETE /api2/json/nodes/[^/]+/(qemu|lxc)/%d `, vmid))
+	return stubLogCount(t, fmt.Sprintf(`"DELETE /api2/json/nodes/[^/]+/(qemu|lxc)/%d[ ?]`, vmid))
 }
 
 func stubLogCount(t *testing.T, expression string) int {

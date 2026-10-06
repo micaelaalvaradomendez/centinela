@@ -432,6 +432,81 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		if persisted := queryDatabase(t, `SELECT rol || '|' || activo::text FROM usuarios WHERE nombre_usuario = 'operador_aceptacion';`); persisted != "ADMIN|false" {
 			t.Fatalf("estado final persistido inesperado: %q", persisted)
 		}
+
+		// Validación del flujo eliminar usuario y dar de alta:
+		// 1. Reintentar dar de alta con los mismos datos del usuario eliminado (baja lógica):
+		//    El backend debe responder 409 Conflict (USER_CONFLICT) porque el email y nombre de usuario
+		//    permanecen registrados en la organización para trazabilidad y auditoría.
+		conflictUsernameStatus, conflictUsernameBody := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
+			"nombreCompleto": "Operador Reintentado",
+			"nombreUsuario":  "operador_aceptacion",
+			"emailUsuario":   "distinto.email@elcentinela.com",
+			"rol":            "OPERATOR",
+		})
+		if conflictUsernameStatus != http.StatusConflict {
+			t.Fatalf("alta con username de usuario eliminado: esperado 409, recibido %d (%#v)", conflictUsernameStatus, conflictUsernameBody)
+		}
+
+		conflictEmailStatus, conflictEmailBody := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
+			"nombreCompleto": "Operador Reintentado",
+			"nombreUsuario":  "otro_nombre_usuario",
+			"emailUsuario":   newEmail, // "administrador.aceptacion@elcentinela.com"
+			"rol":            "OPERATOR",
+		})
+		if conflictEmailStatus != http.StatusConflict {
+			t.Fatalf("alta con email de usuario eliminado: esperado 409, recibido %d (%#v)", conflictEmailStatus, conflictEmailBody)
+		}
+
+		// 2. Dar de alta un nuevo usuario legítimo tras haber eliminado el anterior:
+		//    El alta debe completarse con 201 Created sin interferencias por el usuario eliminado.
+		newStatus, newCreated := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
+			"nombreCompleto": "Nuevo Operador Activo",
+			"nombreUsuario":  "nuevo_operador_post_baja",
+			"emailUsuario":   "nuevo.operador@elcentinela.com",
+			"rol":            "OPERATOR",
+		})
+		if newStatus != http.StatusCreated {
+			t.Fatalf("alta de nuevo usuario tras eliminar otro: esperado 201, recibido %d (%#v)", newStatus, newCreated)
+		}
+		newCreatedID, ok := newCreated["id"].(string)
+		if !ok || newCreatedID == "" {
+			t.Fatalf("id de nuevo usuario inválido: %#v", newCreated)
+		}
+
+		// 3. Verificar listado: el usuario eliminado permanece inactivo (activo=false) y el nuevo figura activo (activo=true)
+		listStatus, listBody := requestJSON(t, http.MethodGet, "/admin/users", accessToken, nil)
+		if listStatus != http.StatusOK {
+			t.Fatalf("listar usuarios tras alta: esperado 200, recibido %d", listStatus)
+		}
+		usersList, ok := listBody["users"].([]any)
+		if !ok {
+			t.Fatalf("lista de usuarios inválida: %#v", listBody)
+		}
+		var foundDeleted, foundNew bool
+		for _, u := range usersList {
+			userMap, ok := u.(map[string]any)
+			if !ok {
+				continue
+			}
+			if userMap["id"] == createdID {
+				foundDeleted = true
+				if userMap["activo"] != false {
+					t.Fatalf("usuario eliminado debe figurar inactivo (activo=false): %#v", userMap)
+				}
+			}
+			if userMap["id"] == newCreatedID {
+				foundNew = true
+				if userMap["activo"] != true {
+					t.Fatalf("nuevo usuario debe figurar activo (activo=true): %#v", userMap)
+				}
+			}
+		}
+		if !foundDeleted {
+			t.Fatalf("usuario eliminado no encontrado en /admin/users")
+		}
+		if !foundNew {
+			t.Fatalf("nuevo usuario no encontrado en /admin/users")
+		}
 	})
 
 	t.Run("BAC-06 BAC-06B exigen el prefijo /api/admin/users documentado en actual.md", func(t *testing.T) {
