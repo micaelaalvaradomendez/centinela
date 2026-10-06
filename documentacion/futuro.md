@@ -309,3 +309,24 @@ FIX DEL 21 AL 25 (en actual.md)
   2. Ajustar `purga_worker.go` para que instancie el ticker con `time.NewTicker(1 * time.Hour)` (o mantenga el default con `time.NewTicker(time.Hour)`).
 - **Criterio de éxito:**
   - `TestCierreFaseBase/BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `TestCierreFaseBase/BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.
+
+---
+
+## 🛠️ Fixes detectados en la verificación del 06/10/2026
+
+### `FIX-45` - Redirección a `/login` y cierre de sesión local ante 401 en ticket efímero (`FRN-17C`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian (autor de PR #80/#81/#82)
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C` (en `terminado.md`).
+- **Problema y evidencia:**
+  Al invocar `fetchEventTicket()` o dentro del flujo de reconexión de `useEvents.ts`, cuando el backend responde con estado HTTP `401 Unauthorized` (por sesión revocada o expirada), el cliente continúa reintentando la conexión en bucle en lugar de abortar inmediatamente, limpiar el estado de autenticación local (tokens/storage) y redirigir a la vista de login (`/login`).
+  La prueba de aceptación `test/front/events-client.test.tsx:94` (*"si /api/events/ticket responde 401 cierra la sesión local y lleva a /login"*) falla por timeout esperando la navegación hacia `/login`.
+- **Entregable:**
+  1. En `eventsClient.ts` / `useEvents.ts`, capturar específicamente el error con status `401` proveniente de `POST /api/events/ticket`.
+  2. Al recibir `401`, detener inmediatamente los temporizadores de reintento de conexión.
+  3. Invocar la limpieza de credenciales locales (ej. `logout()` de auth) y ejecutar la redirección hacia `/login` (vía `window.location.href = '/login'` o router de navegación).
+- **Criterio de éxito:**
+  - El caso *"si /api/events/ticket responde 401 cierra la sesión local y lleva a /login"* en `test/front/events-client.test.tsx` pasa en verde sin agotar el timeout.
+

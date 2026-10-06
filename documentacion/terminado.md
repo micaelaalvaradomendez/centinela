@@ -1579,3 +1579,33 @@ Evidencia en [test/informe.md](../test/informe.md). Revisiones probadas: backend
 - **Depende de:** `BAC-17B`, `FIX-23`.
 - **Criterio de éxito original:** sesiones inactivas purgadas automáticamente; tabla `auditoria` particionada por rangos trimestrales conservando inmutabilidad append-only.
 
+---
+
+# Verificación del 06/10/2026
+
+Revisiones probadas: frontend `5a86dce` (PR #80, #81, #82), backend `eec77ff`.
+
+### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 06/10/2026, frontend `5a86dce`, PR #80/#81/#82, commits `28ae029`, `74ea3d5`).**
+> - **Completado:**
+>   - Se implementó `eventsClient.ts` y el hook `useEvents.ts`, solicitando un ticket efímero de un solo uso mediante `POST /api/events/ticket` enviando el token JWT por cabecera `Authorization: Bearer`.
+>   - Conecta a `/api/events?ticket=<ticketId>` mediante Server-Sent Events / EventSource sin exponer el access token largo en la URL.
+>   - Implementa retroceso exponencial y solicitud de nuevo ticket efímero ante desconexiones de red.
+> - **Problemas detectados (se corrigen en `FIX-45` en `futuro.md`):**
+>   - Ante una respuesta `401 Unauthorized` al solicitar el ticket efímero (`/api/events/ticket`), la prueba de aceptación (`test/front/events-client.test.tsx`) espera que se cierre la sesión local inmediatamente y se redirija al usuario a `/login`. La implementación actual reintenta la solicitud en lugar de interrumpir el ciclo y forzar la redirección a `/login`.
+> - **Pruebas:** en `test/front/events-client.test.tsx`, 3 de 4 pruebas de ticket y reconexión pasan; 1 falla por no redirigir a `/login` ante 401.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Ventana propuesta:** Junto a `FRN-17A`.
+- **Depende de:** `BAC-21C` (`BRG-02-BAC`).
+- **Problema y contexto:** El hook `useEvents` del frontend no puede pasar el JWT por header en `EventSource`/WebSocket ni exponer el access token largo en la URL. Debe solicitar primero el ticket efímero al backend.
+- **Entregable:**
+  1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
+  2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
+- **Criterio de éxito original:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
+
+

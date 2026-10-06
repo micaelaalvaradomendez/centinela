@@ -152,3 +152,117 @@ Revisiones probadas: backend `43a0b06` (simulador `cmd/proxmox-simulador`) y el 
 - **Estimación:** 2.5 h
 - **Depende de:** `BAC-14`, `BAC-29`, `FIX-39`.
 - **Criterio de éxito original:** VMs y LXC en la misma tabla; IP null muestra "No detectada"; tolera campos nuevos en null; badges de estado diferenciados.
+
+#### `FRN-19A` - Componente visual de medidores de recursos del host (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 03/10/2026, frontend `907efe5`, PR #78).**
+> - Se implementó `ResourceMeter.tsx` en `features/dashboard` con barras de progreso para CPU, RAM y almacenamiento, con umbrales visuales al 70%.
+> - Integrado en `Dashboard.tsx` y validado con suite unitaria `resource-meters.test.tsx` y suite de aceptación `dashboard-metrics.test.tsx` (3/3 en verde).
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** ninguna.
+
+---
+
+# Verificación del 06/10/2026
+
+Revisiones probadas: backend `eec77ff` (commits `3988546`, `5787179`, `13f9c35`, `d1dec4f`), frontend `5a86dce` (PR #80, #81, #82, #83, #84).
+
+#### `BAC-25A` - Worker pool acotado para el seguimiento de UPID (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `eec77ff`, commit `3988546`).**
+> - Se implementó el pool acotado de workers (`UPID_WORKERS`, por defecto 8) con canal bufferizado en `internal/services/seguimiento_tareas.go`.
+> - La función `Seguir` no bloquea: si el buffer está lleno, la tarea queda persistida en `tareas_asincronas` con estado `RUNNING` para posterior rescate sin pérdida.
+> - Cierre ordenado respetando el contexto de aplicación (`context.Context`).
+> - **Pruebas:** `TestEtapa1/BAC-25A_el_seguimiento_de_UPID_usa_un_pool_acotado_y_no_pierde_tareas` en `test/back/etapa1_acceptance_test.go` pasa **100% en verde** (53.16s).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** ninguna pendiente. Parte de `services/seguimiento_tareas.go` (`BAC-21C`).
+- **Contexto:** cada tarea lanzaba su propia goroutine sin límite.
+- **Entregable:**
+  1. Reemplazar la goroutine por tarea con un pool de N workers (`UPID_WORKERS`, por defecto 8) que lee de un canal con buffer.
+  2. `Seguir` sigue siendo no bloqueante: si el canal está lleno, la tarea queda en `tareas_asincronas` como `RUNNING` y no se pierde.
+  3. Cerrar ordenadamente con el contexto del proceso.
+  4. Pruebas unitarias con un Proxmox falso.
+- **Criterio de éxito original:** con 50 tareas simultáneas nunca hay más de N consultas a Proxmox en paralelo; el fin de cada tarea se detecta en menos de 2 s; pruebas de `seguimiento_tareas_test.go` en verde.
+
+#### `BAC-29` - Contrato HTTP y de eventos de la Etapa 1 (Backend)
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 06/10/2026, backend `eec77ff`, commits `5787179`, `21b1332`, `4ef36e3`, `0850ec7`).**
+> - **Completado:**
+>   - Se redactó y publicó `backend/docs/contrato-etapa1.md` detallando las especificaciones de `GET /api/node/status`, `GET /api/instances`, rutas de energía (`shutdown`, `reboot`), estructura de `TASK_FINISHED`, matriz de errores de la etapa y permisos.
+>   - Se incorporaron las anotaciones Swagger para los nuevos endpoints de la etapa.
+> - **Problemas detectados (se corrigen en `FIX-46` en `futuro-1.md`):**
+>   - La prueba de aceptación `etapa1_acceptance_test.go:51` busca validar mediante expresión regular que la sección de `GET /node/status` en `contrato-etapa1.md` documente explícitamente en su bloque que cualquier usuario autenticado (`ADMIN` u `OPERATOR`) puede consultarlo. Actualmente la redacción ubica la especificación de permisos en una sección separada del encabezado, haciendo fallar la verificación sintáctica.
+> - **Pruebas:** `TestEtapa1/BAC-29_contrato_etapa1_incluye_node_status_y_codigos_de_error` falla la aserción de documentación de permisos por línea.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.0 h
+- **Depende de:** ninguna.
+- **Entregable:** `backend/docs/contrato-etapa1.md` y anotaciones Swagger de `GET /api/node/status`, `GET /api/instances`, rutas de energía, detalles de `TASK_FINISHED`, matriz de códigos de error y autorizaciones.
+- **Criterio de éxito original:** el frontend puede maquetar las vistas de la etapa con el documento y Swagger muestra los endpoints con ejemplos.
+
+#### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`) (Backend)
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 06/10/2026, backend `eec77ff`, commit `13f9c35`).**
+> - **Completado:**
+>   - Se creó el endpoint `GET /api/node/status` (`node_handler.go`, `telemetria_service.go`) protegido con autenticación (`RequireAuth`).
+>   - Integra `ObtenerEstadoNodo` en `ProxmoxPort` y `client.go`, normalizando métricas de CPU (porcentaje y cores), RAM y disco (conversión a GB), y uptime.
+>   - Implementa almacenamiento en caché Redis con TTL corto y soporte para devolver el último estado conocido (`stale: true`) ante indisponibilidad.
+> - **Problemas detectados (se corrigen en `FIX-47` en `futuro-1.md`):**
+>   - En la prueba `etapa1_acceptance_test.go:89`, tras simular una caída temporal de Proxmox y restablecer el stub mock, una llamada posterior a `GET /api/node/status` retorna `502 PROXMOX_UNAVAILABLE` en vez de refrescar la caché y responder `200 OK` con datos actualizados.
+> - **Pruebas:** `TestEtapa1/BAC-22_telemetria_de_nodo_con_cache_redis_y_stale_reading` falla en la verificación de recuperación tras fallo.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.5 h
+- **Depende de:** `INF-06A` y `BAC-17A`.
+- **Entregable:** endpoint `GET /api/node/status` con normalización de métricas, caché en Redis con TTL de 5 a 10s, clave de fallback sin TTL (`stale: true`), y manejo de errores.
+- **Criterio de éxito original:** responde en <50ms con caché; refresca con 200 al vencer TTL; ante caída responde stale con 200; 401 sin token y 200 para OPERATOR/ADMIN.
+
+#### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP) (Backend)
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 06/10/2026, backend `eec77ff`, commit `d1dec4f`).**
+> - **Completado:**
+>   - Implementado en `internal/services/inventario_service.go` y `internal/adapters/secondary/proxmox/client.go` unificando recursos de VMs y LXC en una estructura común con CPU, memoria y resolución de IPs.
+>   - Soporte para consultar interfaces de red de QEMU y LXC, seleccionando la primera IPv4 no loopback o primera IPv6 global.
+> - **Problemas detectados (se corrigen en `FIX-48` en `futuro-1.md`):**
+>   - La suite de aceptación estática/dinámica (`etapa1_acceptance_test.go:156`) inspecciona la presencia explícita de los literales de ruta `network-get-interfaces` o `/interfaces` en la configuración de peticiones de clientes o stubs de test unitarios. Como la implementación utiliza constantes o métodos de abstracción interna en el cliente HTTP, la aserción de prueba estática falla al no hallar los strings literales esperados en los archivos de prueba unitaria.
+> - **Pruebas:** `TestEtapa1/BAC-23A_adaptador_de_inventario_resuelve_IP_de_VM_y_LXC_en_paralelo` falla en la verificación de endpoints de interfaces en tests unitarios.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-14`, `BAC-28` y `FIX-35`.
+- **Entregable:** servicio en Go que unifica VMs y LXC, incluye telemetría cruda y resuelve IP mediante guest agent o interfaces LXC concurrentemente con timeout.
+- **Criterio de éxito original:** función interna con pruebas unitarias que devuelve lista consolidada; instancias sin IP devuelven `null` sin error; consultas paralelas con timeout acotado.
+
+#### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia (Frontend)
+
+> [!WARNING]
+> **Estado: Implementada con problemas (verificado el 06/10/2026, frontend `5a86dce`, PR #80, #81, #82, commits `28ae029`, `74ea3d5`, `e8810c9`).**
+> - **Completado:**
+>   - Se implementó `EventsContext.tsx` y el hook `useEvents.ts`, proveyendo contexto para el consumo de eventos SSE (`RealtimeEvent`) y gestión de estado de la conexión (`estado`, `ultimoMensaje`, `error`).
+> - **Problemas detectados (se corrigen en `FIX-49` en `futuro-1.md`):**
+>   - `useEvents` no expone una interfaz de suscripción (`subscribe`, `events`) que permita a componentes suscribirse por tipo de evento o por `recursoId` / instancia.
+>   - No implementa deduplicación de eventos por campo `id`.
+>   - Múltiples componentes que invocan `useEvents` abren conexiones independientes a `/api/events` en lugar de compartir una única conexión viva gestionada por el provider.
+> - **Pruebas:** en `test/front/events-client.test.tsx`, fallan 3 casos: *"deduplica eventos por id para no reprocesar"*, *"mantiene una sola conexión viva para toda la app"* y *"permite a los componentes suscribirse a eventos de una instancia"*.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-17C`.
+- **Entregable:** cliente de eventos sobre la conexión de `FRN-17C`, parseo de `RealtimeEvent`, deduplicación por `id`, suscripción por tipo y recurso, y conexión compartida única por pestaña.
+- **Criterio de éxito original:** Dashboard y tabla reciben `TASK_FINISHED` en tiempo real con una conexión por pestaña; eventos duplicados se procesan una sola vez; pruebas de `events-client.test.tsx` en verde.
+
