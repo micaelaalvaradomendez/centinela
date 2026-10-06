@@ -1,0 +1,52 @@
+# ============================================================================
+#  smtp-relay-brevo  —  REPARTIDOR DE CORREO
+# ----------------------------------------------------------------------------
+#  ¿QUÉ HACE?
+#    Recibe el correo que le manda el backend y lo reenvía a Brevo.
+#
+#  ¿POR QUÉ EXISTE?
+#    Brevo solo acepta envíos desde IPs autorizadas (Security > Authorized IPs).
+#    El backend sale a internet por la IP pública de la red local, que CAMBIA.
+#    Cuando cambia, Brevo rechaza el envío con:
+#        525 "5.7.1 Unauthorized IP address"
+#    y se rompe el alta de usuarios y la recuperación de contraseña.
+#
+#  ¿QUÉ ERROR EVITA?
+#    El 525 por IP no autorizada (el correo con la clave temporal y los
+#    códigos OTP no salía). Antes se "arreglaba" desactivando el bloqueo de
+#    IPs en Brevo, lo que deja la clave SMTP usable desde cualquier lado.
+#    Con este relay, Brevo ve SIEMPRE la IP fija del servidor donde corra.
+#
+#  ¿A DÓNDE APUNTAN AHORA LOS PEDIDOS?
+#    El backend (SMTP_HOST) apunta a ESTE relay, NO a smtp-relay.brevo.com
+#    directamente. Este contenedor es el único que habla con Brevo.
+#
+#  ¿CÓMO FUNCIONA?
+#    Recibe SMTP -> se conecta a Brevo con STARTTLS (cifrado) -> se autentica
+#    con la clave SMTP -> entrega el correo.
+#
+#  USO:
+#    cp .env.relay.example .env.relay   # y completar BREVO_USER / BREVO_PASS
+#    docker compose -f compose.relay.yaml up -d --build
+# ============================================================================
+name: smtp-relay-brevo
+
+services:
+  smtp-relay-brevo:
+    build:
+      context: ./docker/relay
+    image: smtp-relay-brevo:latest
+    container_name: smtp-relay-brevo
+    restart: unless-stopped
+    env_file:
+      - .env.relay
+    # WHY: el contenedor necesita resolver smtp-relay.brevo.com. El resolver
+    # del host (127.0.0.53, systemd-resolved) NO es alcanzable desde adentro
+    # del contenedor, así que le damos DNS públicos explícitos.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    ports:
+      # En local publicamos solo en loopback. En el server real se alcanza
+      # por Tailscale (red privada), sin exponerlo a internet.
+      - "127.0.0.1:2525:25"
