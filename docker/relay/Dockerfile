@@ -1,5 +1,5 @@
 # ============================================================================
-#  Imagen del relay  smtp-relay-brevo
+#  Imagen del relay  centinela-smtp-brevo
 #  Recibe SMTP y lo reenvía a Brevo usando postfix.
 #  Las credenciales NO van en la imagen: se inyectan por variables de entorno.
 # ============================================================================

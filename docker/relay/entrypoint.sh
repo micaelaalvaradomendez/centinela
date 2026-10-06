@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================================
-#  Punto de entrada del relay  smtp-relay-brevo
+#  Punto de entrada del relay  centinela-smtp-brevo
 # ----------------------------------------------------------------------------
 #  Arma la configuración de postfix desde variables de entorno (así la clave
 #  SMTP nunca queda escrita en la imagen ni en el repositorio) y arranca
@@ -14,7 +14,7 @@ set -e
 : "${RELAY_MYNETWORKS:=127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}"
 
 if [ -z "${BREVO_USER:-}" ] || [ -z "${BREVO_PASS:-}" ]; then
-  echo "[smtp-relay-brevo] ERROR: faltan BREVO_USER y/o BREVO_PASS" >&2
+  echo "[centinela-smtp-brevo] ERROR: faltan BREVO_USER y/o BREVO_PASS" >&2
   exit 1
 fi
 
@@ -29,5 +29,5 @@ postconf -F '*/*/chroot = n' >/dev/null 2>&1 || true
 mkdir -p /var/spool/postfix/etc
 cp -f /etc/resolv.conf /var/spool/postfix/etc/resolv.conf 2>/dev/null || true
 
-echo "[smtp-relay-brevo] relayhost=[$BREVO_HOST]:$BREVO_PORT | myhostname=$RELAY_MYHOSTNAME | mynetworks=$RELAY_MYNETWORKS"
+echo "[centinela-smtp-brevo] relayhost=[$BREVO_HOST]:$BREVO_PORT | myhostname=$RELAY_MYHOSTNAME | mynetworks=$RELAY_MYNETWORKS"
 exec postfix start-fg

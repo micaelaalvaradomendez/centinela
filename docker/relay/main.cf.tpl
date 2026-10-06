@@ -1,5 +1,5 @@
 # ============================================================================
-#  Configuración de postfix para el relay  smtp-relay-brevo
+#  Configuración de postfix para el relay  centinela-smtp-brevo
 # ----------------------------------------------------------------------------
 #  Reenvía el correo del backend hacia Brevo.
 #  Las líneas marcadas con WHY explican el motivo de cada ajuste, para que no

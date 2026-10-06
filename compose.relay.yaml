@@ -1,5 +1,5 @@
 # ============================================================================
-#  smtp-relay-brevo  —  REPARTIDOR DE CORREO
+#  centinela-smtp-brevo  —  REPARTIDOR DE CORREO
 # ----------------------------------------------------------------------------
 #  ¿QUÉ HACE?
 #    Recibe el correo que le manda el backend y lo reenvía a Brevo.
@@ -29,14 +29,14 @@
 #    cp .env.relay.example .env.relay   # y completar BREVO_USER / BREVO_PASS
 #    docker compose -f compose.relay.yaml up -d --build
 # ============================================================================
-name: smtp-relay-brevo
+name: centinela-smtp-brevo
 
 services:
-  smtp-relay-brevo:
+  centinela-smtp-brevo:
     build:
       context: ./docker/relay
-    image: smtp-relay-brevo:latest
-    container_name: smtp-relay-brevo
+    image: centinela-smtp-brevo:latest
+    container_name: centinela-smtp-brevo
     restart: unless-stopped
     env_file:
       - .env.relay

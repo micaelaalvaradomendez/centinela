@@ -1,4 +1,4 @@
-# smtp-relay-brevo — Repartidor de correo
+# centinela-smtp-brevo — Repartidor de correo
 
 Contenedor con **postfix** que recibe el correo del backend y lo **reenvía a Brevo**.
 
@@ -22,7 +22,7 @@ Todos los correos salen por **un único punto con IP fija** (este relay). Brevo 
 esa IP, se autoriza **una sola** en el panel y se puede **reactivar** el bloqueo.
 
 ```
-Backend (CT102) --Tailscale--> smtp-relay-brevo --Internet--> Brevo --> destinatario
+Backend (CT102) --Tailscale--> centinela-smtp-brevo --Internet--> Brevo --> destinatario
 ```
 
 ## Qué NO cambia
