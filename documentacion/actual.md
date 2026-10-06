@@ -2,6 +2,9 @@
 
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
+> [!IMPORTANT]
+> **Integración local del PR #3 (06/10/2026):** se incorporaron sus pruebas y los commits backend `eec77ff` y frontend `5a86dce`, conservando las tareas y fixes de `main` `cb0be91`. Los estados del 03/10 y 05/10 siguientes son históricos, no una verificación de los nuevos commits. El PR declara avances en `BAC-22`, `BAC-23A`, `BAC-25A` y `FIX-43`, pero no se ejecutaron suites en esta integración; sus bloques se conservan hasta revalidar. Los hallazgos nuevos se registran como `FIX-61` a `FIX-64`, sin reutilizar `FIX-45` a `FIX-49`. Ver [test/informe.md](../test/informe.md#integración-local-del-pr-3-06102026).
+
 > [!NOTE]
 > **Estado al 03/10/2026** (backend `4e204f1`, frontend `907efe5`; detalle en [test/informe.md](../test/informe.md)).
 > - **Pasaron a [`terminado.md`](terminado.md):**
@@ -44,6 +47,8 @@ Modifica su rol o lo desactiva (PUT/DELETE).
 Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, recibe un 403 Forbidden.  
 
 > **Estado verificado (01/10/2026):** el recorrido completo funciona en ambos lados: tabla real, alta con confirmación, edición, baja y 403 al `OPERATOR`. El mensaje ante `502 EMAIL_DELIVERY_FAILED` en el alta quedó resuelto con `FIX-27` (en `terminado.md`).
+
+> **Cobertura incorporada del PR #3:** las pruebas nuevas comprueban el comportamiento actual: conflicto al reutilizar correo o username de un usuario dado de baja, y alta con datos distintos. No implementan ni validan la reutilización del correo requerida por `FIX-54` a `FIX-57`; esa regresión debe cambiar cuando se implemente el nuevo contrato.
 
 > **Nota de alcance (06/10/2026, revisión estática):** “recorrido completo” se refiere a los casos anteriores, no a crear una cuenta nueva con el correo de una eliminada y preservar la identidad histórica. Esta brecha de la fase base queda pendiente en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend). No se ejecutaron suites ni se verificó el esquema desplegado.
 
@@ -165,6 +170,8 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ---
 
 > Tareas de la Ola 1 de [`etapa1.md`](etapa1.md), en curso. Ninguna está implementada todavía (verificado el 03/10/2026).
+
+> **Actualización de integración (06/10/2026):** la frase anterior registra el estado del 03/10. El PR #3 incorpora implementaciones posteriores, resumidas en [`terminado-1.md`](terminado-1.md#integración-del-pr-3-06102026), pendientes de revalidación local. No implica el cierre de `FRN-15`, `FRN-19B`, `FRN-16`, `BAC-25C` ni de los fixes activos.
 
 #### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
 - **Área:** Backend

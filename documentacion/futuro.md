@@ -331,38 +331,6 @@ Conservar al usuario anterior para auditoría y permitir una cuenta **nueva** co
 > [!IMPORTANT]
 > **Datos existentes:** hoy `activo=false` no permite saber si ocurrió un `DELETE` o una suspensión por `PUT`. No marcar automáticamente todos los inactivos como eliminados. Planificar clasificación controlada con evidencia de `AccionEliminarUsuario` y `detalles.usuarioEliminado`, considerando reactivaciones posteriores y la disponibilidad de `auditoria_legacy` (`FIX-51`), o revisión manual. Mantener suspendidos por defecto hasta identificación segura. `FIX-51` es un problema independiente: no incorporar su migración de auditoría a estos fixes.
 
-
-### `FIX-57A` - Regresión backend de recreación, autenticación, migración y auditoría
-
-- **Área:** Backend / pruebas de aceptación
-- **Estado:** Pendiente; casos propuestos, ninguno ejecutado en esta revisión.
-- **Estimación:** 4 h
-- **Depende de:** `FIX-54` y `FIX-55`; considerar `FIX-51` al preparar fixtures históricos, sin resolverlo aquí.
-- **Problema:** la cobertura backend actual llega a la baja, pero no verifica la separación entre generaciones de una cuenta ni la migración de unicidad.
-- **Dónde probar:** `test/back`, extendiendo las pruebas Go contra el backend real y PostgreSQL del Compose existente. Esta suite ya tiene helpers para API, consultas SQL, correo simulado y autenticación; no dejar la verificación exclusivamente a los equipos que implementan los cambios.
-- **Entregables / casos pendientes:**
-  1. Crear A, generar actividad/auditoría, eliminarla y crear B con el mismo correo y distinto username. Verificar `201`, UUID distinto, login/recuperación/2FA de B y persistencia de A con correo histórico y marca de eliminación. Los registros, exports, tareas y relaciones conservan UUID A, organización y nombre originales; nada se transfiere ni se heredan permisos, sesiones o credenciales.
-  2. Verificar que suspender por `PUT` reserva el correo y permite reactivar; una eliminación no permite reactivación, edición, cambios de permisos, resets ni acceso con credenciales, access/refresh tokens, tickets/preauth u OTP anteriores. Cubrir fallos de revocación y comprobar que no produzcan éxito engañoso ni acceso habilitado.
-  3. Verificar varias generaciones eliminadas con el mismo correo, conflictos `409` para duplicados no eliminados y variantes de mayúsculas/espacios, y altas concurrentes con solo una fila activa/no eliminada. Las demás reciben errores controlados. Registrar el efecto observable del envío SMTP previo al INSERT, sin exigir una transacción distribuida.
-  4. Probar migración en base nueva y existente, repetición y reinicio; incluir duplicados normalizados y fixtures históricos con suspensiones y reactivaciones posteriores. No clasificar automáticamente todos los inactivos como eliminados ni recrear el índice incondicional.
-- **Criterios de aceptación pendientes:** los casos de estado, autenticación, unicidad, migración y auditoría pasan contra servicios reales, y sus resultados quedan registrados en `test/back/RESULTADOS.md`. Esta revisión documental no declara suites en verde ni tareas verificadas.
-
-### `FIX-57B` - Regresión frontend de estados e identidad de usuario
-
-- **Área:** Frontend / pruebas de aceptación
-- **Estado:** Pendiente; casos propuestos, ninguno ejecutado en esta revisión.
-- **Estimación:** 2 h
-- **Depende de:** `FIX-56` y del contrato acordado en `FIX-54`/`FIX-55`.
-- **Problema:** la suite frontend actual prueba la gestión de usuarios, pero sus fixtures no distinguen suspensión de eliminación y no verifica las acciones visibles para cada generación.
-- **Dónde probar:** `test/front/admin-users.test.tsx` con Vitest y React Testing Library, usando fixtures del DTO y mocks de `fetch`, como hace la suite existente. No duplicar aquí pruebas de migración, base de datos o revocación real; esas pertenecen a `FIX-57A`.
-- **Entregables / casos pendientes:**
-  1. Verificar que suspensión y eliminación se etiqueten y expliquen de forma distinta; la suspensión conserva las acciones de reactivación y el eliminado no ofrece edición, reactivación, cambios de permisos ni resets.
-  2. Verificar listado operativo por defecto y acceso explícito al historial, incluyendo las identidades/generaciones y sus datos históricos sin presentarlas como una sola cuenta.
-  3. Verificar los mensajes de confirmación para suspender/eliminar, el conflicto de correo de una cuenta no eliminada y la navegación/mensajes tras alta y baja. Mantener los contratos `201`, `204` y `403`, salvo cambio explícito acordado.
-- **Criterios de aceptación pendientes:** las pruebas de UI distinguen ambos estados y cubren sus acciones y errores sin depender de condiciones opcionales en las aserciones. Registrar los resultados en `test/front/RESULTADOS.md`.
-
-**Responsabilidad de integración:** `test/back` es el dueño de la regresión funcional real entre generaciones (API, DB, autenticación y auditoría). `test/front` es dueño de la presentación y acciones de UI con contratos simulados. El recorrido real del frontend contra el backend se añade al orquestador de `test/back` reutilizando el patrón de `LOGIN-04` solo donde sea necesario para comprobar el contrato, sin convertir toda la cobertura de ambos lados en una tercera tarea transversal.
-
 ---
 
 ## 🎨 Revisión visual y de UX del 06/10/2026: autenticación, branding y acciones de instancias
@@ -451,3 +419,20 @@ Conservar al usuario anterior para auditoría y permitir una cuenta **nueva** co
   - En `/instances`, un usuario con rol `ADMIN` ve el botón "Crear instancia" en la cabecera del inventario.
   - Un usuario con rol `OPERATOR` no ve el botón "Crear instancia" en `/instances` ni en `/dashboard`.
   - El maquetado de ambas vistas se mantiene limpio, responsivo y sin errores de consola.
+
+---
+
+## Hallazgo incorporado del PR #3 (06/10/2026)
+
+Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a `FIX-60`. El PR utilizaba `FIX-45` para el siguiente problema, pero ese ID ya identifica la ruta incorrecta del stream en [`actual.md`](actual.md). No se reemplaza ese diagnóstico ni se declara resuelto sin pruebas.
+
+### `FIX-61` - Cerrar sesión y detener reconexiones ante 401 al solicitar el ticket de eventos (`FRN-17C`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estado:** Hallazgo reportado por el PR #3; pendiente de revalidación local.
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C`, `BAC-21C` y contrato de autenticación vigente.
+- **Problema y evidencia declarada:** el PR reporta que, en frontend `5a86dce`, el cliente sigue reintentando cuando `POST /api/events/ticket` responde `401`, en lugar de limpiar la sesión y llevar al usuario a `/login`. Es un problema distinto del endpoint incorrecto de `FIX-45`.
+- **Entregable:** reproducir el caso de `events-client.test.tsx`; si falla, detener los reintentos y cerrar la sesión mediante el mecanismo existente de autenticación, redirigiendo a `/login` sin exponer el JWT en la URL.
+- **Criterio de éxito:** el caso de ticket rechazado con `401` pasa, no quedan temporizadores de reconexión y la reconexión por fallos transitorios de red sigue funcionando. Registrar el resultado y la revisión probada; esta integración no ejecutó la suite.

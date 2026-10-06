@@ -114,6 +114,9 @@ func TestPuenteEtapa1(t *testing.T) {
 			path := energyPath(t, 101, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusAccepted {
 				t.Errorf("FULL_ACCESS sobre la 101, %s (%s): esperado 202, recibido %d: %#v", action, path, status, body)
+			} else {
+				tareaID := requiredString(t, body, "tareaId")
+				waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 			}
 			path = energyPath(t, 102, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {

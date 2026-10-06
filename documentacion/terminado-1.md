@@ -2,6 +2,22 @@
 
 Tareas de la Etapa 1 (ver [`etapa1.md`](etapa1.md)) cuyo criterio de éxito ya se verificó. Las correcciones pendientes están en [`futuro-1.md`](futuro-1.md).
 
+## Integración del PR #3 (06/10/2026)
+
+> [!IMPORTANT]
+> Se conservan las verificaciones históricas de este archivo. El PR #3 actualiza backend a `eec77ff` y frontend a `5a86dce`, ambos descendientes de los commits locales anteriores. Los resultados siguientes fueron declarados por el PR, no ejecutados nuevamente en esta integración; no se trasladan ni eliminan los bloques activos hasta revalidarlos.
+
+| Tarea | Avance incorporado / declarado por el PR | Seguimiento conservando IDs locales |
+|---|---|---|
+| `BAC-25A` | Commit `3988546`: pool acotado `UPID_WORKERS`; el PR declara aceptación en verde | Revalidar el caso existente de `etapa1_acceptance_test.go` |
+| `BAC-22` | Commit `13f9c35`: telemetría de nodo con Redis y lectura stale | Hipótesis de recuperación en `FIX-62` de [`futuro-1.md`](futuro-1.md) |
+| `BAC-23A` | Commit `d1dec4f`: inventario consolidado y resolución concurrente de IP | Cobertura de rutas en `FIX-63` de [`futuro-1.md`](futuro-1.md) |
+| `BAC-29` | Commit `0850ec7`: contrato ampliado, `activeTask`, DELETE y eventos | Mantener `FIX-46` de [`actual.md`](actual.md) hasta revalidar todo su entregable |
+| `FRN-20A` / `FIX-43` | El PR declara 5/5 pruebas de tabla en verde | Confirmar con `instances-table.test.tsx` antes de cerrar `FIX-43` |
+| `FRN-17A` | Contexto y cliente de eventos incorporados | Deduplicación en `FIX-47`; conexión y suscripciones en `FIX-64` |
+
+También se incorporan commits de recuperación de tareas y auditoría (`f17295c`, `b476636`); su presencia no cierra automáticamente `BAC-25C` ni `FIX-53`. Los diagnósticos anteriores se conservan como evidencia de sus revisiones originales.
+
 ---
 
 # Verificación del 30/09/2026

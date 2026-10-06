@@ -58,6 +58,16 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     expect(commands(fetchMock), 'se pudo disparar una segunda orden sobre la misma instancia').toHaveLength(1);
 
     release(json({ upid: 'UPID:pve:1:stop:101:', tareaId: 't-1' }, 202));
+
+    // Al recibir el 202 Accepted, la fila debe PERMANECER bloqueada (transitioning)
+    // hasta recibir el evento TASK_FINISHED; no debe desbloquearse inmediatamente con el 202.
+    await waitFor(() => {
+      const actions = within(row).queryAllByRole('button');
+      for (const action of actions) {
+        expect(action, `el botón "${action.getAttribute('aria-label') ?? action.textContent}" se desbloqueó prematuramente al recibir el 202 sin esperar TASK_FINISHED`).toBeDisabled();
+      }
+    });
+    expect(busy(row), 'la fila dejó de mostrar spinner/bloqueo tras el 202 sin recibir TASK_FINISHED').toBe(true);
   });
 
   const cases = [
@@ -91,8 +101,17 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     expect(cases.some(({ message }) => message.test(generic)), `el mensaje genérico coincide con el de un código de D2: "${generic}"`).toBe(false);
   });
 
-  it('los seis mensajes de D2 son distintos entre sí', () => {
-    expect(shown.size, 'algún caso de D2 no mostró su mensaje (ver los casos anteriores)').toBe(cases.length);
+  it('los seis mensajes de D2 son distintos entre sí', async () => {
+    // Si se corre en aislamiento (-t), poblar los mensajes ejecutando cada caso
+    if (shown.size < cases.length) {
+      for (const c of cases) {
+        stubFetch(() => Promise.resolve(json({ errorCode: c.code, message: 'error' }, c.status)));
+        renderInstances({ rol: 'ADMIN' });
+        await confirmStop();
+        shown.set(c.code, await findOutsideTable(c.message));
+      }
+    }
+    expect(shown.size, 'algún caso de D2 no mostró su mensaje').toBe(cases.length);
     expect(new Set(shown.values()).size, `hay mensajes repetidos: ${JSON.stringify(Object.fromEntries(shown))}`).toBe(cases.length);
   });
 });

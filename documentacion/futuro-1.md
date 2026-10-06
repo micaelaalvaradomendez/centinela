@@ -12,6 +12,52 @@ Correcciones de tareas de la Etapa 1 que ya están implementadas pero no cumplen
 
 --- 
 
+## Hallazgos incorporados del PR #3 (06/10/2026)
+
+> [!IMPORTANT]
+> Se conservan las tareas próximas de este archivo y los IDs originales `FIX-46` a `FIX-49`, cuyos bloques están en [`actual.md`](actual.md). El PR usaba esos IDs para otros diagnósticos. La aclaración de permisos de `GET /api/node/status` ya está cubierta por `FIX-46`; la deduplicación ya está cubierta por `FIX-47`. Los hallazgos restantes se separan abajo, sin declarar pruebas locales en verde.
+
+### `FIX-63` - Verificar las rutas de interfaces en pruebas del adaptador de inventario (`BAC-23A`) (Backend / pruebas)
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro
+- **Estado:** Hallazgo reportado por el PR #3; pendiente de revalidación local.
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-23A`.
+- **Problema declarado:** la aceptación busca `network-get-interfaces` o `/interfaces` en archivos `_test.go`; el PR reporta que no los encuentra en backend `eec77ff`. Una búsqueda textual no demuestra por sí sola un fallo funcional del adaptador.
+- **Entregable:** revisar las pruebas existentes del cliente y agregar, si falta cobertura, casos que verifiquen las peticiones reales a `qemu/{vmid}/agent/network-get-interfaces` y `lxc/{vmid}/interfaces`, usando el servidor HTTP de prueba existente. No agregar literales sin aserciones solo para satisfacer la búsqueda.
+- **Criterio de éxito:** pruebas unitarias verifican ambas rutas y sus formatos de IP, y la aceptación de `BAC-23A` pasa. Registrar resultados y revisión probada.
+
+### `FIX-64` - Conexión SSE compartida y suscripción selectiva (`FRN-17A`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estado:** Hallazgo reportado por el PR #3; pendiente de revalidación local.
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-17A`, `FRN-17C` y `FIX-47`.
+- **Problema declarado:** el PR reporta que frontend `5a86dce` no satisface los casos de conexión única y suscripción por instancia de `events-client.test.tsx`. Su propuesta también incluye deduplicación, que ya pertenece a `FIX-47` y no se duplica aquí.
+- **Entregable:** reproducir ambos casos y, si fallan, compartir una conexión mediante el provider existente y exponer suscripciones por tipo/recurso con limpieza al desmontar. Coordinar con `FIX-47` para deduplicar en el canal compartido.
+- **Criterio de éxito:** varios consumidores mantienen una sola conexión por pestaña, cada suscriptor recibe solo los eventos correspondientes y se libera al desmontar; la regresión de deduplicación de `FIX-47` sigue pasando.
+
+### `FIX-67` - Verificación rigurosa de concurrencia acotada en `BAC-25A` y resolución funcional de IP en `BAC-23A` (`RF-02` / `RNF-04`) (Backend / pruebas)
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro
+- **Estado:** Pendiente; detectado al contrastar las aserciones de `etapa1_acceptance_test.go`.
+- **Estimación:** 2 h
+- **Depende de:** `BAC-25A` y `BAC-23A`.
+- **Problema y evidencia:**
+  1. `BAC-25A`: la prueba de aceptación en `etapa1_acceptance_test.go:163` se limita a buscar el string `UPID_WORKERS` en el código fuente y a ejecutar `seguimiento_tareas_test.go`. Esto permite falsos positivos (ej. declarar la variable sin usar el pool) y no verifica que, con 50 tareas simultáneas, **nunca existan más de $N$ consultas concurrentes en vuelo hacia Proxmox**. Además, el límite fijo de 3 s con polling de 1 s deja en el límite de timeout a pools legítimos.
+  2. `BAC-23A`: la prueba solo busca las cadenas literales `network-get-interfaces` y `/interfaces` en los archivos Go y corre los tests unitarios. No evalúa desde afuera las reglas de negocio esenciales: prioridad de primera IPv4 no-loopback sobre IPv6 global, valor `null` sin error cuando el guest agent está apagado, y timeout individual $\le 2$ s con concurrencia acotada.
+- **Entregable:**
+  1. Para `BAC-25A`, incorporar en el simulador o stub un contador de peticiones simultáneas activas (`in-flight requests`) y verificar que al despachar una ráfaga de 50 tareas nunca supere `UPID_WORKERS` (8 por defecto).
+  2. Para `BAC-23A`, agregar pruebas unitarias y de integración que ejerciten los casos de borde de IP (interfaz loopback excluida, IPv6 fallback, contenedor apagado `data: null`, VM sin guest agent) y midan el timeout individual de 2 s.
+- **Criterio de éxito:**
+  - El contador de concurrencia confirma el techo de $N$ workers en ráfaga.
+  - El adaptador resuelve las IPs según la matriz de reglas de negocio sin depender de búsquedas de texto plano en el código.
+
+---
+
 proximas tareas a cargar 
 
 ---
