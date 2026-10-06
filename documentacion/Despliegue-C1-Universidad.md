@@ -57,14 +57,14 @@ Se mantiene el mismo esquema que ya usamos en casa: **un contenedor por servicio
 
 ### Contenedores a crear en C1
 
-| CT        | Nombre                     | Servicio                | Rol                            |
-|-----------|----------------------------|-------------------------|--------------------------------|
-| CT200     | `centinela-proxy`          | nginx                   | Entrada, TLS, proxy            |
-| CT201     | `centinela-db`             | PostgreSQL              | Base de datos                  |
-| CT202     | `centinela-api`            | Go (systemd)            | API                            |
-| CT203     | `centinela-front`          | nginx                   | Sirve el SPA                   |
-| CT204     | `centinela-redis`          | Redis                   | Caché / tickets                |
-| CT205     | `centinela-smtp-brevo`     | postfix                 | Relay de correo a Brevo        |
+| CT          | Nombre                       | Servicio                  | Rol                              |
+|-------------|------------------------------|---------------------------|----------------------------------|
+| CT200       | `centinela-proxy`            | nginx                     | Entrada, TLS, proxy              |
+| CT201       | `centinela-db`               | PostgreSQL                | Base de datos                    |
+| CT202       | `centinela-api`              | Go (systemd)              | API                              |
+| CT203       | `centinela-front`            | nginx                     | Sirve el SPA                     |
+| CT204       | `centinela-redis`            | Redis                     | Caché / tickets                  |
+| CT205       | `centinela-smtp-brevo`       | postfix                   | Relay de correo a Brevo          |
 
 *(Los IDs son una sugerencia; se ajustan a los que estén libres en C1.)*
 
@@ -72,16 +72,16 @@ Se mantiene el mismo esquema que ya usamos en casa: **un contenedor por servicio
 
 ## 2. Inventario: qué hay hoy y cómo se replica
 
-| Componente        | Hoy (casa)                      | En C1                              |
-|-------------------|---------------------------------|------------------------------------|
-| Proxy / TLS       | CT100 nginx                     | CT200 nginx                        |
-| Frontend          | CT103 nginx + SPA               | CT203 nginx + SPA                  |
-| Backend           | CT102 Go + systemd              | CT202 Go + systemd                 |
-| Base de datos     | CT101 PostgreSQL                | CT201 PostgreSQL                   |
-| Redis             | CT106 Redis                     | CT204 Redis                        |
-| Relay correo      | CT107 postfix                   | CT205 postfix                      |
-| Red interna       | vmbr0 `10.10.10.0/24`           | bridge de C1 (a definir)           |
-| Acceso            | `centinela.tail6bb3f3.ts.net`   | dominio/Tailscale de C1            |
+| Componente          | Hoy (casa)                        | En C1                                |
+|---------------------|-----------------------------------|--------------------------------------|
+| Proxy / TLS         | CT100 nginx                       | CT200 nginx                          |
+| Frontend            | CT103 nginx + SPA                 | CT203 nginx + SPA                    |
+| Backend             | CT102 Go + systemd                | CT202 Go + systemd                   |
+| Base de datos       | CT101 PostgreSQL                  | CT201 PostgreSQL                     |
+| Redis               | CT106 Redis                       | CT204 Redis                          |
+| Relay correo        | CT107 postfix                     | CT205 postfix                        |
+| Red interna         | vmbr0 `10.10.10.0/24`             | bridge de C1 (a definir)             |
+| Acceso              | `centinela.tail6bb3f3.ts.net`     | dominio/Tailscale de C1              |
 
 **Repositorios que se usan**
 
@@ -95,17 +95,17 @@ Se mantiene el mismo esquema que ya usamos en casa: **un contenedor por servicio
 
 Cada LXC tiene el costo de su propio sistema operativo (~80–120 MB en reposo) más el servicio.
 
-| CT                 | RAM asignada      | Disco           | Nota                              |
-|--------------------|-------------------|-----------------|-----------------------------------|
-| `proxy`            | 256 MB            | 2 GB            | nginx es liviano                  |
-| `db`               | 512–1024 MB       | 8–10 GB         | el más pesado; guarda estado      |
-| `api`              | 256 MB            | 4 GB            | binario Go + logs                 |
-| `front`            | 256 MB            | 2 GB            | nginx estático                    |
-| `redis`            | 256 MB            | 2 GB            | caché                             |
-| `relay`            | 256 MB            | 2 GB            | postfix                           |
-| **Total**          | **~1.8–2.3 GB**   | **~20–22 GB**   | + lo que use el host              |
+| CT                   | RAM asignada        | Disco             | Nota                                |
+|----------------------|---------------------|-------------------|-------------------------------------|
+| `proxy`              | 256 MB              | 2 GB              | nginx es liviano                    |
+| `db`                 | 512–1024 MB         | 8–10 GB           | el más pesado; guarda estado        |
+| `api`                | 256 MB              | 4 GB              | binario Go + logs                   |
+| `front`              | 256 MB              | 2 GB              | nginx estático                      |
+| `redis`              | 256 MB              | 2 GB              | caché                               |
+| `relay`              | 256 MB              | 2 GB              | postfix                             |
+| **Total**            | **~1.8–2.3 GB**     | **~20–22 GB**     | + lo que use el host                |
 
-El total entra en lo que tenga C1 (ya probado: se la banca).
+Con **4 GB de RAM** en C1 va cómodo (confirmado).
 Si aprieta, se puede bajar cada CT a 192 MB y la db a 512 MB.
 
 ---
@@ -304,22 +304,22 @@ El sistema sigue andando en casa (PRUEBAS) mientras tanto.
 
 ### Anexo A — Variables del backend (`.env` real, permisos `600`)
 
-| Variable                       | Para qué                                      |
-|--------------------------------|-----------------------------------------------|
-| `AUTH_MODE`                    | Modo de autenticación (`postgres`)            |
-| `DATABASE_URL` / `DB_DSN`      | Conexión a PostgreSQL                         |
-| `HTTP_ADDR`                    | Puerto de la API (`:8080`)                    |
-| `JWT_SECRET`                   | Firma de tokens                               |
-| `TOTP_ENCRYPTION_KEY`          | Cifrado de los secretos 2FA                   |
-| `ENABLE_SWAGGER`               | Expone `/swagger`                             |
-| `ALLOWED_ORIGINS`              | CORS                                          |
-| `PROXMOX_*`                    | Integración con Proxmox                       |
-| `REDIS_*`                      | Conexión a Redis                              |
-| `EMAIL_PROVIDER=smtp`          | Proveedor de correo real                      |
-| `SMTP_HOST`                    | **El relay** (IP del CT205)                   |
-| `SMTP_PORT`                    | `25` (interno)                                |
-| `SMTP_USER/PASS`               | Credenciales SMTP de Brevo                    |
-| `SMTP_FROM`                    | Remitente (`centinelauntdf@gmail.com`)        |
+| Variable                         | Para qué                                        |
+|----------------------------------|-------------------------------------------------|
+| `AUTH_MODE`                      | Modo de autenticación (`postgres`)              |
+| `DATABASE_URL` / `DB_DSN`        | Conexión a PostgreSQL                           |
+| `HTTP_ADDR`                      | Puerto de la API (`:8080`)                      |
+| `JWT_SECRET`                     | Firma de tokens                                 |
+| `TOTP_ENCRYPTION_KEY`            | Cifrado de los secretos 2FA                     |
+| `ENABLE_SWAGGER`                 | Expone `/swagger`                               |
+| `ALLOWED_ORIGINS`                | CORS                                            |
+| `PROXMOX_*`                      | Integración con Proxmox                         |
+| `REDIS_*`                        | Conexión a Redis                                |
+| `EMAIL_PROVIDER=smtp`            | Proveedor de correo real                        |
+| `SMTP_HOST`                      | **El relay** (IP del CT205)                     |
+| `SMTP_PORT`                      | `25` (interno)                                  |
+| `SMTP_USER/PASS`                 | Credenciales SMTP de Brevo                      |
+| `SMTP_FROM`                      | Remitente (`centinelauntdf@gmail.com`)          |
 
 ### Anexo B — Config del relay (plantilla en el repo)
 
@@ -368,11 +368,11 @@ update-ca-certificates
 
 ## 10. Diferencias respecto de casa (resumen)
 
-| Tema              | Casa (hoy)                           | C1 (objetivo)                            |
-|-------------------|--------------------------------------|------------------------------------------|
-| Contenedores      | 6 LXC separados                      | 6 LXC separados (igual)                  |
-| IP de salida      | domiciliaria (dinámica)              | **fija** (universidad)                   |
-| Relay             | CT107 (`10.10.10.60`)                | CT205                                    |
-| Brevo IPs         | 1 autorizada (casa)                  | + IP de C1 autorizada                    |
-| Acceso            | Tailscale `centinela.tail6bb3f3`     | dominio/Tailscale de C1                  |
-| Deploy            | scripts `deploy-back/front.sh`       | los mismos scripts (cambiando host/CT)   |
+| Tema                | Casa (hoy)                             | C1 (objetivo)                              |
+|---------------------|----------------------------------------|--------------------------------------------|
+| Contenedores        | 6 LXC separados                        | 6 LXC separados (igual)                    |
+| IP de salida        | domiciliaria (dinámica)                | **fija** (universidad)                     |
+| Relay               | CT107 (`10.10.10.60`)                  | CT205                                      |
+| Brevo IPs           | 1 autorizada (casa)                    | + IP de C1 autorizada                      |
+| Acceso              | Tailscale `centinela.tail6bb3f3`       | dominio/Tailscale de C1                    |
+| Deploy              | scripts `deploy-back/front.sh`         | los mismos scripts (cambiando host/CT)     |
