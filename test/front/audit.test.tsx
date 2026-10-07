@@ -152,7 +152,8 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
     renderAuditoria();
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'Página siguiente' }));
+    const nextBtn = screen.queryByRole('button', { name: /p[aá]gina siguiente/i }) ?? screen.getByRole('link', { name: /p[aá]gina siguiente/i });
+    await user.click(nextBtn);
 
     await waitFor(() => expect((fetchMock.mock.calls as [string][]).some(([url]) => url.includes('pagina=2'))).toBe(true));
   });

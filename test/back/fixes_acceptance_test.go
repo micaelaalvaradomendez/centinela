@@ -57,7 +57,7 @@ func TestFixesPendientes(t *testing.T) {
 
 		// Verificación estática: db.go debe migrar los datos a la tabla particionada (INSERT INTO auditoria SELECT ... FROM auditoria_legacy)
 		// o el repositorio de auditoría debe incluir auditoria_legacy con UNION ALL.
-		migratesLegacy := regexp.MustCompile(`(?i)INSERT\s+INTO\s+auditoria[^(]*SELECT\s+.*FROM\s+auditoria_legacy`).MatchString(dbCode)
+		migratesLegacy := regexp.MustCompile(`(?is)INSERT\s+INTO\s+auditoria(?:\s*\([^)]+\))?\s+SELECT\s+.*?FROM\s+auditoria_legacy`).MatchString(dbCode)
 		queriesLegacy := strings.Contains(repoCode, "auditoria_legacy")
 
 		if !migratesLegacy && !queriesLegacy {

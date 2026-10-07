@@ -232,6 +232,7 @@ func TestCierreFaseBase(t *testing.T) {
 			output, err := command.CombinedOutput()
 			return string(output), err
 		}
+		_ = exec.Command("docker", "rm", "-f", "centinela-redis").Run()
 		if output, err := compose("up", "--detach", "--wait", "redis"); err != nil {
 			t.Fatalf("no se pudo levantar el servicio redis de backend/docker-compose.yml: %v\n%s", err, output)
 		}

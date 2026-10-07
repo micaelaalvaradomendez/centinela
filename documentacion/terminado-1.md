@@ -499,3 +499,61 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Estimación:** 1,5 h
 - **Depende de:** `FRN-17A`, `FRN-17C`.
 - **Criterio de éxito:** Una sola conexión SSE compartida por pestaña con suscripciones selectivas.
+
+#### `BAC-23B` - IP real en `GET /api/instances` y verificación del filtrado RBAC (`RF-03`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - `internal/core/services/instance_service.go` (`ListarInstancias`) y adaptadores resuelven `ip` de manera concurrente únicamente para las instancias visibles por el usuario (`Permitidas`), protegiendo la infraestructura contra accesos no autorizados y llamadas innecesarias al guest agent.
+> - Preserva retrocompatibilidad para `FRN-07`/`FIX-14` y control RBAC: usuarios `OPERATOR` solo visualizan sus instancias asignadas y usuarios `ADMIN` acceden al inventario global del nodo.
+> - Pasan las pruebas de aceptación en `test/back/etapa1_ola2_acceptance_test.go` (`BAC-23B_IP_real_en_GET_api_instances_y_filtrado_RBAC_estricto`).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-23A` y `FIX-39`.
+- **Entregable:**
+  1. `ListarInstancias` usa el adaptador de `BAC-23A` y completa `ip`.
+  2. La IP se resuelve **solo para las instancias que el usuario puede ver**, después del filtro, para no consultar el guest agent de máquinas ajenas.
+  3. Mantiene el contrato retrocompatible para `FRN-07`/`FIX-14`.
+- **Criterio de éxito:**
+  - Un OPERATOR solo ve sus instancias, con su IP o `null`.
+  - Sin token, `401`; sin permisos, lista vacía.
+  - Con 20 instancias en el simulador, el listado responde en menos de 2 s.
+  - Las pruebas `BAC-14`, `BAC-21B` y `FIX-39` siguen en verde.
+
+#### `BAC-22B` (`BRG-05-BAC`) - Conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - En `GET /api/node/status` se incluye `instancesSummary` con desglose segregado de VMs y LXC (`running`, `stopped`, `paused`, `total`), integrado con la telemetría del nodo y cache en Redis.
+> - En `GET /api/instances` se completan métricas de recursos en tiempo real (`cpuUsage`, `ramUsage`, `maxRam`), devolviendo valores nulos o 0 cuando la instancia está detenida.
+> - Pasan las pruebas de aceptación en `test/back/etapa1_ola2_acceptance_test.go` (`BAC-22B_instancesSummary_en_GET_api_node_status_y_metricas_por_instancia`).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-23A` y `FIX-39`.
+- **Entregable:**
+  1. En `GET /api/node/status`, incluir `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`, cacheado junto con la telemetría.
+  2. En `GET /api/instances`, completar `cpuUsage` (0-100), `ramUsage` y `maxRam` (bytes) con los datos de `BAC-23A`.
+- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose por estado coincidiendo con el simulador, y `GET /api/instances` devuelve CPU y RAM de cada instancia (`null` si está apagada).
+
+#### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `fc6f9ed`).**
+> - Al cargar la tabla de instancias (`/instances`), las filas con `activeTask !== null` se inicializan inmediatamente en estado `transitioning` con spinner y botones de acción bloqueados/deshabilitados, conservando el `tareaId`.
+> - Al reconectarse el canal SSE `/api/events`, se revalida el listado en segundo plano sin parpadeos de carga para sincronizar estados terminados durante la desconexión.
+> - Pasan las pruebas en `test/front/instances-ola2.test.tsx` (`FRN-16B - Resincronización del estado de operación en progreso tras recarga (activeTask)`).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25C`, `FRN-16` y `FRN-17C`.
+- **Entregable:**
+  1. Al cargar la tabla, poner en `transitioning` (spinner y botones bloqueados) las filas cuyo ítem de `GET /api/instances` trae `activeTask !== null`, guardando su `tareaId`.
+  2. Al reconectarse `/api/events` (`FRN-17C`), volver a pedir `GET /api/instances` sin mostrar carga, para tomar los estados finales de las tareas que terminaron durante la desconexión.
+- **Criterio de éxito:** si se recarga con `F5` en medio de una acción, la fila sigue con el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
+
+

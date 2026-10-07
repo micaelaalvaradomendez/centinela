@@ -1672,3 +1672,21 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Estimación:** 0,5 h
 - **Depende de:** `FRN-17C`, `BAC-21C`.
 - **Criterio de éxito:** Ante 401 en ticket se detienen los reintentos, se cancelan los timers y se cierra la sesión.
+
+### `FIX-51` - El historial de `auditoria` previo a la migración queda inaccesible desde la API (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - Commit `df320c7`: `internal/adapters/secondary/postgres/db.go:283-303` implementa el traspaso masivo `INSERT INTO auditoria SELECT ... FROM auditoria_legacy ON CONFLICT DO NOTHING` y elimina de forma limpia e idempotente `DROP TABLE IF EXISTS auditoria_legacy CASCADE`.
+> - Se verificó que `auditoria.id` es tipo UUIDv7 (sin secuencia serial ni autoincremental en PostgreSQL); no requiere ni admite `setval`, garantizando integridad referencial y de claves sin colisiones.
+> - Pasa la suite unitaria de persistencia `TestMigrarAuditoriaParticionada_TraspasoLegacy` en `backend/internal/adapters/secondary/postgres/migrar_auditoria_test.go` y la prueba de integración en `test/back/fixes_acceptance_test.go`.
+> - Deuda técnica residual: la llamada forzada a `setval` ejecutada con error silenciado en `df320c7` se canalizó a [`FIX-70`](futuro.md#fix-70---eliminar-ajuste-espurio-de-secuencia-setval-en-clave-primaria-uuidv7-de-auditoría-bac-18b--fix-51-backend) en `futuro.md` para su saneamiento.
+
+- **Área:** Backend
+- **Asignada:** Tayra (autora de `96106a6`, resuelto en `df320c7`)
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B`.
+- **Problema y evidencia:** `migrarAuditoriaParticionada` (`db.go`) renombraba la tabla plana preexistente a `auditoria_legacy` dejando los eventos anteriores fuera de las consultas de `auditRepositoryImpl`.
+- **Entregable:** Volcado de datos hacia la tabla particionada, eliminación limpia de la tabla temporal y prueba automatizada de regresión.
+- **Criterio de éxito:** Registros preexistentes son consultables en `GET /api/admin/audit` y exportaciones sin duplicación ni pérdida de datos.
+
