@@ -157,5 +157,23 @@ func TestEtapa1Ola2(t *testing.T) {
 		if !strings.Contains(eventsCode, "MotivoProxmoxError") || !strings.Contains(eventsCode, "PROXMOX_ERROR") {
 			t.Errorf("ports/event_port.go no incluye constantes de motivo de error (PROXMOX_ERROR)")
 		}
+		if !strings.Contains(eventsCode, "MotivoTimeout") || !strings.Contains(eventsCode, "TIMEOUT") {
+			t.Errorf("ports/event_port.go no incluye constante de motivo de timeout (MotivoTimeout / TIMEOUT)")
+		}
+
+		// 4. nombresAccion debe incluir textos para shutdown, reboot y delete
+		hasShutdown := strings.Contains(seguimientoCode, `"shutdown"`)
+		hasReboot := strings.Contains(seguimientoCode, `"reboot"`)
+		hasDelete := strings.Contains(seguimientoCode, `"delete"`)
+		if !hasShutdown || !hasReboot || !hasDelete {
+			t.Errorf("nombresAccion en seguimiento_tareas.go debe incluir shutdown, reboot y delete")
+		}
+
+		// 5. detalles de TASK_FINISHED incluye exitstatus, motivo y error según BAC-29
+		hasDetallesExitStatus := strings.Contains(seguimientoCode, `"exitstatus"`)
+		hasDetallesMotivo := strings.Contains(seguimientoCode, `"motivo"`)
+		if !hasDetallesExitStatus || !hasDetallesMotivo {
+			t.Errorf("detalles del TASK_FINISHED en seguimiento_tareas.go debe incluir exitstatus y motivo")
+		}
 	})
 }

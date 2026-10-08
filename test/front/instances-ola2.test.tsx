@@ -63,7 +63,7 @@ describe('FRN-20B - Filtros reactivos por tipo, estado y buscador dinámico', ()
 
     const initialFetchCount = fetchMock.mock.calls.length;
 
-    // Buscar "servidor"
+    // 1. Buscar por nombre: "servidor"
     const searchInput = screen.getByRole('textbox', { name: /buscar/i });
     await user.type(searchInput, 'servidor');
 
@@ -74,10 +74,20 @@ describe('FRN-20B - Filtros reactivos por tipo, estado y buscador dinámico', ()
     // El filtrado es en el cliente, no debe consultar nuevamente al backend
     expect(fetchMock.mock.calls.length).toBe(initialFetchCount);
 
-    // Limpiar búsqueda
+    // 2. Limpiar búsqueda y buscar por ID numérico: "102"
     await user.clear(searchInput);
     expect(await screen.findByText('base-datos')).toBeVisible();
     expect(screen.getByText('redis-cache')).toBeVisible();
+
+    await user.type(searchInput, '102');
+    expect(await screen.findByText('base-datos')).toBeVisible();
+    expect(screen.queryByText('servidor-web')).toBeNull();
+    expect(screen.queryByText('redis-cache')).toBeNull();
+    expect(fetchMock.mock.calls.length).toBe(initialFetchCount);
+
+    // Limpiar búsqueda
+    await user.clear(searchInput);
+    expect(await screen.findByText('servidor-web')).toBeVisible();
   });
 
   it('permite filtrar por estado (En ejecución vs Detenidas)', async () => {
@@ -102,23 +112,63 @@ describe('FRN-20B - Filtros reactivos por tipo, estado y buscador dinámico', ()
     renderInstancesPage();
 
     await screen.findByText('servidor-web');
+    const initialFetchCount = fetchMock.mock.calls.length;
 
     // Debe existir un selector o filtro interactivo por tipo (Todas, VM, LXC)
-    // que permita filtrar únicamente máquinas virtuales o contenedores
-    const typeFilterTrigger = screen.queryByRole('tab', { name: /\bvm\b/i }) ||
-      screen.queryByRole('button', { name: /\bvm\b|tipo/i }) ||
-      screen.queryByLabelText(/filtrar por tipo/i);
-    expect(typeFilterTrigger, 'debe existir un control para filtrar reactivamente por tipo de recurso (VM / LXC)').not.toBeNull();
+    const vmFilter = screen.queryByRole('tab', { name: /\bvm\b/i }) ||
+      screen.queryByRole('button', { name: /\bvm\b/i });
+    expect(vmFilter, 'debe existir un control para filtrar reactivamente por máquinas virtuales (VM)').not.toBeNull();
+
+    if (vmFilter) {
+      await user.click(vmFilter);
+      // Al seleccionar VM solo debe mostrarse servidor-web (tipo vm)
+      expect(await screen.findByText('servidor-web')).toBeVisible();
+      expect(screen.queryByText('base-datos')).toBeNull();
+      expect(screen.queryByText('redis-cache')).toBeNull();
+      expect(fetchMock.mock.calls.length).toBe(initialFetchCount);
+
+      // Al cambiar a LXC solo deben mostrarse base-datos y redis-cache (tipo lxc)
+      const lxcFilter = screen.queryByRole('tab', { name: /\blxc\b/i }) ||
+        screen.queryByRole('button', { name: /\blxc\b/i });
+      expect(lxcFilter, 'debe existir un control para filtrar por contenedores (LXC)').not.toBeNull();
+      if (lxcFilter) {
+        await user.click(lxcFilter);
+        expect(await screen.findByText('base-datos')).toBeVisible();
+        expect(screen.getByText('redis-cache')).toBeVisible();
+        expect(screen.queryByText('servidor-web')).toBeNull();
+        expect(fetchMock.mock.calls.length).toBe(initialFetchCount);
+      }
+
+      // Al cambiar a Todas deben volver a mostrarse las tres
+      const allFilter = screen.queryByRole('tab', { name: /todas/i }) ||
+        screen.queryByRole('button', { name: /todas/i });
+      if (allFilter) {
+        await user.click(allFilter);
+        expect(await screen.findByText('servidor-web')).toBeVisible();
+        expect(screen.getByText('base-datos')).toBeVisible();
+        expect(screen.getByText('redis-cache')).toBeVisible();
+      }
+    }
   });
 
-  it('muestra un contador de instancias visibles sobre el total', async () => {
+  it('muestra un contador de instancias visibles sobre el total y se actualiza con los filtros', async () => {
+    const user = userEvent.setup();
     renderInstancesPage();
 
     await screen.findByText('servidor-web');
 
-    // Debe indicar la cantidad mostrada / total (ej. badge con 3 o texto descriptivo "1 a 3" o "3")
+    // Debe indicar la cantidad mostrada / total inicial
     const countBadgesOrTexts = screen.queryAllByText(/3/i);
     expect(countBadgesOrTexts.length, 'debe mostrar el contador de instancias sobre el total').toBeGreaterThan(0);
+
+    // Al filtrar por búsqueda a 1 elemento, el contador debe actualizarse
+    const searchInput = screen.getByRole('textbox', { name: /buscar/i });
+    await user.type(searchInput, 'base-datos');
+    expect(await screen.findByText('base-datos')).toBeVisible();
+    expect(screen.queryByText('servidor-web')).toBeNull();
+
+    const filteredCount = screen.queryAllByText(/1/i);
+    expect(filteredCount.length, 'el contador debe reflejar el número de elementos filtrados').toBeGreaterThan(0);
   });
 });
 

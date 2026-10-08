@@ -132,4 +132,10 @@ describe('FRN-20A - Tabla interactiva de inventario con badges de estado e IP', 
     const dataRows = within(table).getAllByRole('row').filter((row) => within(row).queryAllByRole('cell').length > 0);
     expect(dataRows).toHaveLength(inventory.length);
   });
+
+  it('FIX-60: la cabecera de inventario /instances incluye el botón "Crear instancia" para ADMIN', async () => {
+    renderInstancesPage();
+    await rowOf('servidor-web');
+    expect(screen.getByRole('button', { name: /crear instancia|nueva instancia/i })).toBeInTheDocument();
+  });
 });

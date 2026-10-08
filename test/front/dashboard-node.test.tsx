@@ -143,4 +143,11 @@ describe('FRN-19B - Semáforo de salud global e integración con GET /api/node/s
     await act(async () => { await vi.advanceTimersByTimeAsync(10_500); });
     expect(nodeCalls(fetchMock).length, 'al volver a la pestaña no retomó las consultas').toBeGreaterThan(before);
   });
+
+  it('FIX-60: el Dashboard no renderiza el botón "Crear instancia"', async () => {
+    stubNodeStatus(() => Promise.resolve(json(status())));
+    renderDashboard();
+    await screen.findByText(/saludable/i);
+    expect(screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })).toBeNull();
+  });
 });

@@ -117,6 +117,19 @@ func TestFixesPendientes(t *testing.T) {
 		if busyStatus != http.StatusConflict || busyBody["errorCode"] != "INSTANCE_BUSY" {
 			t.Errorf("acción sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyStatus, busyBody)
 		}
+
+		// DELETE sobre instancia con tarea RUNNING en curso también debe responder 409 INSTANCE_BUSY.
+		busyDeleteStatus, busyDeleteBody := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		if busyDeleteStatus != http.StatusConflict || busyDeleteBody["errorCode"] != "INSTANCE_BUSY" {
+			t.Errorf("DELETE sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyDeleteStatus, busyDeleteBody)
+		}
+
+		// Cuando la tarea en tareas_asincronas ya no está RUNNING (ej. COMPLETED), no debe responder INSTANCE_BUSY.
+		queryDatabase(t, fmt.Sprintf("UPDATE tareas_asincronas SET estado = 'COMPLETED' WHERE id = '%s';", tareaUUID))
+		afterStatus, afterBody := requestJSON(t, http.MethodPost, "/instances/102/status/stop", adminToken, nil)
+		if afterBody["errorCode"] == "INSTANCE_BUSY" {
+			t.Errorf("acción sobre instancia con tarea COMPLETED respondió indebidamente 409 INSTANCE_BUSY: %d: %#v", afterStatus, afterBody)
+		}
 	})
 
 	t.Run("FIX-53 unificacion de codigos de accion y resultado en la auditoria de instancias", func(t *testing.T) {
@@ -165,10 +178,41 @@ func TestFixesPendientes(t *testing.T) {
 			t.Errorf("falta un índice único parcial en usuarios(email_usuario) con WHERE eliminado_en IS NULL")
 		}
 
-		// 3. No debe haber un índice único incondicional en email_usuario que impida reutilizar correos de eliminados.
+		// 3. El índice parcial debe normalizar con lower y btrim (UNIQUE (lower(btrim(email_usuario))) WHERE eliminado_en IS NULL).
+		if indiceParcial != "" && (!strings.Contains(strings.ToLower(indiceParcial), "lower") || !strings.Contains(strings.ToLower(indiceParcial), "trim")) {
+			t.Errorf("el índice único parcial debe normalizar con lower(btrim(email_usuario)), definición actual: %s", indiceParcial)
+		}
+
+		// 4. No debe haber un índice único incondicional en email_usuario que impida reutilizar correos de eliminados.
 		indiceIncondicional := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'usuarios' AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%email_usuario%' AND indexdef NOT ILIKE '%WHERE%';")
 		if indiceIncondicional != "" {
 			t.Errorf("persiste un índice único incondicional sobre email_usuario: %s", indiceIncondicional)
+		}
+
+		// 5. La unicidad del nombre_usuario (username) debe permanecer incondicional.
+		indiceUsername := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'usuarios' AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%nombre_usuario%' AND indexdef NOT ILIKE '%WHERE%';")
+		if indiceUsername == "" {
+			t.Errorf("falta el índice único incondicional sobre nombre_usuario")
+		}
+
+		// 6. El modelo domain/models.go no debe tener el comentario obsoleto SET NULL para auditoría.
+		modelsCode := string(readFile(t, sourcePath("backend", "internal/core/domain/models.go")))
+		if strings.Contains(modelsCode, "SET NULL si se elimina el usuario") {
+			t.Errorf("models.go contiene comentario 'SET NULL si se elimina el usuario'; la relación de auditoría debe reflejar RESTRICT")
+		}
+
+		// 7. En base de datos: si existe eliminado_en, múltiples eliminados pueden tener el mismo correo.
+		if columnaEliminado == "1" {
+			emailDup := fmt.Sprintf("dup.%d@elcentinela.com", time.Now().UnixNano())
+			u1 := queryDatabase(t, "SELECT uuid_generate_v7();")
+			u2 := queryDatabase(t, "SELECT uuid_generate_v7();")
+			orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
+			_, err1 := execDatabase(t, fmt.Sprintf("INSERT INTO usuarios (id, organizacion_id, nombre_completo, nombre_usuario, email_usuario, contrasena_hash, rol, activo, eliminado_en) VALUES ('%s', '%s', 'Eliminado 1', 'del1_%s', '%s', 'hash', 'OPERATOR', false, NOW());", u1, orgID, u1[:8], emailDup))
+			_, err2 := execDatabase(t, fmt.Sprintf("INSERT INTO usuarios (id, organizacion_id, nombre_completo, nombre_usuario, email_usuario, contrasena_hash, rol, activo, eliminado_en) VALUES ('%s', '%s', 'Eliminado 2', 'del2_%s', '%s', 'hash', 'OPERATOR', false, NOW());", u2, orgID, u2[:8], emailDup))
+			if err1 != nil || err2 != nil {
+				t.Errorf("la base de datos no permitió almacenar dos usuarios eliminados con el mismo correo: err1=%v, err2=%v", err1, err2)
+			}
+			execDatabase(t, fmt.Sprintf("DELETE FROM usuarios WHERE id IN ('%s', '%s');", u1, u2))
 		}
 	})
 
@@ -216,16 +260,68 @@ func TestFixesPendientes(t *testing.T) {
 			t.Errorf("PUT /admin/users/:id con activo=true sobre usuario eliminado no debe permitirse, recibido %d", reactivateStatus)
 		}
 
-		// 6. Crear una cuenta nueva con el MISMO correo debe ser permitido y tener un UUID diferente.
+		// 6. Bloquear edición y cambios de permisos sobre eliminados.
+		editStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID, adminToken, map[string]any{"nombreCompleto": "Intento Modificar"})
+		if editStatus == http.StatusOK || editStatus == http.StatusNoContent {
+			t.Errorf("PUT /admin/users/:id sobre usuario eliminado debe ser rechazado, recibido %d", editStatus)
+		}
+
+		permStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, map[string]any{"permisos": []map[string]any{}})
+		if permStatus == http.StatusOK || permStatus == http.StatusNoContent {
+			t.Errorf("PUT /admin/users/:id/permissions sobre usuario eliminado debe ser rechazado, recibido %d", permStatus)
+		}
+
+		// 7. Consulta histórica explícita por UUID debe estar permitida para auditoría.
+		histStatus, histBody := requestJSON(t, http.MethodGet, "/admin/users/"+userID, adminToken, nil)
+		if histStatus != http.StatusOK {
+			t.Errorf("GET /admin/users/:id para usuario eliminado debe responder 200 con historial, recibido %d: %#v", histStatus, histBody)
+		} else {
+			if histBody["eliminadoEn"] == nil || histBody["activo"] != false {
+				t.Errorf("detalle histórico de eliminado debe mostrar eliminadoEn y activo=false: %#v", histBody)
+			}
+		}
+
+		// 8. Crear una cuenta nueva con el MISMO correo debe ser permitido y tener un UUID diferente.
 		newUserID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("nuevo_%d", suffix), email, "OPERATOR")
 		if newUserID == userID {
 			t.Errorf("la nueva cuenta creada con el mismo correo debe recibir un nuevo UUID, recibido el mismo: %s", newUserID)
 		}
 
-		// 7. El historial y auditoría previos siguen asociados al UUID original, sin fusionar identidades.
+		// 9. El historial y auditoría previos siguen asociados al UUID original, sin fusionar identidades.
 		auditRowsOld := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM auditoria WHERE usuario_id = '%s';", userID))
 		if auditRowsOld == "0" {
 			t.Errorf("los registros de auditoría del usuario original (%s) se perdieron o fueron reasignados", userID)
+		}
+
+		// 10. Suspensión reversible: suspender reserva el correo y reactivar funciona.
+		suspSuffix := time.Now().UnixNano()
+		suspEmail := fmt.Sprintf("susp.%d@elcentinela.com", suspSuffix)
+		suspID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("susp_%d", suspSuffix), suspEmail, "OPERATOR")
+
+		// Suspender con activo=false
+		sStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+suspID, adminToken, map[string]any{"activo": false})
+		if sStatus != http.StatusOK && sStatus != http.StatusNoContent {
+			t.Fatalf("suspender usuario: esperado 200 o 204, recibido %d", sStatus)
+		}
+
+		// Crear nuevo usuario con el correo del suspendido debe responder 409 conflicto estructurado
+		dupSuspStatus, dupSuspBody := requestJSON(t, http.MethodPost, "/admin/users", adminToken, map[string]any{
+			"nombreCompleto": "Intento Con Correo Suspendido",
+			"nombreUsuario":  fmt.Sprintf("otro_%d", suspSuffix),
+			"emailUsuario":   suspEmail,
+			"rol":            "OPERATOR",
+		})
+		if dupSuspStatus != http.StatusConflict {
+			t.Errorf("alta con correo de usuario suspendido debe responder 409, recibido %d: %#v", dupSuspStatus, dupSuspBody)
+		}
+		if dupSuspBody["errorCode"] == nil || dupSuspBody["errorCode"] == "" {
+			t.Errorf("conflicto de correo debe tener código estructurado de error (errorCode): %#v", dupSuspBody)
+		}
+
+		// Reactivar con activo=true debe permitirse en suspendidos (reversibilidad)
+		reactSuspStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+suspID, adminToken, map[string]any{"activo": true})
+		if reactSuspStatus != http.StatusOK && reactSuspStatus != http.StatusNoContent {
+			t.Errorf("reactivar usuario suspendido debe ser exitoso (reversible), recibido %d", reactSuspStatus)
 		}
 	})
 

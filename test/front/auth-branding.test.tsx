@@ -35,6 +35,22 @@ describe('FIX-58 - Imagotipo y logotipo oficial vectorizado en vistas de autenti
       document.querySelector('aside svg[aria-label*="Centinela" i], aside img[alt*="Centinela" i], aside [data-logo="centinela"]');
     expect(logoGraphic, 'no se encontró un imagotipo o logotipo vectorizado oficial de Centinela con accesibilidad').not.toBeNull();
   });
+
+  it('el enlace del logotipo en vistas de autenticación dirige a inicio o a /login sin provocar bucles', () => {
+    render(
+      <MemoryRouter>
+        <MainLayoutAuth>
+          <div>Contenido</div>
+        </MainLayoutAuth>
+      </MemoryRouter>
+    );
+
+    const logoLink = document.querySelector('aside a[href*="/login"], aside a[href="/"]');
+    if (logoLink) {
+      const href = logoLink.getAttribute('href');
+      expect(href, 'el enlace del logo debe apuntar a la raíz o a login').toMatch(/^(\/|\/login)$/);
+    }
+  });
 });
 
 describe('FIX-59 - Sustituir placeholder de desarrollo por mensaje informativo de Centinela y 2FA', () => {
@@ -57,6 +73,10 @@ describe('FIX-59 - Sustituir placeholder de desarrollo por mensaje informativo d
     // 3. Debe fundamentar la seguridad y el valor del doble factor (2FA).
     const seguridadCopy = screen.queryByText(/2fa|doble factor|dos pasos|seguridad|protecci[oó]n/i);
     expect(seguridadCopy, 'falta el copy explicativo sobre la importancia del segundo factor de autenticación (2FA)').not.toBeNull();
+
+    // 4. Debe contener los títulos estructurados aprobados en actual.md
+    expect(screen.getByText(/Tu infraestructura virtual, simplificada y bajo control/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protección de infraestructura con doble factor/i)).toBeInTheDocument();
   });
 });
 
