@@ -83,7 +83,14 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   3. Mostrar el conflicto de correo de cuentas no eliminadas con el código acordado por backend; mantener alta `201`, baja `204` y restricción `403` salvo cambio contractual explícito documentado.
 - **Criterios de aceptación pendientes:** mensajes y acciones distinguen ambos estados; un eliminado no ofrece acciones operativas; historial accesible y errores de correo claros, sin atribuir la restricción DB al frontend.
 
----
+### `FIX-61` - Cerrar sesión y detener reconexiones ante 401 al solicitar el ticket de eventos (`FRN-17C`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C`, `BAC-21C`.
+- **Criterio de éxito:** Ante 401 en ticket se detienen los reintentos, se cancelan los timers y se cierra la sesión.
+
 
 
 ### `FIX-58` - Reemplazar placeholder textual del logo por el imagotipo/logotipo oficial vectorizado (`FRN-01` / `LOGIN-02`) (Frontend)
@@ -106,63 +113,29 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - En `/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password` y `/change-password` se visualiza el logotipo oficial vectorizado de Centinela en lugar de la cadena de texto `"logo Centinela"`.
   - El elemento es accesible para lectores de pantalla y mantiene proporciones nítidas en cualquier resolución.
 
-### `FIX-59` - Sustituir el placeholder "imagenes y informacion random" por mensaje informativo y amigable sobre Centinela y 2FA (`FRN-01` / `LOGIN-02`) (Frontend / UX Copy)
 
-- **Área:** Frontend / UX Copy
-- **Asignada:** Luz / Belinda
-- **Estado:** Pendiente
-- **Estimación:** 1,5 h
-- **Depende de:** `FRN-01` y `LOGIN-02`.
-- **Problema y evidencia:**
-  En la columna lateral/carrusel de bienvenida de las pantallas de acceso (`centinela.tail6bb3f3.ts.net/two-factor/verify`), debajo del logo aparece textualmente el placeholder en verde/turquesa `"imagenes y informacion random"`. Este texto de desarrollo quedó expuesto a los usuarios, omitiendo información crucial sobre la plataforma a la que acceden y el propósito del segundo factor de autenticación requerido.
-- **Dónde corregir:**
-  Contenedor de onboarding/carrusel lateral del layout de autenticación (ej. `AuthSidebar.tsx`, `AuthCarousel.tsx` o sección informativa en `AuthLayout.tsx`).
-- **Entregables:**
-  1. Reemplazar completamente el texto placeholder por una sección explicativa con redacción amigable, profesional y resumida que aborde los dos ejes clave del negocio:
-     - **Qué es Centinela:** Panel centralizado y amigable para la orquestación y monitoreo en tiempo real de servidores y entornos virtualizados (máquinas virtuales y contenedores Proxmox VE), diseñado para operar infraestructura de forma simple, ágil y sin riesgos operativos.
-     - **Por qué es fundamental el 2FA:** Al gestionar servidores y servicios de infraestructura crítica (con capacidad de encendido, reinicio, apagado y despliegue), la autenticación de dos pasos garantiza que solo operadores autorizados puedan ejecutar acciones, blindando las instancias frente a accesos indebidos aunque la contraseña se vea comprometida.
-  2. Propuesta de copy lista para implementar (adaptable a vista estática o a las tarjetas/slides del carrusel existente indicado por la flecha de navegación):
-     - **Slide 1 - La Plataforma:**
-       - *Título:* "Tu infraestructura virtual, simplificada y bajo control"
-       - *Descripción:* "Centinela te permite administrar, monitorear y operar tus máquinas virtuales y contenedores Proxmox VE en tiempo real desde un entorno ágil, intuitivo y seguro."
-     - **Slide 2 - Seguridad y Doble Factor (2FA):**
-       - *Título:* "Protección de infraestructura con doble factor"
-       - *Descripción:* "Gestionar servidores requiere la máxima seguridad. El 2FA añade una capa de protección indispensable para salvaguardar tus servicios críticos ante cualquier acceso no autorizado."
-  3. Acompañar el copy con iconografía representativa (ej. iconos de servidor/nube para la plataforma y escudo/candado para el 2FA) o ilustraciones vectoriales acordes a la identidad visual, eliminando cualquier referencia a textos aleatorios o informales.
-  4. Ordenar visualmente la convivencia con el componente de diagnóstico `InfraDeployCheck` ("VERIFICACION DE DEPLOY — INFRA (TEMPORAL)"), ubicándolo de manera discreta al pie del contenedor para no invadir el mensaje de bienvenida y seguridad.
-- **Criterio de éxito:**
-  - El texto `"imagenes y informacion random"` no aparece en ninguna pantalla ni componente del frontend.
-  - La columna lateral presenta el mensaje claro y amigable sobre el propósito de Centinela y el valor del 2FA, estructurado con jerarquía tipográfica adecuada (título destacado y párrafo explicativo).
-  - La navegación del carrusel (si aplica) transiciona suavemente entre los mensajes informativos con sus correspondientes elementos visuales.
+### `FIX-70` - Blindaje transaccional de la migración de auditoría y saneamiento de integridad en UUIDv7 (`BAC-18B` / `FIX-51`) (Backend)
 
-### `FIX-60` - Reubicar el botón "Crear instancia" del Dashboard a la página de Instancias (`FRN-19B` / `FRN-20A` / `RF-03` / `RF-07`) (Frontend)
-
-- **Área:** Frontend / UI
-- **Asignada:** Cristian / Luz
-- **Estado:** Pendiente
+- **Área:** Backend
+- **Asignada:** Tayra / Backend
 - **Estimación:** 1 h
-- **Depende de:** `FRN-19A`, `FRN-19B`, `FRN-20A` y `SEC-03` (`PermissionGate`).
-- **Problema y evidencia:**
-  En la vista del Dashboard (`/dashboard`, `src/pages/Dashboard.tsx`), el frontend incluyó un botón de acción "Crear instancia" (o "Nueva instancia"). Esta ubicación rompe la separación de responsabilidades y la consistencia de experiencia de usuario (UX) de la plataforma:
-  1. **Separación de responsabilidades:** El Dashboard (`RF-02`, `FRN-19A`, `FRN-19B`) es una vista de monitoreo global, telemetría y salud general del nodo físico (medidores de CPU, RAM, disco, uptime y semáforo). Las acciones operativas sobre recursos virtualizados (VMs y contenedores) pertenecen a la vista de Inventario de Instancias (`/instances`, `RF-03`, `FRN-20A`).
-  2. **Inconsistencia con el patrón de la aplicación:** En la gestión de usuarios, el botón "Crear usuario" no se encuentra en el Dashboard ni en la barra de navegación, sino en la cabecera de la tabla de usuarios (`/users`, formalizado en el commit `a387e10`). La creación de instancias debe seguir el mismo patrón de diseño contextual dentro de `/instances`.
-  3. **Fricción de navegación y control de acceso:** Un operador o administrador que gestiona máquinas desde `/instances` no encuentra allí el botón para desplegar una nueva instancia y se ve forzado a regresar al Dashboard. Además, la creación de instancias es una acción reservada para administradores (`ADMIN`), por lo que colocarla en el Dashboard expone un control desalineado en una vista accesible por cualquier usuario (`D1`).
-- **Dónde corregir:**
-  - `src/pages/Dashboard.tsx`: Remover el botón y cualquier trigger o modal de creación de instancia alojado en el Dashboard.
-  - `src/pages/Instances.tsx`: Incorporar el botón "Crear instancia" en la barra de herramientas superior (junto a los filtros por tipo y buscador de `FRN-20B`).
+- **Depende de:** `FIX-51` (en `terminado.md`).
+- **Contexto y razón de ser de `FIX-51`:**
+  `FIX-51` fue indispensable porque al crear las particiones en `BAC-18B`, la tabla plana original fue renombrada a `auditoria_legacy` dejando 167 registros históricos inaccesibles para la API (`GET /api/admin/audit`) y las exportaciones. El volcado masivo `INSERT INTO auditoria (...) SELECT ... FROM auditoria_legacy ON CONFLICT DO NOTHING` implementado en `df320c7` **resolvió con éxito la recuperación de datos históricos y se preserva íntegramente**.
+- **Problema detectado (oportunidad de mejora y complemento sobre `df320c7`):**
+  1. **Falta de transaccionalidad atómica:** El traspaso masivo de datos (`INSERT ... SELECT`) y el descarte de la tabla anterior (`DROP TABLE auditoria_legacy CASCADE`) se ejecutan como sentencias separadas sin un bloque de transacción (`db.Transaction`). Si el proceso se interrumpe a mitad de camino, la base de datos puede quedar en un estado parcialmente migrado.
+  2. **Llamada espurio de secuencia silenciada:** Se incorporó una llamada forzada a `SELECT setval(pg_get_serial_sequence('auditoria', 'id'), ...)` ignorando el error con `_ = db.Exec(...)`. Dado que `auditoria.id` es `UUIDv7` (`models.go:95`), no existen secuencias numéricas en PostgreSQL (`pg_get_serial_sequence` es `NULL`); la consulta falla internamente y el filtro regex `~ '^[0-9]+$'` sobre UUIDs introduce ruido y lógica muerta.
+  3. **Riesgo de la partición `auditoria_default`:** Las particiones están definidas estáticamente hasta `2027_q1`. Si los eventos caen en la partición `default`, PostgreSQL bloquea la creación de particiones declarativas posteriores para ese rango hasta que la tabla default sea vaciada manualmente.
 - **Entregables:**
-  1. Eliminar el botón "Crear instancia" de `Dashboard.tsx`. Asegurar que el Dashboard conserve únicamente los medidores de nodo, el resumen de instancias y el semáforo de salud (`RF-02`).
-  2. Agregar el botón "Crear instancia" (o "Nueva instancia") en la cabecera de `Instances.tsx`, alineado a la derecha de la barra de acciones y filtros.
-  3. Proteger la visualización del botón con `PermissionGate` o el sistema de permisos de `SEC-03`:
-     - Rol `ADMIN`: Visualiza el botón habilitado.
-     - Rol `OPERATOR`: No visualiza el botón (o se muestra con fallback/deshabilitado con tooltip indicando falta de permisos de aprovisionamiento).
-  4. Conectar la acción al modal/asistente de creación de instancia o navegación correspondiente (`RF-07` / wizard paso a paso si ya está maquetado, o placeholder inactivo con tooltip hasta la implementación completa de la Etapa 2).
-  5. Asegurar que las suites de pruebas (`dashboard-node.test.tsx` e `instances-table.test.tsx`) no presenten regresiones y verificar que en `/dashboard` no se renderice el botón.
+  1. **Transaccionalidad ACID:** Envolver el volcado de `auditoria_legacy` y el posterior `DROP TABLE` dentro de una transacción explícita (`tx := db.Begin()`), asegurando que la migración sea atómica (todo o nada).
+  2. **Saneamiento de `db.go`:** Remover las líneas 295 a 298 que intentan ajustar secuencias inexistentes con errores silenciados, garantizando un flujo declarativo y limpio acorde a claves primarias UUIDv7.
+  3. **Mecanismo de aprovisionamiento de particiones futuras:** Implementar una guarda o función en el arranque (`asegurarParticionesFuturas`) que garantice la existencia de la partición del trimestre en curso y del siguiente, evitando que eventos operativos caigan en la partición `default`.
+  4. **Preservación de pruebas:** Mantener y ampliar `TestMigrarAuditoriaParticionada_TraspasoLegacy` en `migrar_auditoria_test.go` verificando que ante un fallo simulado durante el traspaso, la transacción haga rollback sin perder datos de `auditoria_legacy`.
 - **Criterio de éxito:**
-  - `screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })` devuelve `null` en `/dashboard`.
-  - En `/instances`, un usuario con rol `ADMIN` ve el botón "Crear instancia" en la cabecera del inventario.
-  - Un usuario con rol `OPERATOR` no ve el botón "Crear instancia" en `/instances` ni en `/dashboard`.
-  - El maquetado de ambas vistas se mantiene limpio, responsivo y sin errores de consola.
+  - El traspaso de datos históricos es 100% transaccional y atómico.
+  - La migración corre sin consultas fallidas ni errores silenciados en los logs.
+  - El esquema de particiones cuenta con mecanismo preventivo para evitar el bloqueo por datos en la partición `default`.
+  - La API de auditoría conserva íntegramente la visibilidad del historial sin regresiones.
 
 ---
 # ETAPA 1
@@ -283,3 +256,59 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - filtro por estado (Todas, En ejecución, Detenidas);
   - contador de elementos mostrados sobre el total.
 - **Criterio de éxito:** el filtrado es instantáneo, en memoria del cliente, sin peticiones al backend.
+
+#### `FIX-48` - Documentar `INSTANCE_INVALID_STATE` en Swagger (`BAC-24A`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lucas
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Swagger documenta `INSTANCE_INVALID_STATE` en acciones de ciclo de vida.
+
+
+### `FIX-62` - Heurística de circuit breaker y recuperación de telemetría en `nodo_service` (`BAC-22`) (Backend)
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estado:** Pendiente en el submódulo `backend`. La suite de tests de este repositorio ya adecuó la tolerancia de sincronización de recuperación, pero el servicio en el backend presenta una anomalía de diseño cuando no existe caché previa.
+- **Estimación:** 1 h
+- **Depende de:** `BAC-22` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/core/services/nodo_service.go:24`, se definió `pausaTrasFallaNodo = 5 * time.Second` y en la línea 64:
+  ```go
+  if err := s.fallaReciente(); err != nil {
+      return s.respaldo(ctx, err)
+  }
+  ```
+  `s.respaldo` busca la clave `claveNodoUltimo` (`"node:status:last_known"`) en Redis. Si dicha clave no existe (por ejemplo, arranque en frío o caída de Proxmox antes de registrar lecturas exitosas), `s.respaldo` retorna `nil, false, errProxmox` (HTTP 502 inmediato). Esto genera que durante 5 segundos continuos cualquier petición sea rechazada a ciegas sin siquiera intentar consultar Proxmox, incluso si Proxmox ya se recuperó de inmediato. Un circuit breaker solo debe evitar llamadas si tiene datos *stale* que servir como fallback, o debe implementar un estado *half-open* que permita sondear la recuperación.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/core/services/nodo_service.go`, en la función `ObtenerEstado`, condicionar la llamada a `fallaReciente()`: si no existe lectura previa en `claveNodoUltimo`, **no bloquear las peticiones entrantes durante 5 segundos a ciegas**; permitir el intento hacia Proxmox o reducir la penalización sin caché.
+  2. Implementar un mecanismo de sondeo o reintento inmediato tras la expiración del cooldown que limpie `ultimaFalla` y `errFalla` al obtener una respuesta exitosa (`200 OK`).
+  3. Asegurar que `TestNodoService` en `nodo_service_test.go` cubra el escenario de recuperación tras fallo sin caché previa y con caché previa.
+- **Criterio de éxito:**
+  - El backend se recupera inmediatamente tras el restablecimiento del hipervisor sin quedar en un blackout de 5 segundos cuando no hay caché previa disponible.
+  - Pasan las pruebas unitarias de `nodo_service_test.go` y la prueba de integración `TestEtapa1/BAC-22`.
+
+
+### `FIX-70` - Blindaje transaccional de la migración de auditoría y saneamiento de integridad en UUIDv7 (`BAC-18B` / `FIX-51`) (Backend)
+
+- **Área:** Backend
+- **Asignada:** Tayra / Backend
+- **Estimación:** 1 h
+- **Depende de:** `FIX-51` (en `terminado.md`).
+- **Contexto y razón de ser de `FIX-51`:**
+  `FIX-51` fue indispensable porque al crear las particiones en `BAC-18B`, la tabla plana original fue renombrada a `auditoria_legacy` dejando 167 registros históricos inaccesibles para la API (`GET /api/admin/audit`) y las exportaciones. El volcado masivo `INSERT INTO auditoria (...) SELECT ... FROM auditoria_legacy ON CONFLICT DO NOTHING` implementado en `df320c7` **resolvió con éxito la recuperación de datos históricos y se preserva íntegramente**.
+- **Problema detectado (oportunidad de mejora y complemento sobre `df320c7`):**
+  1. **Falta de transaccionalidad atómica:** El traspaso masivo de datos (`INSERT ... SELECT`) y el descarte de la tabla anterior (`DROP TABLE auditoria_legacy CASCADE`) se ejecutan como sentencias separadas sin un bloque de transacción (`db.Transaction`). Si el proceso se interrumpe a mitad de camino, la base de datos puede quedar en un estado parcialmente migrado.
+  2. **Llamada espurio de secuencia silenciada:** Se incorporó una llamada forzada a `SELECT setval(pg_get_serial_sequence('auditoria', 'id'), ...)` ignorando el error con `_ = db.Exec(...)`. Dado que `auditoria.id` es `UUIDv7` (`models.go:95`), no existen secuencias numéricas en PostgreSQL (`pg_get_serial_sequence` es `NULL`); la consulta falla internamente y el filtro regex `~ '^[0-9]+$'` sobre UUIDs introduce ruido y lógica muerta.
+  3. **Riesgo de la partición `auditoria_default`:** Las particiones están definidas estáticamente hasta `2027_q1`. Si los eventos caen en la partición `default`, PostgreSQL bloquea la creación de particiones declarativas posteriores para ese rango hasta que la tabla default sea vaciada manualmente.
+- **Entregables:**
+  1. **Transaccionalidad ACID:** Envolver el volcado de `auditoria_legacy` y el posterior `DROP TABLE` dentro de una transacción explícita (`tx := db.Begin()`), asegurando que la migración sea atómica (todo o nada).
+  2. **Saneamiento de `db.go`:** Remover las líneas que intentan ajustar secuencias inexistentes con errores silenciados, garantizando un flujo declarativo y limpio acorde a claves primarias UUIDv7.
+  3. **Mecanismo de aprovisionamiento de particiones futuras:** Implementar una guarda o función en el arranque (`asegurarParticionesFuturas`) que garantice la existencia de la partición del trimestre en curso y del siguiente, evitando que eventos operativos caigan en la partición `default`.
+  4. **Preservación de pruebas:** Mantener y ampliar `TestMigrarAuditoriaParticionada_TraspasoLegacy` en `migrar_auditoria_test.go` verificando que ante un fallo simulado durante el traspaso, la transacción haga rollback sin perder datos de `auditoria_legacy`.
+- **Criterio de éxito:**
+  - El traspaso de datos históricos es 100% transaccional y atómico.
+  - La migración corre sin consultas fallidas ni errores silenciados en los logs.
+  - El esquema de particiones cuenta con mecanismo preventivo para evitar el bloqueo por datos en la partición `default`.
+  - La API de auditoría conserva íntegramente la visibilidad del historial sin regresiones.

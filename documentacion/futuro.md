@@ -354,26 +354,27 @@ Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a 
 
 ## 🛠️ Fix detectado el 06/10/2026: Saneamiento y complemento de auditoría particionada
 
-### `FIX-70` - Blindaje transaccional de la migración de auditoría y saneamiento de integridad en UUIDv7 (`BAC-18B` / `FIX-51`) (Backend)
+
+---
+
+## 🛠️ Fix detectado el 08/10/2026: Conexión y reintentos de Redis en arranque
+
+### `FIX-71` - Robustecer reconexión y reintentos ante arranque en frío de Redis (`INF-06` / `BAC-17A`) (Backend)
 
 - **Área:** Backend
-- **Asignada:** Tayra / Backend
+- **Asignado:** Lisandro / Lucas
 - **Estimación:** 1 h
-- **Depende de:** `FIX-51` (en `terminado.md`).
-- **Contexto y razón de ser de `FIX-51`:**
-  `FIX-51` fue indispensable porque al crear las particiones en `BAC-18B`, la tabla plana original fue renombrada a `auditoria_legacy` dejando 167 registros históricos inaccesibles para la API (`GET /api/admin/audit`) y las exportaciones. El volcado masivo `INSERT INTO auditoria (...) SELECT ... FROM auditoria_legacy ON CONFLICT DO NOTHING` implementado en `df320c7` **resolvió con éxito la recuperación de datos históricos y se preserva íntegramente**.
-- **Problema detectado (oportunidad de mejora y complemento sobre `df320c7`):**
-  1. **Falta de transaccionalidad atómica:** El traspaso masivo de datos (`INSERT ... SELECT`) y el descarte de la tabla anterior (`DROP TABLE auditoria_legacy CASCADE`) se ejecutan como sentencias separadas sin un bloque de transacción (`db.Transaction`). Si el proceso se interrumpe a mitad de camino, la base de datos puede quedar en un estado parcialmente migrado.
-  2. **Llamada espurio de secuencia silenciada:** Se incorporó una llamada forzada a `SELECT setval(pg_get_serial_sequence('auditoria', 'id'), ...)` ignorando el error con `_ = db.Exec(...)`. Dado que `auditoria.id` es `UUIDv7` (`models.go:95`), no existen secuencias numéricas en PostgreSQL (`pg_get_serial_sequence` es `NULL`); la consulta falla internamente y el filtro regex `~ '^[0-9]+$'` sobre UUIDs introduce ruido y lógica muerta.
-  3. **Riesgo de la partición `auditoria_default`:** Las particiones están definidas estáticamente hasta `2027_q1`. Si los eventos caen en la partición `default`, PostgreSQL bloquea la creación de particiones declarativas posteriores para ese rango hasta que la tabla default sea vaciada manualmente.
-- **Entregables:**
-  1. **Transaccionalidad ACID:** Envolver el volcado de `auditoria_legacy` y el posterior `DROP TABLE` dentro de una transacción explícita (`tx := db.Begin()`), asegurando que la migración sea atómica (todo o nada).
-  2. **Saneamiento de `db.go`:** Remover las líneas 295 a 298 que intentan ajustar secuencias inexistentes con errores silenciados, garantizando un flujo declarativo y limpio acorde a claves primarias UUIDv7.
-  3. **Mecanismo de aprovisionamiento de particiones futuras:** Implementar una guarda o función en el arranque (`asegurarParticionesFuturas`) que garantice la existencia de la partición del trimestre en curso y del siguiente, evitando que eventos operativos caigan en la partición `default`.
-  4. **Preservación de pruebas:** Mantener y ampliar `TestMigrarAuditoriaParticionada_TraspasoLegacy` en `migrar_auditoria_test.go` verificando que ante un fallo simulado durante el traspaso, la transacción haga rollback sin perder datos de `auditoria_legacy`.
+- **Depende de:** `BAC-17A` e `INF-06` (en `terminado.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias del paquete `backend/internal/adapters/secondary/redis` (`go test ./internal/adapters/secondary/redis/...`), la prueba `TestConectar/se_recupera_si_Redis_aparece_durante_los_reintentos` falla sistemáticamente:
+  ```
+  kv_store_test.go:79: Debe conectar cuando Redis aparece en un reintento: redis no responde en 127.0.0.1:46429: dial tcp 127.0.0.1:46429: connect: connection refused
+  ```
+  En `backend/internal/adapters/secondary/redis/kv_store.go`, la función `Conectar` utiliza `store := Nuevo(cfg)` y ejecuta un bucle de 3 intentos de `Ping` espaciados con `esperaArranque = 500ms`. Sin embargo, el cliente `goredis.NewClient` inicializa internamente un pool de conexiones con `DialerRetries: 2` y `MaxRetries: 3`. Cuando el socket no está disponible de inmediato (arranque en frío o Redis levantando de forma asíncrona unos cientos de milisegundos más tarde), el pool retiene errores de conexión o agota sus reintentos internos sin refrescar el estado del socket entre ciclos de sondeo, o el contexto de la prueba simula el reinicio de forma que el cliente no logra negociar la reconexión limpia en el tiempo estipulado.
+- **Qué debe hacer el equipo de backend:**
+  1. En `kv_store.go`, asegurar que la estrategia de arranque en frío y reintentos de `Conectar` renueve el intento de conexión o limpie las conexiones muertas del pool cuando `Ping` retorne `connection refused`.
+  2. Ajustar la sincronización de reintento en `kv_store_test.go` para garantizar que la reactivación del servidor de prueba en segundo plano (`srv.StartAddr` / `srv.Restart`) sea tolerada y verificada de manera determinística por la función `Conectar`.
+  3. Ejecutar localmente `go test -v ./internal/adapters/secondary/redis/...` en el backend y certificar que `TestConectar` pase 100% en verde.
 - **Criterio de éxito:**
-  - El traspaso de datos históricos es 100% transaccional y atómico.
-  - La migración corre sin consultas fallidas ni errores silenciados en los logs.
-  - El esquema de particiones cuenta con mecanismo preventivo para evitar el bloqueo por datos en la partición `default`.
-  - La API de auditoría conserva íntegramente la visibilidad del historial sin regresiones.
-
+  - `go test ./internal/adapters/secondary/redis/...` pasa en verde sin fallos de conexión.
+  - El backend tolera arrancar cuando Redis tarda hasta 2-3 segundos en estar listo para aceptar conexiones TCP.
