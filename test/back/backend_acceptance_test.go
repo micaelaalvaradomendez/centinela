@@ -507,6 +507,16 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 		if !foundNew {
 			t.Fatalf("nuevo usuario no encontrado en /admin/users")
 		}
+
+		// RNF-01: verificación explícita en backend de que ningún usuario expone hashes ni secretos
+		for _, u := range usersList {
+			userMap := u.(map[string]any)
+			for _, sensitive := range []string{"contrasenaHash", "contrasena_hash", "password_hash", "secretoTotp", "secreto_totp", "codigoRecuperacion", "codigo_recuperacion"} {
+				if _, hasSensitive := userMap[sensitive]; hasSensitive {
+					t.Errorf("RNF-01 violación de seguridad: /admin/users expone campo confidencial %q: %#v", sensitive, userMap)
+				}
+			}
+		}
 	})
 
 	t.Run("BAC-06 BAC-06B exigen el prefijo /api/admin/users documentado en actual.md", func(t *testing.T) {

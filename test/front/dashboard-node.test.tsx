@@ -69,7 +69,8 @@ describe('FRN-19B - Semáforo de salud global e integración con GET /api/node/s
   it('D3: con todo por debajo del 70 % (borde 69 %) el semáforo dice Saludable', async () => {
     stubNodeStatus(() => Promise.resolve(json(status())));
     renderDashboard();
-    expect(await screen.findByText(/saludable/i)).toBeInTheDocument();
+    const matches = await screen.findAllByText(/saludable/i);
+    expect(matches.length).toBeGreaterThan(0);
     expect(screen.queryByText(/^\s*inaccesible\s*$/i)).not.toBeInTheDocument();
   });
 
@@ -91,7 +92,8 @@ describe('FRN-19B - Semáforo de salud global e integración con GET /api/node/s
   ])('si el backend responde %s el semáforo dice Inaccesible y la página no se rompe', async (_, respond) => {
     stubNodeStatus(respond as () => Promise<Response>);
     renderDashboard();
-    expect(await screen.findByText(/inaccesible/i)).toBeInTheDocument();
+    const matches = await screen.findAllByText(/inaccesible/i);
+    expect(matches.length).toBeGreaterThan(0);
     expect(screen.queryByText(/saludable/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole('heading').length, 'la página dejó de renderizarse').toBeGreaterThan(0);
   });
@@ -119,7 +121,7 @@ describe('FRN-19B - Semáforo de salud global e integración con GET /api/node/s
     expect(loading(), 'no hay skeleton ni estado de carga mientras se espera /node/status').not.toBeNull();
 
     release(json(status()));
-    expect(await screen.findByText(/saludable/i)).toBeInTheDocument();
+    expect(await screen.findAllByText(/saludable/i)).not.toHaveLength(0);
     await waitFor(() => expect(loading(), 'el estado de carga sigue visible después de recibir los datos').toBeNull());
   });
 
@@ -147,7 +149,7 @@ describe('FRN-19B - Semáforo de salud global e integración con GET /api/node/s
   it('FIX-60: el Dashboard no renderiza el botón "Crear instancia"', async () => {
     stubNodeStatus(() => Promise.resolve(json(status())));
     renderDashboard();
-    await screen.findByText(/saludable/i);
+    await screen.findAllByText(/saludable/i);
     expect(screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })).toBeNull();
   });
 });

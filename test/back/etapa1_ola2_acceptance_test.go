@@ -175,5 +175,24 @@ func TestEtapa1Ola2(t *testing.T) {
 		if !hasDetallesExitStatus || !hasDetallesMotivo {
 			t.Errorf("detalles del TASK_FINISHED en seguimiento_tareas.go debe incluir exitstatus y motivo")
 		}
+
+		// 6. Prueba de comportamiento real con el stub (D2, RNF-04):
+		// Cuando Proxmox finaliza la tarea con error (exitstatus != OK), el seguimiento
+		// debe marcar la tarea como FAILED en base de datos con motivo PROXMOX_ERROR.
+		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-fallidas"); err == nil {
+			t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas") })
+			status, body := requestJSON(t, http.MethodPost, "/instances/101/status/stop", adminToken, nil)
+			if status == http.StatusAccepted {
+				tareaID := requiredString(t, body, "tareaId")
+				if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "FAILED", 8*time.Second) {
+					t.Errorf("la tarea fallida en Proxmox no se marcó como FAILED")
+				}
+				motivo := queryDatabase(t, fmt.Sprintf("SELECT metadatos->>'motivo' FROM tareas_asincronas WHERE id = '%s';", tareaID))
+				if motivo != "PROXMOX_ERROR" {
+					t.Errorf("metadatos.motivo esperado PROXMOX_ERROR, recibido %q", motivo)
+				}
+			}
+			_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas")
+		}
 	})
 }

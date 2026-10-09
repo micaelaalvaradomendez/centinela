@@ -46,6 +46,8 @@ services:
       ALLOWED_ORIGINS: http://front.centinela.test
       # BAC-16B: este backend usa el correo simulado por consola (lo leen las pruebas).
       EMAIL_PROVIDER: mock
+      # BAC-25B: timeout configurable para seguimiento de UPID (default 3m)
+      UPID_TIMEOUT: ${UPID_TIMEOUT:-3m}
     image: centinela-back-tests-backend:local
     # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
     # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
@@ -154,7 +156,7 @@ services:
   # Proxmox que no responde: acepta cada conexión TCP y nunca contesta (FIX-40).
   proxmox-lento:
     image: busybox:1.36
-    command: ["sh", "-c", "while true; do sleep 3600 | nc -l -p 80 > /dev/null; done"]
+    command: ["nc", "-lk", "-p", "80", "-e", "sleep", "3600"]
 
   # INF-05 / FIX-31: Nginx del borde con TLS (docker/nginx-edge.conf, versionado en el repo
   # integrador) delante del backend real. Certificado de prueba firmado por edge-tls/ca.crt.

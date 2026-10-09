@@ -23,14 +23,17 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 
 | Archivo | Tareas |
 |---|---|
-| `backend_acceptance_test.go` | BAC-01, BAC-02, BAC-03, BAC-04, BAC-05, BAC-06, BAC-06B, BAC-09, BAC-10, BAC-11, BAC-12, LOGIN-01, LOGIN-03 |
+| `backend_acceptance_test.go` | BAC-01, BAC-02, BAC-03, BAC-04, BAC-05, BAC-06, BAC-06B, BAC-09, BAC-10, BAC-11, BAC-12, LOGIN-01, LOGIN-03, **RNF-01** (sin secretos en respuestas) |
 | `login04_acceptance_test.go` | LOGIN-04: circuito alta → clave por correo → 2FA → cambio obligatorio → rol e instancias → resets |
 | `password_recovery_acceptance_test.go` | BAC-13, BAC-15, BAC-16, BAC-18, BAC-19, BAC-20, BAC-21 |
 | `resource_access_acceptance_test.go` | BAC-07, FIX-16/BAC-08, BAC-14, **SEC-04** |
 | `session_security_acceptance_test.go` | BAC-17, SEC-01, integración SEC-01/SEC-02, **integración del logout de FRN-13**, FIX-08 |
 | `cierre_fase_base_acceptance_test.go` | INF-05 (CORS), **FIX-31** (TLS de Nginx versionado), **INF-06A** (Redis local del compose del backend), **INF-08B** (credenciales SMTP que se autentican), **BAC-16B**, **BAC-17A**, **BAC-17B**, **BAC-18B** |
-| `puente_etapa1_acceptance_test.go` | **BAC-21B**/**FIX-39** (instancias extendidas, energía, `DELETE`), **BAC-21C** (tickets y `/api/events`), **FIX-40** (`504 PROXMOX_TIMEOUT`), **INF-07B** (`/api/events` a través del borde Nginx) |
+| `puente_etapa1_acceptance_test.go` | **BAC-21B**/**FIX-39** (instancias extendidas, energía, `DELETE`), **BAC-21C** (tickets y `/api/events`), **FIX-40** (`504 PROXMOX_TIMEOUT`), **INF-07B** (`/api/events` a través del borde Nginx), **RNF-07** (bus Redis Pub/Sub multirréplica) |
 | `etapa1_acceptance_test.go` | Ola 1 de la Etapa 1: **BAC-29** (contrato), **BAC-22** (`/api/node/status`, caché y último estado), **BAC-23A** (adaptador de IP), **BAC-25A** (pool de UPID) |
+| `etapa1_ola2_acceptance_test.go` | Ola 2 de la Etapa 1: **BAC-25B** (timeout de UPID y fallos `PROXMOX_ERROR`), **BAC-27** (auditoría del resultado con UPID), **BAC-22B** / **BAC-23B** |
+| `simulador_proxmox_acceptance_test.go` | Verificación del stub de Proxmox VE, tokens de API y switches de prueba |
+| `fixes_acceptance_test.go` | Pruebas de regresión para FIX-44 a FIX-70 |
 | `login04_integracion_front_back_test.go` | **LOGIN-04** con el código real del frontend (`test/front/login04-e2e.test.ts`) contra este backend |
 
 ## Aislamiento de la red real
@@ -39,6 +42,7 @@ Ninguna prueba puede llegar al Proxmox real.
 - Los backends de prueba tienen `dns_search: invalid`. Sin eso, un nombre de servicio que no resuelve dentro de Docker se completa con el dominio de búsqueda del host. En esta máquina ese dominio es Tailscale, y `proxmox.<tailnet>.ts.net` es el Proxmox real.
 - Para simular que Proxmox está caído no se detiene el contenedor del stub: se crea `/tmp/proxmox-caido` dentro de él (`stopProxmoxStub` / `startProxmoxStub`), y el stub responde `503` a todo.
 - Para dejar las tareas "en curso" (BAC-25C), se crea `/tmp/tareas-en-curso` en el stub: `GET /nodes/{node}/tasks/{upid}/status` responde `running` hasta que se borra.
+- Para simular tareas que fallan (BAC-25B), se crea `/tmp/tareas-fallidas` en el stub: `GET /nodes/{node}/tasks/{upid}/status` responde con `exitstatus` distinto de OK para verificar `FAILED` y `PROXMOX_ERROR`.
 - Algunas pruebas reinician el backend (`restartBackend`): BAC-18B (la purga corre al arrancar) y BAC-25C (retoma las tareas en curso).
 
 ## Requisitos

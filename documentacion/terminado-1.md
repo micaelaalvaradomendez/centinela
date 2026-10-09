@@ -615,3 +615,130 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   - `go test -v ./internal/adapters/secondary/proxmox/...` pasa al 100% ejecutando los nuevos tests.
   - La suite de aceptación `TestEtapa1/BAC-23A` encuentra las pruebas en `client_test.go`, las ejecuta y pasa 100% en verde.
 
+
+---
+
+# Verificación del 09/10/2026: tareas movidas desde `actual.md`
+
+Revisiones probadas: backend `4f68e44` y frontend `ee4644c`.
+
+#### `FRN-15` - Modales de confirmación antierror para acciones operativas
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Se implementaron modales de confirmación diferenciados por criticidad: `Start` (confirmación estándar), `Shutdown`/`Reboot` (aviso de apagado/reinicio de OS huésped), `Stop` (advertencia en rojo sobre posible pérdida de datos) y `Delete` (modal destructivo exigiendo tipear el nombre o ID de la instancia).
+> - La eliminación destructiva (`Delete`) queda restringida exclusivamente al rol `ADMIN`. Los operadores con `READ_ONLY` no ven controles mutantes; usuarios con rol `ADMIN` siempre están habilitados a operar.
+> - Pasan 6 de 6 pruebas en `test/front/instances-modals.test.tsx`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-20A`, `SEC-03` (`PermissionGate`), `FIX-37` y `FIX-38`.
+- **Criterio de éxito:** Ninguna acción operativa se dispara sin pasar por el modal; cancelar no emite peticiones; `OPERATOR` con `READ_ONLY` no ve energía y nunca ve `Delete`; `ADMIN` puede operar y eliminar.
+
+
+#### `FRN-19B` (ex `FRN-13B`) - Semáforo de salud global e integración con `GET /api/node/status` (`RF-02`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - `Dashboard.tsx` conecta los medidores a `GET /api/node/status`: porcentaje de CPU, memoria RAM, disco/almacenamiento, uptime formateado en días/horas/minutos y resumen global de instancias.
+> - Semáforo de salud visual implementado: `Saludable` (< 70%), `Advertencia` (>= 70%) e `Inaccesible` ante respuestas 502/504 o caída de conexión.
+> - Muestra advertencia visual de datos desactualizados si la respuesta contiene `stale: true`.
+> - Pasan 12 de 12 pruebas en `test/front/dashboard-node.test.tsx`.
+> - Observación menor sobre desduplicación de texto en lectores de pantalla canalizada en `FIX-78` de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-19A`, `BAC-29`, `BAC-22`.
+- **Criterio de éxito:** Los datos reales del nodo se visualizan en pantalla y se actualizan sin `F5`. Ante caída de backend la interfaz muestra `Inaccesible` sin romperse.
+
+
+#### `FRN-16` - Máquina de estados "Operación en progreso" por instancia
+
+> [!NOTE]
+> **Estado: Implementada con observaciones (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Al confirmar una acción operativa, se despacha la orden y la fila entra en estado `transitioning`, mostrando un spinner en el botón accionado y bloqueando todos los controles de esa instancia para evitar órdenes concurrentes.
+> - **Observaciones detectadas:** El mapeo diferenciado de los 6 códigos de error acordados en el contrato D2 (`BAC-29`) (`INSTANCE_INVALID_STATE`, `INSTANCE_BUSY`, `INSTANCE_PROTECTED`, `INSTANCE_ACCESS_DENIED`, `PROXMOX_UNAVAILABLE`, `PROXMOX_TIMEOUT`) y el desbloqueo interactivo inmediato de la fila tras un fallo se canalizan en [`FIX-77`](futuro-1.md#fix-77---mapeo-de-errores-http-de-ciclo-de-vida-bac-29-y-resiliencia-de-la-máquina-de-estados-frn-16-frontend) de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-15`, `BAC-29`, `FIX-39`, `FIX-40`, `BAC-24A` y `BAC-24B`.
+- **Criterio de éxito:** Es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso. Los errores devuelven feedback visual claro.
+
+
+#### `FIX-52` - Distinguir `INSTANCE_BUSY` de `INSTANCE_INVALID_STATE` y limpiar código muerto (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Commit `222760d`: `validarEstadoParaAccion` en `instance_handler.go` consulta `tareas_asincronas` antes de evaluar la matriz de estados; si existe una tarea `RUNNING` para el VMID responde inmediatamente `409 INSTANCE_BUSY`.
+> - Se eliminó el método huérfano `ReiniciarInstancia` en `ProxmoxPort` y `client.go`.
+> - Se corrigió el comentario en `EliminarInstancia` reflejando que la validación de estado detenido la realiza el handler.
+> - Pasan las pruebas de regresión en `test/back/fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Una acción consecutiva sobre una instancia con tarea en curso responde `409 INSTANCE_BUSY`; sobre una ya detenida/incompatible responde `409 INSTANCE_INVALID_STATE`.
+
+
+#### `BAC-25B` - Timeout configurable, reintentos y `exitstatus` en el evento
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Se incorporó la variable de entorno `UPID_TIMEOUT` con valor por defecto de 3 minutos (configurable a 5 s en pruebas); al expirar, la tarea pasa a `FAILED` con `motivo: TIMEOUT`.
+> - Se implementaron reintentos con retroceso exponencial ante fallos transitorios en la consulta de estado de tareas en Proxmox.
+> - El evento `TASK_FINISHED` incluye `exitstatus` y `motivo` (`PROXMOX_ERROR` o `TIMEOUT`) con su mensaje descriptivo correspondiente.
+> - Pasan todas las pruebas de la Ola 2 en `test/back/etapa1_ola2_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25A`.
+- **Criterio de éxito:** Seguimiento acotado por `UPID_TIMEOUT`, reintentos resilientes y payload completo de `TASK_FINISHED` según contrato `BAC-29`.
+
+
+#### `FRN-20B` (ex `FRN-14B`) - Filtros reactivos por tipo, estado y buscador dinámico
+
+> [!NOTE]
+> **Estado: Implementada con observaciones (verificado el 09/10/2026, frontend `ee4644c`).**
+> - En `Instances.tsx`, la barra superior incluye buscador en tiempo real por ID y nombre, selector por estado (Todas, En ejecución, Detenidas) y contador de instancias reactivo que opera instantáneamente en memoria.
+> - **Observación detectada:** El selector reactivo por tipo de recurso (VM / LXC) fue implementado dentro de un menú desplegable contextual (`DropdownMenu`) en lugar de botones o pestañas directamente visibles y accesibles en la barra superior; canalizado en [`FIX-79`](futuro-1.md#fix-79---exposición-directa-de-controles-para-selector-reactivo-por-tipo-de-recurso-frn-20b-frontend) de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-20A`.
+- **Criterio de éxito:** El filtrado es instantáneo en memoria del cliente sin peticiones al backend.
+
+
+#### `FIX-48` - Documentar `INSTANCE_INVALID_STATE` en Swagger (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Las especificaciones OpenAPI/Swagger (`backend/docs/swagger.json` y `swagger.yaml`) formalizan el código de respuesta HTTP `409` con clave `INSTANCE_INVALID_STATE` para todas las acciones de ciclo de vida (`start`, `stop`, `shutdown`, `reboot`, `delete`).
+
+- **Área:** Backend
+- **Asignado:** Lucas
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Swagger documenta formalmente `INSTANCE_INVALID_STATE`.
+
+
+#### `FIX-62` - Heurística de circuit breaker y recuperación de telemetría en `nodo_service` (`BAC-22`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Commit `eca422d`: En `backend/internal/core/services/nodo_service.go`, se condicionó la penalización `fallaReciente()`: si no existe lectura previa en caché (`claveNodoUltimo`), no bloquea peticiones durante 5 segundos a ciegas.
+> - Se limpió el estado de fallo permitiendo la recuperación instantánea de telemetría tan pronto como Proxmox vuelve a responder.
+> - Pasan las pruebas unitarias en `nodo_service_test.go` y la prueba de integración `TestEtapa1/BAC-22`.
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-22`.
+- **Criterio de éxito:** El backend se recupera inmediatamente tras el restablecimiento del hipervisor sin quedar en un blackout de 5 segundos cuando no hay caché previa disponible.
+
+

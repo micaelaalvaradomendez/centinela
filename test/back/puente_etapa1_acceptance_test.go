@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -76,29 +77,26 @@ func TestPuenteEtapa1(t *testing.T) {
 		}
 	})
 
-	// BAC-21B se verifica contra su criterio de éxito, no contra la forma sugerida en el entregable:
-	// la tarea propone POST /instances/:vmid/status/:action con alias /start y /stop, pero el criterio
-	// pide que las acciones de energía exijan FULL_ACCESS y queden registradas. Se acepta cualquiera
-	// de las dos rutas.
-	energyPath := func(t *testing.T, vmid int, action string) string {
-		t.Helper()
-		unified := fmt.Sprintf("/instances/%d/status/%s", vmid, action)
-		if status, _ := requestJSON(t, http.MethodPost, unified, adminToken, nil); status != http.StatusNotFound && status != http.StatusMethodNotAllowed {
-			return unified
-		}
-		return fmt.Sprintf("/instances/%d/%s", vmid, action)
+	// BAC-29 y contrato Etapa 1: la ruta canónica y estricta es /instances/:vmid/status/:action.
+	// No se permiten rutas ambiguas o de legado.
+	canonicalEnergyPath := func(vmid int, action string) string {
+		return fmt.Sprintf("/instances/%d/status/%s", vmid, action)
 	}
 
 	t.Run("BAC-21B las acciones de energía exigen FULL_ACCESS y quedan en tareas_asincronas", func(t *testing.T) {
-		// Desde BAC-24A el backend valida el estado previo: en el stub la 101 está running, así que la orden
-		// válida con FULL_ACCESS es stop (start respondería 409 INSTANCE_INVALID_STATE, y eso lo prueba BAC-24A).
+		// Esperar que cualquier tarea previa haya concluido
+		waitForValue(t, "SELECT count(*) FROM tareas_asincronas WHERE estado = 'RUNNING';", "0", 5*time.Second)
 		tasksBefore := queryDatabase(t, "SELECT count(*) FROM tareas_asincronas;")
-		path := energyPath(t, 101, "stop")
-		if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusAccepted {
+		path := canonicalEnergyPath(101, "stop")
+		status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil)
+		if status != http.StatusAccepted {
 			t.Errorf("FULL_ACCESS sobre la 101, stop (%s): esperado 202, recibido %d: %#v", path, status, body)
+		} else {
+			tareaID := requiredString(t, body, "tareaId")
+			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
 		for _, action := range []string{"start", "stop"} {
-			path = energyPath(t, 102, action)
+			path = canonicalEnergyPath(102, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
 				t.Errorf("READ_ONLY sobre la 102, %s (%s): esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", action, path, status, body)
 			}
@@ -109,16 +107,17 @@ func TestPuenteEtapa1(t *testing.T) {
 	})
 
 	t.Run("FIX-39 BAC-21B shutdown y reboot exigen FULL_ACCESS y quedan en tareas_asincronas", func(t *testing.T) {
+		waitForValue(t, "SELECT count(*) FROM tareas_asincronas WHERE estado = 'RUNNING';", "0", 5*time.Second)
 		tasksBefore := queryDatabase(t, "SELECT count(*) FROM tareas_asincronas;")
 		for _, action := range []string{"shutdown", "reboot"} {
-			path := energyPath(t, 101, action)
+			path := canonicalEnergyPath(101, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusAccepted {
 				t.Errorf("FULL_ACCESS sobre la 101, %s (%s): esperado 202, recibido %d: %#v", action, path, status, body)
 			} else {
 				tareaID := requiredString(t, body, "tareaId")
 				waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 			}
-			path = energyPath(t, 102, action)
+			path = canonicalEnergyPath(102, action)
 			if status, body := requestJSON(t, http.MethodPost, path, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
 				t.Errorf("READ_ONLY sobre la 102, %s (%s): esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", action, path, status, body)
 			}
@@ -129,11 +128,8 @@ func TestPuenteEtapa1(t *testing.T) {
 	})
 
 	t.Run("BAC-21B las acciones de energía quedan en auditoria con el upid de la tarea", func(t *testing.T) {
-		// Criterio: "todo se registra en auditoria". La forma (columnas accion/instancia_id o claves de
-		// detalles) es libre; se exige una fila de la 101 que lleve el upid de la acción. Se espera hasta
-		// 15 s por si se audita al terminar la tarea (TASK_FINISHED).
-		// La 101 está running en el stub: stop es la orden válida (BAC-24A valida el estado previo).
-		status, body := requestJSON(t, http.MethodPost, energyPath(t, 101, "stop"), operatorToken, nil)
+		waitForValue(t, "SELECT count(*) FROM tareas_asincronas WHERE estado = 'RUNNING';", "0", 5*time.Second)
+		status, body := requestJSON(t, http.MethodPost, canonicalEnergyPath(101, "stop"), operatorToken, nil)
 		if status != http.StatusAccepted {
 			t.Fatalf("stop sobre la 101: esperado 202, recibido %d: %#v", status, body)
 		}
@@ -330,11 +326,8 @@ func TestPuenteEtapa1(t *testing.T) {
 			}
 		}()
 
-		// 102 (lxc) está detenida en el stub: start es válido aunque el backend valide el estado previo (BAC-24A).
-		status, body = edgeRequest(http.MethodPost, "/instances/102/start")
-		if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
-			status, body = edgeRequest(http.MethodPost, "/instances/102/status/start")
-		}
+		// 102 (lxc) está detenida en el stub: start es válido con la ruta canónica /status/start (BAC-21B).
+		status, body = edgeRequest(http.MethodPost, "/instances/102/status/start")
 		if status != http.StatusAccepted {
 			t.Fatalf("start de la 102 por el borde: esperado 202, recibido %d: %#v", status, body)
 		}
@@ -361,6 +354,82 @@ func TestPuenteEtapa1(t *testing.T) {
 				return
 			case <-deadline:
 				t.Fatalf("no llegó TASK_FINISHED de la tarea %s por el borde en 8 s: Nginx retiene el stream o el backend no lo emitió", tareaID)
+			}
+		}
+	})
+
+	t.Run("RNF-07_bus_PubSub_Redis_multirreplica_propaga_eventos_entre_instancias_backend", func(t *testing.T) {
+		smtpURL := envOrDefault("BACKEND_TEST_SMTP_API_URL", "http://127.0.0.1:18081/api")
+
+		waitForValue(t, "SELECT count(*) FROM tareas_asincronas WHERE estado = 'RUNNING';", "0", 5*time.Second)
+
+		status, body := requestJSON(t, http.MethodPost, "/events/ticket", adminToken, nil)
+		if status != http.StatusOK {
+			t.Fatalf("POST /events/ticket en backend 1: esperado 200, recibido %d: %#v", status, body)
+		}
+		ticket := requiredString(t, body, "ticket")
+
+		events := make(chan map[string]any, 10)
+		req, err := http.NewRequest(http.MethodGet, apiURL+"/events?ticket="+ticket, nil)
+		if err != nil {
+			t.Fatalf("error creando request SSE: %v", err)
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("error conectando SSE en backend 1: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("SSE backend 1: esperado 200, recibido %d", resp.StatusCode)
+		}
+
+		go func() {
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "data: ") {
+					payload := strings.TrimPrefix(line, "data: ")
+					var event map[string]any
+					if json.Unmarshal([]byte(payload), &event) == nil {
+						events <- event
+					}
+				}
+			}
+		}()
+
+		reqAction, err := http.NewRequest(http.MethodPost, smtpURL+"/instances/102/status/start", nil)
+		if err != nil {
+			t.Fatalf("error creando request a backend 2: %v", err)
+		}
+		reqAction.Header.Set("Authorization", "Bearer "+adminToken)
+		respAction, err := http.DefaultClient.Do(reqAction)
+		if err != nil {
+			t.Fatalf("error ejecutando acción en backend 2: %v", err)
+		}
+		defer respAction.Body.Close()
+		bodyBytes, _ := io.ReadAll(respAction.Body)
+		if respAction.StatusCode != http.StatusAccepted {
+			t.Fatalf("start en backend 2: esperado 202, recibido %d: %s", respAction.StatusCode, string(bodyBytes))
+		}
+		var actionBody map[string]any
+		json.Unmarshal(bodyBytes, &actionBody)
+		tareaID := requiredString(t, actionBody, "tareaId")
+
+		deadline := time.After(8 * time.Second)
+		for {
+			select {
+			case ev := <-events:
+				detalles, _ := ev["detalles"].(map[string]any)
+				if ev["tipo"] == "TASK_FINISHED" && detalles["tareaId"] == tareaID {
+					if ev["recursoId"] != "102" {
+						t.Errorf("TASK_FINISHED recibido con recursoId %v, esperado 102", ev["recursoId"])
+					}
+					t.Logf("RNF-07 verificado: evento de tarea %s emitido por backend 2 recibido en SSE de backend 1 vía Redis Pub/Sub", tareaID)
+					return
+				}
+			case <-deadline:
+				t.Fatalf("timeout: no se recibió TASK_FINISHED de la tarea %s emitida por backend 2 en el SSE de backend 1. El bus Redis Pub/Sub multirréplica falló", tareaID)
 			}
 		}
 	})
