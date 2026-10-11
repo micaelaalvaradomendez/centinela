@@ -33,6 +33,7 @@ Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los 
 | `instances-modals.test.tsx` | **FRN-15** (modales de confirmación antierror) |
 | `instances-operation.test.tsx` | **FRN-16** (máquina de estados operación en progreso, errores D2) |
 | `instances-ola2.test.tsx` | **FRN-20B** (filtros reactivos, buscador dinámico) |
+| `int02-e2e.test.ts` | **INT-02** (Smoke test integral de 7 pasos con código real de frontend contra el backend real) |
 
 ## Ejecutar
 

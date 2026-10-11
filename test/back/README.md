@@ -35,6 +35,10 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `simulador_proxmox_acceptance_test.go` | Verificación del stub de Proxmox VE, tokens de API y switches de prueba |
 | `fixes_acceptance_test.go` | Pruebas de regresión para FIX-44 a FIX-70 |
 | `login04_integracion_front_back_test.go` | **LOGIN-04** con el código real del frontend (`test/front/login04-e2e.test.ts`) contra este backend |
+| `int01_acceptance_test.go` | **INT-01** (Bloque 6 de `etapa1.md`): ciclo de vida completo (start, stop, shutdown, reboot, delete), sondeo UPID, timeout, TASK_FINISHED RBAC, auditoría dual y limpieza BAC-24C |
+| `int02_acceptance_test.go` | **INT-02** (Bloque 6 de `etapa1.md`): Smoke test integral del MVP en local (flujo de 7 pasos: login 2FA, dashboard, inventario, acción 202, evento, auditoría, borrado) |
+| `int02_integracion_front_back_test.go` | **INT-02** front ↔ back: orquestación de `test/front/int02-e2e.test.ts` con el código real del frontend contra el stack |
+| `int03_acceptance_test.go` | **INT-03** (Bloque 6 de `etapa1.md`): validación sobre Nginx Edge TLS en HTTPS (:18453), SSE sin buffering, VMIDs protegidos y tolerancia de hipervisor |
 
 ## Aislamiento de la red real
 

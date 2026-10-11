@@ -359,52 +359,11 @@ Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a 
 
 ## 🛠️ Fix detectado el 08/10/2026: Conexión y reintentos de Redis en arranque
 
-### `FIX-71` - Robustecer reconexión y reintentos ante arranque en frío de Redis (`INF-06` / `BAC-17A`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Lucas
-- **Estimación:** 1 h
-- **Depende de:** `BAC-17A` e `INF-06` (en `terminado.md`).
-- **Problema técnico detallado:**
-  Al ejecutar las pruebas unitarias del paquete `backend/internal/adapters/secondary/redis` (`go test ./internal/adapters/secondary/redis/...`), la prueba `TestConectar/se_recupera_si_Redis_aparece_durante_los_reintentos` falla sistemáticamente:
-  ```
-  kv_store_test.go:79: Debe conectar cuando Redis aparece en un reintento: redis no responde en 127.0.0.1:46429: dial tcp 127.0.0.1:46429: connect: connection refused
-  ```
-  En `backend/internal/adapters/secondary/redis/kv_store.go`, la función `Conectar` utiliza `store := Nuevo(cfg)` y ejecuta un bucle de 3 intentos de `Ping` espaciados con `esperaArranque = 500ms`. Sin embargo, el cliente `goredis.NewClient` inicializa internamente un pool de conexiones con `DialerRetries: 2` y `MaxRetries: 3`. Cuando el socket no está disponible de inmediato (arranque en frío o Redis levantando de forma asíncrona unos cientos de milisegundos más tarde), el pool retiene errores de conexión o agota sus reintentos internos sin refrescar el estado del socket entre ciclos de sondeo, o el contexto de la prueba simula el reinicio de forma que el cliente no logra negociar la reconexión limpia en el tiempo estipulado.
-- **Qué debe hacer el equipo de backend:**
-  1. En `kv_store.go`, asegurar que la estrategia de arranque en frío y reintentos de `Conectar` renueve el intento de conexión o limpie las conexiones muertas del pool cuando `Ping` retorne `connection refused`.
-  2. Ajustar la sincronización de reintento en `kv_store_test.go` para garantizar que la reactivación del servidor de prueba en segundo plano (`srv.StartAddr` / `srv.Restart`) sea tolerada y verificada de manera determinística por la función `Conectar`.
-  3. Ejecutar localmente `go test -v ./internal/adapters/secondary/redis/...` en el backend y certificar que `TestConectar` pase 100% en verde.
-- **Criterio de éxito:**
-  - `go test ./internal/adapters/secondary/redis/...` pasa en verde sin fallos de conexión.
-  - El backend tolera arrancar cuando Redis tarda hasta 2-3 segundos en estar listo para aceptar conexiones TCP.
 
 ---
 
 ## 🛠️ Fixes detectados en la verificación del 09/10/2026: Auditoría y entorno de pruebas
 
-### `FIX-74` - Reactividad de filtros y etiquetas accesibles en vista de Auditoría (`FRN-14` / `FIX-36`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Luz
-- **Estimación:** 1,5 h
-- **Depende de:** `FRN-14`, `FIX-36` (en `terminado.md`).
-- **Problema técnico detallado:**
-  Al ejecutar las pruebas unitarias y de integración de la vista de Auditoría (`frontend/centinela/src/test/audit.test.tsx` y `test/front/audit.test.tsx`), fallan los casos:
-  - `AuditoriaPage > Reactividad de Filtros: debe invocar al endpoint con los query params al cambiar los filtros`
-  - `FRN-14 - Suite de pruebas para vista de Auditoría > actualiza los query parameters de filtro al cambiar los selectores reactivos`
-  El error lanzado por Testing Library es:
-  ```
-  TestingLibraryElementError: Unable to find a label with the text of: Desde
-  ```
-  En `Auditoria.tsx` (y sus controles subordinados), los inputs de filtrado temporal ("Desde", "Hasta") y el selector de "Acción" no exponen un `aria-label` o `<label>` asociado que coincida con el contrato de accesibilidad requerido por las pruebas. Además, al modificar interactivamente estos selectores, la vista no dispara la actualización reactiva ni traslada los query parameters (`?desde=...&hasta=...&accion=...`) a la petición `GET /api/admin/audit`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/pages/Auditoria.tsx`, asignar `aria-label="Desde"` y `aria-label="Hasta"` a los campos de rango de fechas, y `aria-label="Acción"` al selector de tipo de acción.
-  2. Implementar la sincronización reactiva del estado para que ante cualquier cambio en estos filtros se invoque a `auditService.getAuditLogs` con los parámetros URL correspondientes.
-  3. Ejecutar `npm test src/test/audit.test.tsx` en `frontend/centinela` y certificar que todos los casos pasen en verde.
-- **Criterio de éxito:**
-  - `npm test src/test/audit.test.tsx` en el frontend pasa al 100% sin errores de elementos no encontrados.
-  - La vista de auditoría filtra reactivamente en función de los criterios seleccionados y cumple con accesibilidad.
 
 
 ### `FIX-75` - Detección de conectividad saliente y tolerancia a puerto 587 bloqueado en suite de aceptación (`INF-08B`) (Infraestructura / Pruebas)
@@ -422,25 +381,4 @@ Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a 
   2. Mantener la aserción estricta de variables en `backend/.env.example` y la verificación de credenciales cuando la conectividad esté disponible.
 - **Criterio de éxito:**
   - `go test -v -run TestCierreFaseBase .` en `test/back` no bloquea por timeouts externos y pasa en verde.
-
-
-### `FIX-80` - Alineación textual y normalización de copy en vistas de autenticación (`FIX-59`) (Frontend)
-
-- **Área:** Frontend / UI
-- **Asignado:** Belinda / Nico
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-59`.
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/components/layout_auth/MainLayoutAuth.tsx`, el placeholder informal `"imagenes y informacion random"` fue eliminado con éxito y se incorporaron explicaciones sobre la infraestructura Proxmox VE y el valor de seguridad de 2FA. Sin embargo, la suite de pruebas `test/front/auth-branding.test.tsx` verifica la existencia de encabezados y títulos estructurados específicos acordados en las especificaciones de diseño:
-  - *"Tu infraestructura virtual, simplificada y bajo control"* (en el headline principal).
-  - *"Protección de infraestructura con doble factor"* (en la tarjeta de seguridad 2FA).
-  Adicionalmente, en la suite de pruebas de testing library, el uso de expresiones regulares amplias sobre selectores singulares provoca fallos por coincidencia múltiple de texto si no se estructuran jerárquicamente.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `MainLayoutAuth.tsx`, alinear el titular `HEADLINE` y el título del beneficio de 2FA en el array de `features` con las frases literales aprobadas en la especificación.
-  2. Mantener la estética responsiva, los efectos de animación y la legibilidad en pantallas reducidas.
-  3. Ejecutar `npx vitest run auth-branding.test.tsx` y comprobar que la suite pase al 100% en verde.
-- **Criterio de éxito:**
-  - El layout de autenticación contiene los textos institucionales precisos aprobados para Centinela y 2FA.
-  - La suite `auth-branding.test.tsx` pasa todos sus casos (incluido `FIX-59`).
-
 

@@ -296,60 +296,6 @@ flowchart TD
 > `BAC-24A` completa la energía y **`BAC-24B` crea el `DELETE` completo**, que no hace ninguna de las dos.
 
 
-#### `BAC-24C` - Limpieza de permisos al eliminar una instancia (nueva)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-24B` y `BAC-25B`.
-- **Problema:** `/cluster/nextid` devuelve el menor VMID libre. Si se borra la 110 y después se crea otra instancia, recibe el 110 y **hereda las filas de `permisos_instancia`** de la borrada: un operador tendría acceso a una máquina que no se le asignó.
-- **Entregable:**
-  - Cuando una tarea de borrado termina con `COMPLETED`, eliminar en una transacción las filas de `permisos_instancia` de ese VMID.
-  - Registrar la limpieza en `auditoria` con `accion: INSTANCE_PERMISSIONS_PURGED` y la lista de usuarios afectados.
-  - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
-  - Si la tarea falla, no se toca nada.
-- **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
-
-
-
-#### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-25B` y `BAC-21C` (terminada: canal SSE, Pub/Sub y filtro por permiso).
-- **Contexto:** el canal ya existe; esta tarea **no crea uno nuevo**. Verifica y documenta la emisión para las cinco acciones.
-- **Entregable:**
-  1. Pruebas en `eventos_service_test.go` (o de integración) para `start`, `shutdown`, `stop`, `reboot` y `delete`, con el payload de `BAC-29`. Ejemplo:
-     ```json
-     {
-       "id": "0192…",
-       "tipo": "TASK_FINISHED",
-       "severidad": "INFO",
-       "recursoTipo": "VM",
-       "recursoId": "101",
-       "mensaje": "La tarea de encendido finalizó correctamente",
-       "fechaHora": "2026-10-01T13:30:00Z",
-       "detalles": { "tareaId": "0192…", "accion": "start", "estado": "COMPLETED", "exitstatus": "OK" }
-     }
-     ```
-  2. Actualizar `docs/contrato-eventos.md` y `docs/eventos-tiempo-real.md`.
-- **Criterio de éxito:** los clientes conectados reciben el evento al terminar cada tarea. Un OPERATOR sin permiso sobre la instancia no lo recibe; uno con `READ_ONLY` sí.
-
-#### `BAC-27` - Auditoría del resultado de las acciones de ciclo de vida en `auditoria` (`RF-08`)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:**
-  - `BAC-18` y `FIX-23` (terminadas);
-  - `FIX-39` (registra la orden despachada; la del `DELETE`, `BAC-24B`);
-  - `BAC-25B`;
-  - `BAC-18B` (particionamiento de `auditoria`, que tiene que estar mergeado antes).
-- **Entregable:**
-  - Para cada tarea que termina, registrar en `auditoria` una segunda entrada con el mismo `upid` y `tareaId` que la de `FIX-39`, más `status: "SUCCESS"` o `"FAILED"` y `exitstatus`.
-  - La entrada de la orden despachada (`PENDING`) la hacen `FIX-39` y `BAC-24B`. Acá solo se verifica que tenga `action`, `user_id`, `resource_id` y `upid`.
-- **Criterio de éxito:**
-  - Cada acción deja exactamente dos registros correlacionados por `upid`, sin migraciones de esquema nuevas.
-  - Las tareas vencidas por timeout quedan como `FAILED`.
-  - `GET /api/admin/audit` permite filtrar por `accion`.
 
 ---
 
@@ -360,49 +306,11 @@ flowchart TD
 
 
 
-#### `FRN-19C` (`BRG-05-FRN`, parte Dashboard) - Tarjetas de conteo de VMs/LXC con auto-actualización (`RF-02`)
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-22B`, `FRN-19B` y `FRN-17A`.
-- **Entregable:** tarjetas de resumen de VMs y LXC (`En ejecución`, `Detenidas`, `Total`) con los datos de `instancesSummary`. Usan la misma consulta cada 10 s de `FRN-19B` y vuelven a consultar al recibir cualquier `TASK_FINISHED`.
-- **Criterio de éxito:** después de encender una VM, el conteo cambia sin `F5` en menos de 2 s desde el evento.
-
-
-
-#### `FRN-20C` (`BRG-05-FRN`, parte Inventario) - Columnas de CPU/RAM y estado en vivo en el Inventario (`RF-03`) (nueva, separada de `FRN-19C`)
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22B`, `FRN-20A` y `FRN-17A`.
-- **Entregable:**
-  1. Columnas de CPU (`%`) y RAM (`GB usados / GB totales`), con `-` si vienen en `null`.
-  2. Ante cualquier `TASK_FINISHED` recibido, aunque la acción la haya iniciado otro usuario, volver a consultar la fila o la lista para actualizar estado y métricas. Si la acción fue `delete` y terminó `COMPLETED`, quitar la fila.
-- **Criterio de éxito:** si otro usuario apaga una VM, la fila cambia a `Stopped` sin `F5`.
-
 ---
 
 ### Bloque 5: Frontend - Controles de Energía y Gestión de Estados
 
 
-
-#### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-16`, `FRN-17A` y `BAC-26` (`exitstatus` en `detalles`).
-- **Entregable:**
-  - Al recibir un `TASK_FINISHED` con el mismo `detalles.tareaId` que una fila en transición, quitar el bloqueo y el spinner.
-  - Actualizar el badge de estado (`Running` / `Stopped`).
-  - Mostrar un toast (`components/ui/toast.tsx`):
-    - verde si `estado: COMPLETED`;
-    - rojo si `FAILED`, con un mensaje distinto según `detalles.motivo` (D2):
-      - `PROXMOX_ERROR`: "Proxmox no pudo completar la acción", con `detalles.error`;
-      - `TIMEOUT`: "La acción no terminó en 3 minutos; revisá el estado de la instancia".
-  - Si la acción fue `delete`, quitar la fila.
-- **Criterio de éxito:** la interfaz actualiza el estado y libera los botones sin `F5`.
 
 ---
 
@@ -470,103 +378,6 @@ flowchart TD
 > 3. El frontend carece de una vista de Detalle de Instancia (`/instances/:vmid`); sin ella, no existe el contenedor de interfaz donde alojar los gráficos de métricas (`RF-05`) ni el modal de edición (`RF-10`).
 > 4. Nginx en el borde fue configurado solo para SSE en `INF-07B`; requiere actualización para soportar WebSockets y streaming bidireccional.
 
-#### `BAC-30` (`BRG-06-BAC`) - Extensión del simulador de Proxmox para Aprovisionamiento, Storages y RRDdata (`RF-05`, `RF-07`)
-
-- **Área:** Backend / Testing
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-28` y `FIX-35` (en `terminado-1.md`).
-- **Problema:** El simulador actual solo responde a acciones de ciclo de vida de energía, inventario, borrado e interfaces de red. Para desarrollar y probar la Etapa 2 en local (siguiendo la premisa de no depender del servidor real), el simulador debe soportar:
-  1. `POST /nodes/{node}/qemu` y `POST /nodes/{node}/lxc`: retornar un UPID válido de tipo `qmcreate` / `vzcreate`.
-  2. `PUT /nodes/{node}/{tipo}/{vmid}/config`: actualizar núcleos y memoria simulados.
-  3. `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content`: listar storages (`local`, `local-lvm`) y contenidos (templates LXC e imágenes ISO).
-  4. `GET /nodes/{node}/{tipo}/{vmid}/rrddata`: retornar array de métricas simuladas (CPU, RAM, red, disco).
-- **Entregable:**
-  - Nuevos handlers y rutas en `backend/cmd/proxmox-simulador`.
-  - Casos de prueba en `backend/cmd/proxmox-simulador/simulador_test.go` verificando respuestas y tipos de datos idénticos a Proxmox VE 9.x.
-- **Criterio de éxito:** Las suites de prueba y el desarrollo de la Etapa 2 pueden crear, editar y consultar métricas contra el simulador local sin errores `501 Not Implemented`.
-
-#### `BAC-31` (`BRG-07-BAC`) - Endpoints de inventario de Almacenamiento, Plantillas e ISOs (`RF-07`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-14`, `BAC-30`.
-- **Problema:** El asistente de creación (Paso 3 de `RF-07`) requiere seleccionar en qué storage se creará el disco y qué plantilla LXC o imagen ISO se usará. Actualmente el backend no expone ningún endpoint de storages ni de contenidos del hipervisor.
-- **Entregable:**
-  1. Método en el cliente Proxmox para consumir `/nodes/{node}/storage` y `/nodes/{node}/storage/{storage}/content`.
-  2. Endpoints protegidos con rol `ADMIN`:
-     - `GET /api/node/storages`: lista storages habilitados con tipo, espacio total y libre.
-     - `GET /api/node/templates`: lista imágenes ISO y templates LXC disponibles normalizados.
-  3. Documentación en Swagger e inventario de errores.
-- **Criterio de éxito:** Un administrador consulta `GET /api/node/storages` y `GET /api/node/templates` y recibe el listado estructurado de discos e imágenes disponibles. Un operador recibe `403 Forbidden`.
-
-#### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-25B`, `BAC-24C`.
-- **Problema:** En la Etapa 1, el worker de seguimiento de UPID solo maneja acciones de energía y borrado. Cuando se crea una instancia (`qmcreate`/`vzcreate`), la máquina aún no existe en el inventario durante la tarea. Al finalizar la creación con éxito:
-  1. El creador debe quedar automáticamente registrado con `FULL_ACCESS` en `permisos_instancia` para ese nuevo `vmid` (`RF-07`).
-  2. El evento `TASK_FINISHED` debe emitirse con `accion: "create"` y `recursoId: vmid`.
-- **Entregable:**
-  - Soporte de acciones `create` en `seguimiento_tareas.go`.
-  - Integración con el repositorio de permisos: al registrarse `COMPLETED` para una tarea `create`, insertar atómicamente `(usuario_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
-- **Criterio de éxito:** Al concluir una tarea de creación, el usuario creador ve inmediatamente la instancia asignada con permisos operativos y recibe el evento `TASK_FINISHED` correspondiente.
-
-#### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22`, `BAC-29`.
-- **Problema:** `GET /api/node/status` informa el consumo físico actual del nodo, pero el asistente de creación necesita saber exactamente cuánta memoria RAM y disco pueden asignarse con seguridad sin comprometer la estabilidad del host físico (margen de seguridad / headroom).
-- **Entregable:**
-  - Exponer en `GET /api/node/status` (o endpoint auxiliar `GET /api/node/quota`) el objeto `allocatable`:
-    `{ maxCpuCores: number, freeRamMb: number, freeStorageGb: number, headroomPercent: number }`, reservando un 15% de RAM física para el sistema operativo base de Proxmox.
-- **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
-
-#### `FRN-21` (`BRG-06-FRN`) - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde notificaciones (`RF-03`, `RF-11`)
-
-- **Área:** Frontend
-- **Asignado:** Cristian / Belinda
-- **Estimación:** 2.5 h
-- **Depende de:** `FRN-20A`, `FRN-17B`.
-- **Problema:** En `etapa1.md`, la nota 45 pospuso el enlace de los toasts al detalle de la instancia porque la vista no existía. Sin esta pantalla, la Etapa 2 no tiene contenedor donde montar los gráficos de métricas (`RF-05`) ni la edición de recursos (`RF-10`).
-- **Entregable:**
-  1. Ruta `/instances/:vmid` bajo `ProtectedLayout` con guard de sesión y permiso de acceso.
-  2. Componente de vista `InstanceDetailPage.tsx` con:
-     - Cabecera con nombre, ID, tipo, IP, badge de estado y botonera de acciones (`InstanceAction.tsx`).
-     - Navegación por pestañas: "General" (información básica y métricas estáticas), "Métricas" (contenedor placeholder para gráficos de Etapa 2) y "Configuración" (contenedor placeholder para edición de Etapa 2).
-     - Botón de retorno / breadcrumb hacia `/instances`.
-  3. Vincular la tabla de inventario (`Instances.tsx`) y los toasts de notificación (`FRN-17B`) con enlace directo a `/instances/:vmid`.
-- **Criterio de éxito:** Al hacer clic en una fila o en un toast de tarea completada, la aplicación navega a `/instances/:vmid` mostrando los datos reales de la máquina y sus pestañas base listas.
-
-#### `INF-09` (`BRG-06-INF`) - Configuración de Nginx para WebSockets y Streaming bidireccional (`RNF-06`)
-
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1.5 h
-- **Depende de:** `INF-07B`.
-- **Problema:** `INF-07B` configuró Nginx para SSE unidereccional. La telemetría en tiempo real de la Etapa 2 (`RF-05`) utiliza WebSockets (`/api/ws/*` o `/ws/*`), que requieren encabezados `Upgrade` y `Connection: "upgrade"`, además de timeouts extendidos para no interrumpir sesiones activas de monitoreo.
-- **Entregable:**
-  - Actualizar `docker/nginx-edge.conf` y la plantilla de despliegue del CT 103 con soporte de WebSockets:
-    `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s;`.
-- **Criterio de éxito:** Una conexión WebSocket establecida a través de Nginx completa el handshake HTTP 101 y se mantiene abierta transmitiendo datos sin cortes por buffer o timeout.
-
-#### `INF-07C` (`BRG-07-INF`) - Ampliación de privilegios del Token de Proxmox para Aprovisionamiento (`RF-07`, `RF-10`)
-
-- **Área:** Infraestructura
-- **Asignado:** Nico / Lucas
-- **Estimación:** 1.0 h
-- **Depende de:** `INF-07`.
-- **Problema:** El API Token actual (`centi-api@pve!backend-token`) solo posee `VM.PowerMgmt`, `Sys.Audit` y lectura. Si intenta crear instancias o reconfigurar cores/RAM en la Etapa 2, Proxmox rechazará las peticiones con `403 Permission check failed`.
-- **Entregable:**
-  - Incorporar los permisos `VM.Allocate`, `Datastore.AllocateSpace`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network` al rol del token en Proxmox VE.
-  - Verificar permisos con `pveum user permissions` o llamada de prueba con `curl`.
-  - Actualizar la documentación en `documentacion/api-proxmox.md`.
-- **Criterio de éxito:** El token permite consultar storages, crear contenedores de prueba y modificar configuraciones sin errores de autorización.
 
 ---
 
