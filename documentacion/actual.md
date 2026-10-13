@@ -3,25 +3,11 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Reorganización del 13/10/2026:** tras verificar los submódulos (`backend 6afc017`, `frontend 7fcc0bd`) con las suites de aceptación, se movieron a [`terminado.md`](terminado.md) y [`terminado-1.md`](terminado-1.md) las tareas de este archivo que ya están implementadas (con su bloque de estado verificado), y se registraron en [`futuro.md`](futuro.md)/[`futuro-1.md`](futuro-1.md) las correcciones de las que quedaron con problemas (`FIX-81` a `FIX-86`).
+> **Estado del tablero (13/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de resolución** de la Etapa 1 y los `FIX` abiertos. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md).
 >
-> **En este archivo permanecen únicamente las tareas NO implementadas:**
->
-> | Tarea | Área | Tema | Pruebas / Alcance |
-> |---|---|---|---|
-> | `BAC-24C` | Backend | Limpieza de permisos al eliminar una instancia | `int01_acceptance_test.go` (Paso 6) |
-> | `BAC-31` | Backend | `GET /node/storages` y `/node/templates` | `etapa1_ola3_acceptance_test.go` |
-> | `BAC-32` | Backend | Worker UPID de creación y autoasignación de permisos | `etapa1_ola3_acceptance_test.go` |
-> | `BAC-33` | Backend | Cuotas asignables del host (`allocatable`) | `etapa1_ola3_acceptance_test.go` |
-> | `FRN-21` | Frontend | Vista `/instances/:vmid` | `instance-detail.test.tsx` |
-> | `INF-07C` | Infraestructura | Permisos del token Proxmox (documentación) | `etapa1_ola3_acceptance_test.go` |
-> | `FIX-74` | Frontend | Reactividad y accesibilidad de la Auditoría | `audit.test.tsx` |
-> | `FIX-79` | Frontend | Selector de tipo visible en el Inventario | `instances-ola2.test.tsx` |
-> | `FIX-80` | Frontend | Copy institucional de autenticación | `auth-branding.test.tsx` |
->
-> **Tareas movidas (implementadas):**
-> - `terminado.md`: `FIX-55`, `FIX-71`; con problemas: `FIX-54` (⚠️ `FIX-81`), `FIX-56` (⚠️ `FIX-82`).
-> - `terminado-1.md`: `BAC-26`, `BAC-27`, `FRN-17B`, `FRN-20C`, `FIX-72`, `FIX-78`, `INF-09`; con problemas: `FRN-19C` (⚠️ `FIX-83`), `BAC-30` (⚠️ `FIX-84`), `FIX-76` (⚠️ `FIX-85`), `FIX-77` (⚠️ `FIX-86`).
+> **Pasados a `terminado-1.md` el 13/10/2026 (ya resueltos, sin trabajo pendiente):**
+> - `FIX-73` — sincronización de tareas consecutivas en `test/back` (ya aplicada en este repo; `TestPuenteEtapa1` en verde).
+> - `FIX-78` — desduplicación del semáforo del nodo (`dashboard-node.test.tsx` 12/12).
 
 Hito: Gestión Administrativa de Usuarios
 
@@ -278,32 +264,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - La suite `instances-modals.test.tsx` pasa al 100% (6/6 en verde).
 
 
-### `FIX-78` - Desduplicación de indicadores de salud del nodo y accesibilidad en Dashboard (`FRN-19B`) (Frontend)
-
-> [!NOTE]
-> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada y con test en verde.** `dashboard-node.test.tsx` (12/12) pasa: el estado de salud del nodo no se duplica (accesibilidad) y el Dashboard refleja 502/504 como "Inaccesible".
-
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Luz
-- **Estimación:** 1 h
-- **Depende de:** `FRN-19B`.
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/pages/Dashboard.tsx`, el estado de salud del nodo (`nodeHealth.label`: "Saludable", "Advertencia", "Inaccesible") se renderiza simultáneamente en dos componentes:
-  1. En la cabecera de la tarjeta de recursos (`Dashboard.tsx:136`): `<Badge variant="outline">{nodeHealth.label}</Badge>`.
-  2. En el pie de página de estado del sistema (`Dashboard.tsx:211`): `<p className="text-caption">{nodeHealth.label}</p>`.
-  Esta duplicación genera colisiones al evaluar la interfaz con lectores de pantalla o Testing Library (`findByText(/saludable/i)` y `findByText(/inaccesible/i)` fallan con `Found multiple elements with the text of: ...`). Asimismo, cuando el nodo está cargando o en error 502/504, los skeletons y las alertas de accesibilidad deben identificarse unívocamente sin interferir con otras tarjetas.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `Dashboard.tsx`, diferenciar semánticamente los textos o asignar atributos de accesibilidad inequívocos (`aria-label="Estado general del nodo: Saludable"` o dejar el semáforo principal en la tarjeta de recursos y usar una descripción extendida o etiqueta diferenciada en el pie).
-  2. Asegurar que las respuestas 502 y 504 reflejen inequívocamente la etiqueta `Inaccesible` en el semáforo de recursos.
-  3. Ejecutar `npx vitest run dashboard-node.test.tsx` y comprobar que todos los casos pasen en verde.
-- **Criterio de éxito:**
-  - `dashboard-node.test.tsx` pasa al 100% sin colisiones de texto duplicado.
-  - La experiencia visual y de accesibilidad es nítida tanto para usuarios videntes como para lectores de pantalla.
-
-
-
-
 #### `FRN-19C` (`BRG-05-FRN`, parte Dashboard) - Tarjetas de conteo de VMs/LXC con auto-actualización (`RF-02`)
 
 > [!WARNING]
@@ -417,27 +377,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-### `FIX-73` - Sincronización y manejo determinista de tareas consecutivas en acciones de energía (`BAC-21B` / `FIX-39` / `FIX-33`) (Backend / pruebas)
-
-- **Área:** Backend / pruebas
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 1,5 h
-- **Depende de:** `BAC-21B` (en `terminado-1.md`), `FIX-33`, `BAC-24A`.
-- **Problema técnico detallado:**
-  En `test/back/puente_etapa1_acceptance_test.go`, las pruebas `FIX-39 BAC-21B shutdown y reboot exigen FULL_ACCESS` y `BAC-21B las acciones de energía quedan en auditoria` fallan con:
-  ```
-  409 INSTANCE_BUSY: "La instancia se encuentra ejecutando otra tarea. Aguarde a que finalice."
-  ```
-  Al emitirse una orden de energía (ej. `stop` sobre la 101), el backend registra la tarea en estado `RUNNING`. Cuando de inmediato se despacha otra acción de ciclo de vida (`shutdown`, `reboot` u otro `stop`), el control de concurrencia de `FIX-33` rechaza la segunda orden con `409 INSTANCE_BUSY`. Aunque el rechazo con 409 es la conducta esperada ante instancias ocupadas, la prueba o el cliente que encadena acciones debe sincronizar la finalización de la tarea precedente antes de disparar la siguiente, y la función de sondeo `energyPath` no debe emitir peticiones mutantes con token administrativo que inicien tareas no esperadas.
-- **Qué debe hacer el equipo:**
-  1. En las pruebas de aceptación de ciclo de vida, esperar a que la tarea previa pase a `COMPLETED` o `FAILED` antes de despachar una nueva orden sobre el mismo VMID.
-  2. Asegurar que `energyPath` inspeccione las rutas sin mutar el estado de la instancia en Proxmox.
-  3. Validar que la transición de estados y la auditoría registren cada tarea con su UPID correspondiente.
-- **Criterio de éxito:**
-  - La suite `TestPuenteEtapa1` pasa 100% en verde sin fallos espurios de `INSTANCE_BUSY`.
-  - Cada orden de energía se procesa y audita ordenadamente.
-
-
 ### `FIX-83` - Refrescar el conteo de instancias ante `TASK_FINISHED` (`FRN-19C`) (Frontend)
 
 - **Área:** Frontend
@@ -484,15 +423,14 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Estimación:** 2 h
 - **Depende de:** `FIX-77` (en `terminado-1.md`), `FRN-16`, `BAC-29`.
 - **Problema técnico detallado:**
-  `test/front/instances-operation.test.tsx` queda con **4 fallos** (de 9) tras corregir en este repo la redacción esperada del 502 (`PROXMOX_UNAVAILABLE`), que ya no cuenta:
-  1. `al confirmar envía la orden por la ruta del contrato y, mientras está en curso, bloquea toda la fila con un spinner`.
-  2. `D2: 403 'INSTANCE_PROTECTED' muestra su mensaje y desbloquea la fila`.
-  3. `D2: 403 'INSTANCE_ACCESS_DENIED' muestra su mensaje y desbloquea la fila`.
-  4. `los seis mensajes de D2 son distintos entre sí`.
-  Los 403 no exponen el mensaje propio del código: el flujo de `403` (aviso global de `apiClient`/`ApiResponseNotifier`) muestra el texto crudo del backend en lugar de la traducción de `errorMapper` (`INSTANCE_PROTECTED` → "infraestructura crítica"; `INSTANCE_ACCESS_DENIED` → "no posee permisos operativos"), mientras que los `409` y `PROXMOX_TIMEOUT` sí se traducen.
+  `test/front/instances-operation.test.tsx` queda con **3 fallos** (de 9) y **todos son del mapeo de errores `403`**. Las otras dos causas ya se corrigieron en este repo (la redacción esperada del `502` y el caso principal, que además tenía dos defectos propios: exigía deshabilitar el botón de *copiar IP* y comprobaba el bloqueo con un helper siempre verdadero por el `<span role="status">` de ese botón):
+  1. `D2: 403 'INSTANCE_PROTECTED' muestra su mensaje y desbloquea la fila`.
+  2. `D2: 403 'INSTANCE_ACCESS_DENIED' muestra su mensaje y desbloquea la fila`.
+  3. `los seis mensajes de D2 son distintos entre sí` (consecuencia de 1 y 2).
+  En `components/common/ConfirmUserAction.tsx` los `401/403` **no** se muestran en el modal (se delegan al aviso global): `if (!(error instanceof ApiRequestError && [401,403].includes(error.status))) setErrorMessage(...)`. Y el aviso global (`ApiResponseNotifier.handleForbidden`) muestra el **mensaje crudo** del backend con el título genérico `Acción rechazada`, porque el mapa `forbiddenTitles` sólo conoce `INSUFFICIENT_PERMISSIONS`, `NO_ROLE`, `INVALID_ROLE`, `2FA_REQUIRED` y `PASSWORD_CHANGE_REQUIRED`. `utils/errorMapper.ts` **sí** traduce `INSTANCE_PROTECTED` ("infraestructura crítica") e `INSTANCE_ACCESS_DENIED` ("permisos"), pero ese camino no lo usa.
 - **Qué debe hacer el equipo de frontend:**
-  1. Mantener la fila bloqueada (spinner y botones deshabilitados) tras el `202` hasta el `TASK_FINISHED`, y desbloquearla ante el error.
-  2. Garantizar un mensaje propio y distinto por cada código de D2 (y un mensaje genérico para el resto).
+  1. Mostrar el mensaje diferenciado de estos códigos: usar `getErrorMessage(error)` en `ApiResponseNotifier.handleForbidden` (o agregar los códigos de instancia a `forbiddenTitles`).
+  2. Alternativa equivalente: dejar que `ConfirmUserAction` muestre `getErrorMessage(error)` también para los `403` de instancia, sin delegarlos ciegamente al aviso global.
   3. Ejecutar `npx vitest run instances-operation.test.tsx` hasta 9/9.
 - **Criterio de éxito:** `instances-operation.test.tsx` pasa 9 de 9.
 

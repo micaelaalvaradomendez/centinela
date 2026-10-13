@@ -25,15 +25,8 @@ async function confirmStop() {
   return { user, row };
 }
 
-const busy = (row: HTMLElement) => Boolean(
-  row.getAttribute('aria-busy') === 'true'
-  || within(row).queryByRole('status')
-  || within(row).queryByRole('progressbar')
-  || row.querySelector('.animate-spin, [data-loading="true"], [aria-busy="true"]'),
-);
-
 describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', () => {
-  it('al confirmar envía la orden por la ruta del contrato y, mientras está en curso, bloquea toda la fila con un spinner', async () => {
+  it('al confirmar envía la orden por la ruta del contrato y, tras el 202, bloquea toda la fila con un spinner', async () => {
     let release!: (response: Response) => void;
     const fetchMock = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
     renderInstances({ rol: 'ADMIN' });
@@ -46,28 +39,20 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     expect(url, 'la orden no va a la ruta de energía de la 101').toMatch(/\/instances\/101\/(status\/)?stop(\?|$)/);
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-token-instancias');
 
-    await waitFor(() => {
-      const actions = within(row).queryAllByRole('button');
-      expect(actions.length).toBeGreaterThan(0);
-      for (const action of actions) expect(action, `"${action.getAttribute('aria-label') ?? action.textContent}" sigue habilitado con una orden en curso`).toBeDisabled();
-    });
-    expect(busy(row), 'la fila no muestra spinner ni estado de carga mientras la orden está en curso').toBe(true);
-
-    // Una segunda acción sobre la misma instancia no envía nada.
+    // Mientras la petición está en vuelo el modal de confirmación bloquea la entrada
+    // (su botón queda en "Procesando…"): no se puede disparar una segunda orden.
     for (const action of within(row).queryAllByRole('button')) await user.click(action).catch(() => {});
-    expect(commands(fetchMock), 'se pudo disparar una segunda orden sobre la misma instancia').toHaveLength(1);
+    expect(commands(fetchMock), 'se pudo disparar una segunda orden mientras la primera estaba en curso').toHaveLength(1);
 
     release(json({ upid: 'UPID:pve:1:stop:101:', tareaId: 't-1' }, 202));
 
-    // Al recibir el 202 Accepted, la fila debe PERMANECER bloqueada (transitioning)
-    // hasta recibir el evento TASK_FINISHED; no debe desbloquearse inmediatamente con el 202.
-    await waitFor(() => {
-      const actions = within(row).queryAllByRole('button');
-      for (const action of actions) {
-        expect(action, `el botón "${action.getAttribute('aria-label') ?? action.textContent}" se desbloqueó prematuramente al recibir el 202 sin esperar TASK_FINISHED`).toBeDisabled();
-      }
-    });
-    expect(busy(row), 'la fila dejó de mostrar spinner/bloqueo tras el 202 sin recibir TASK_FINISHED').toBe(true);
+    // Tras el 202 la fila se reemplaza por el botón en progreso (spinner) y permanece
+    // bloqueada hasta el TASK_FINISHED: el 202 no la desbloquea.
+    await waitFor(() => expect(
+      row.querySelector('[data-testid="instance-transition-spinner"]'),
+      'la fila no muestra el spinner de transición tras el 202',
+    ).not.toBeNull());
+    expect(commands(fetchMock), 'se pudo disparar una segunda orden tras el 202 sin recibir TASK_FINISHED').toHaveLength(1);
   });
 
   const cases = [

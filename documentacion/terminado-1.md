@@ -849,3 +849,56 @@ Verificadas contra backend `6afc017` / frontend `7fcc0bd`. El estado vigente es 
   - Cada uno de los seis códigos de error despliega su mensaje diferenciado y la fila se desbloquea tras el fallo.
   - La suite `instances-operation.test.tsx` pasa 9 de 9 pruebas en verde.
 
+
+
+---
+
+## Actualización del 13/10/2026 — fixes resueltos en este repo
+
+### `FIX-78` - Desduplicación de indicadores de salud del nodo y accesibilidad en Dashboard (`FRN-19B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada y con test en verde.** `dashboard-node.test.tsx` (12/12) pasa: el estado de salud del nodo no se duplica (accesibilidad) y el Dashboard refleja 502/504 como "Inaccesible".
+
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19B`.
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/pages/Dashboard.tsx`, el estado de salud del nodo (`nodeHealth.label`: "Saludable", "Advertencia", "Inaccesible") se renderiza simultáneamente en dos componentes:
+  1. En la cabecera de la tarjeta de recursos (`Dashboard.tsx:136`): `<Badge variant="outline">{nodeHealth.label}</Badge>`.
+  2. En el pie de página de estado del sistema (`Dashboard.tsx:211`): `<p className="text-caption">{nodeHealth.label}</p>`.
+  Esta duplicación genera colisiones al evaluar la interfaz con lectores de pantalla o Testing Library (`findByText(/saludable/i)` y `findByText(/inaccesible/i)` fallan con `Found multiple elements with the text of: ...`). Asimismo, cuando el nodo está cargando o en error 502/504, los skeletons y las alertas de accesibilidad deben identificarse unívocamente sin interferir con otras tarjetas.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Dashboard.tsx`, diferenciar semánticamente los textos o asignar atributos de accesibilidad inequívocos (`aria-label="Estado general del nodo: Saludable"` o dejar el semáforo principal en la tarjeta de recursos y usar una descripción extendida o etiqueta diferenciada en el pie).
+  2. Asegurar que las respuestas 502 y 504 reflejen inequívocamente la etiqueta `Inaccesible` en el semáforo de recursos.
+  3. Ejecutar `npx vitest run dashboard-node.test.tsx` y comprobar que todos los casos pasen en verde.
+- **Criterio de éxito:**
+  - `dashboard-node.test.tsx` pasa al 100% sin colisiones de texto duplicado.
+  - La experiencia visual y de accesibilidad es nítida tanto para usuarios videntes como para lectores de pantalla.
+
+
+### `FIX-73` - Sincronización y manejo determinista de tareas consecutivas en acciones de energía (`BAC-21B` / `FIX-39` / `FIX-33`) (Backend / pruebas)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): resuelto en la suite de este repo.** `test/back/puente_etapa1_acceptance_test.go` ya espera a que no queden tareas `RUNNING` antes de disparar una orden nueva (líneas 88, 110, 131 y 364) y al `COMPLETED` de cada tarea; la función `energyPath` ya no existe. `TestPuenteEtapa1` pasa al 100% sin `409 INSTANCE_BUSY` espurios.
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-21B` (en `terminado-1.md`), `FIX-33`, `BAC-24A`.
+- **Problema técnico detallado:**
+  En `test/back/puente_etapa1_acceptance_test.go`, las pruebas `FIX-39 BAC-21B shutdown y reboot exigen FULL_ACCESS` y `BAC-21B las acciones de energía quedan en auditoria` fallan con:
+  ```
+  409 INSTANCE_BUSY: "La instancia se encuentra ejecutando otra tarea. Aguarde a que finalice."
+  ```
+  Al emitirse una orden de energía (ej. `stop` sobre la 101), el backend registra la tarea en estado `RUNNING`. Cuando de inmediato se despacha otra acción de ciclo de vida (`shutdown`, `reboot` u otro `stop`), el control de concurrencia de `FIX-33` rechaza la segunda orden con `409 INSTANCE_BUSY`. Aunque el rechazo con 409 es la conducta esperada ante instancias ocupadas, la prueba o el cliente que encadena acciones debe sincronizar la finalización de la tarea precedente antes de disparar la siguiente, y la función de sondeo `energyPath` no debe emitir peticiones mutantes con token administrativo que inicien tareas no esperadas.
+- **Qué debe hacer el equipo:**
+  1. En las pruebas de aceptación de ciclo de vida, esperar a que la tarea previa pase a `COMPLETED` o `FAILED` antes de despachar una nueva orden sobre el mismo VMID.
+  2. Asegurar que `energyPath` inspeccione las rutas sin mutar el estado de la instancia en Proxmox.
+  3. Validar que la transición de estados y la auditoría registren cada tarea con su UPID correspondiente.
+- **Criterio de éxito:**
+  - La suite `TestPuenteEtapa1` pasa 100% en verde sin fallos espurios de `INSTANCE_BUSY`.
+  - Cada orden de energía se procesa y audita ordenadamente.
+
