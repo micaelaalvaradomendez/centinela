@@ -140,7 +140,8 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
   });
 
   it('consulta GET /api/admin/users con Authorization Bearer al entrar a /users', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] }));
+    // Cada fetch recibe una Response nueva (la vista consulta además GET /admin/audit para "Eliminados").
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] })));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAppAs('ADMIN', '/users');
@@ -151,10 +152,12 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
   });
 
   it('renderiza los usuarios reales devueltos por el backend', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+    // Cada fetch debe devolver una Response nueva: el cuerpo de una Response sólo se lee una vez y
+    // la vista ahora hace una consulta extra (GET /admin/audit desde la pestaña "Eliminados").
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    })));
+    }))));
 
     renderAppAs('ADMIN', '/users');
 
@@ -319,10 +322,10 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
     });
   });
 
-  it('dar de alta un usuario con correo o username duplicado (409 USER_CONFLICT) muestra advertencia de datos ya registrados', { timeout: 15000 }, async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(
-      { errorCode: 'USER_CONFLICT', message: 'El correo electrónico o nombre de usuario ya está registrado en la organización' }, 409,
-    )));
+  it('dar de alta un usuario con nombre de usuario duplicado (409 USER_USERNAME_ALREADY_EXISTS) muestra advertencia de datos ya registrados', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(
+      { errorCode: 'USER_USERNAME_ALREADY_EXISTS', message: 'El nombre de usuario ya está registrado. Los nombres de usuario no se reutilizan, ni siquiera los de cuentas eliminadas.' }, 409,
+    ))));
     const user = userEvent.setup();
     window.sessionStorage.setItem('centinela_access', 'access-token-admin');
     const router = createMemoryRouter([
@@ -334,22 +337,39 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
     await fillCreateUserForm(user);
     await confirmIfAsked(user);
 
-    await waitFor(() => {
-      const notices = screen.getAllByText(/datos ya registrados/i);
-      expect(notices.length).toBeGreaterThan(0);
-      const errors = screen.getAllByText(/no se creó el usuario/i);
-      expect(errors.length).toBeGreaterThan(0);
-    });
+    expect((await screen.findAllByText(/datos ya registrados/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
+    expect(router.state.location.pathname).toBe('/users/new');
+  });
+
+  it('dar de alta un usuario con correo duplicado (409 USER_EMAIL_ALREADY_EXISTS) marca el campo y avisa que el correo está en uso', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(
+      { errorCode: 'USER_EMAIL_ALREADY_EXISTS', message: 'El correo ya está registrado en la organización.' }, 409,
+    ))));
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const router = createMemoryRouter([
+      { path: '/users/new', Component: CrearUsuarios },
+      { path: '/users', element: <h1>Gestión de usuarios</h1> },
+    ], { initialEntries: ['/users/new'] });
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    const emailField = await screen.findByLabelText(/^correo electrónico/i);
+    await waitFor(() => expect(emailField).toHaveAttribute('aria-invalid', 'true'));
+    expect((await screen.findAllByText(/correo.*(ya|uso|registrad|existe)/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
     expect(router.state.location.pathname).toBe('/users/new');
   });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {
   it('ofrece una acción de edición por usuario en la tabla', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+    // Response nueva por llamada (la vista consulta además GET /admin/audit para "Eliminados").
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    })));
+    }))));
     const user = userEvent.setup();
 
     render(<MemoryRouter><Users /></MemoryRouter>);
@@ -392,9 +412,9 @@ describe('FIX-38 - "Solo lectura" no es un rol de usuario (BAC-09 / SEC-04)', ()
 });
 
 describe('FIX-25 - errores al guardar el perfil', () => {
-  it('un correo duplicado (409 USER_CONFLICT) se muestra junto al campo de correo', async () => {
+  it('un correo duplicado (409 USER_EMAIL_ALREADY_EXISTS) se muestra junto al campo de correo', async () => {
     vi.stubGlobal('fetch', detailBackend({
-      profilePut: () => jsonResponse({ errorCode: 'USER_CONFLICT', message: 'el email ya está en uso' }, 409),
+      profilePut: () => jsonResponse({ errorCode: 'USER_EMAIL_ALREADY_EXISTS', message: 'El correo ya está registrado en la organización.' }, 409),
     }));
     const user = userEvent.setup();
 
@@ -405,7 +425,10 @@ describe('FIX-25 - errores al guardar el perfil', () => {
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
 
     await waitFor(() => expect(emailInput).toHaveAttribute('aria-invalid', 'true'));
-    expect(screen.getByText(/correo.*(ya|pertenece|uso|existe)/i)).toBeVisible();
+    // El mensaje debe quedar asociado al campo de correo (aria-describedby), no sólo en un toast.
+    const describedBy = emailInput.getAttribute('aria-describedby');
+    expect(describedBy, 'el campo de correo no apunta a su mensaje de error').toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(/correo.*(ya|pertenece|uso|existe)/i);
   });
 });
 

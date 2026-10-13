@@ -46,10 +46,13 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 	}
 
 	t.Run("Paso 1: Despacho asíncrono con HTTP 202, upid y tareaId, y rechazos canónicos 409 y 403", func(t *testing.T) {
-		// 1.1 Iniciar acción sobre 101 con op1 (FULL_ACCESS): esperado 202 con upid y tareaId
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/start", op1Token, nil)
+		// 1.1 Enviar una orden de energía VÁLIDA para el estado de la 101 con op1 (FULL_ACCESS):
+		// el stub la reporta "running", así que la orden válida es el apagado ordenado (stop).
+		// (Con "start" el backend responde 409 INSTANCE_INVALID_STATE, que es el comportamiento correcto
+		//  de BAC-24A y no lo que esta prueba verifica.) Esperado 202 con upid y tareaId.
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("POST /instances/101/start esperado 202 Accepted, recibido %d: %#v", status, body)
+			t.Fatalf("POST /instances/101/stop esperado 202 Accepted, recibido %d: %#v", status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		upid := requiredString(t, body, "upid")
@@ -90,11 +93,13 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		// 1.6 Concurrencia y bloqueo INSTANCE_BUSY: cuando hay una tarea activa en curso
 		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-en-curso"); err == nil {
 			t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
-			stStart, bStart := requestJSON(t, http.MethodPost, "/instances/101/start", op1Token, nil)
+			stStart, bStart := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
 			if stStart == http.StatusAccepted {
 				tid := requiredString(t, bStart, "tareaId")
-				// Segundo intento inmediato sobre la misma instancia debe responder 409 INSTANCE_BUSY
-				stBusy, bBusy := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+				// Segundo intento inmediato sobre la misma instancia debe responder 409 INSTANCE_BUSY.
+				// Se usa "shutdown" (también válido para una instancia encendida) para que el rechazo
+				// provenga de la tarea en curso y no de la validación de estado previo.
+				stBusy, bBusy := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", op1Token, nil)
 				if stBusy != http.StatusConflict || bBusy["errorCode"] != "INSTANCE_BUSY" {
 					t.Errorf("segunda acción sobre instancia ocupada: esperado 409 INSTANCE_BUSY, recibido %d: %#v", stBusy, bBusy)
 				}
@@ -133,18 +138,26 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 			_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas")
 		}
 
-		// 2.3 Timeout de seguimiento (D4 / UPID_TIMEOUT 3m): tareas añejas en RUNNING vencen a FAILED
+		// 2.3 Timeout de seguimiento (D4 / UPID_TIMEOUT 3m): tareas añejas en RUNNING vencen a FAILED.
+		// El stub debe seguir reportando la tarea como "running" (marca /tmp/tareas-en-curso); si
+		// respondiera OK, el sondeo la cerraría como COMPLETED antes de que venza por timeout.
+		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-en-curso"); err != nil {
+			t.Fatalf("no se pudo crear /tmp/tareas-en-curso: %v", err)
+		}
+		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
+
 		expiredID := queryDatabase(t, "SELECT uuid_generate_v7();")
 		queryDatabase(t, fmt.Sprintf(
 			"INSERT INTO tareas_asincronas (id, usuario_id, instancia_id, accion, upid_proxmox, estado, fecha_creacion) VALUES "+
 				"('%s', '%s', '101', 'start', 'UPID:pve:%d:0:0:qmstart:101:root@pam:', 'RUNNING', NOW() - interval '5 minutes');",
 			expiredID, adminID, time.Now().UnixNano()))
 
-		// Si el worker revisa tareas añejas o tras reinicio, la tarea vence a FAILED
+		// Al reiniciar, la recuperación revisa las tareas añejas y las vence a FAILED.
 		restartBackend(t)
 		if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", expiredID), "FAILED", 10*time.Second) {
 			t.Errorf("tarea con más de 3 minutos en RUNNING debe vencer a FAILED")
 		}
+		_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso")
 	})
 
 	t.Run("Paso 3: Emisión de eventos TASK_FINISHED con payload canónico BAC-29 y filtrado RBAC", func(t *testing.T) {
@@ -152,9 +165,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		eventsOp1 := listenEvents(t, op1Token)
 		eventsOp2 := listenEvents(t, op2Token)
 
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/start", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("POST /instances/101/start: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("POST /instances/101/stop: esperado 202, recibido %d: %#v", status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 
@@ -215,9 +228,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		}
 		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
 
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/start", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("start sobre 101: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("stop sobre 101: esperado 202, recibido %d: %#v", status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 
@@ -249,8 +262,8 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 
 		if statusDel == http.StatusAccepted || statusDel == http.StatusNoContent {
 			// Si responde 202/204, validar que los permisos de la 102 para op1 se limpien
-			waitForValue(t, "SELECT count(*) FROM permisos_instancia WHERE vmid = 102;", "0", 8*time.Second)
-			permCount := queryDatabase(t, "SELECT count(*) FROM permisos_instancia WHERE vmid = 102;")
+			waitForValue(t, "SELECT count(*) FROM permisos_instancia WHERE vmid_proxmox = 102;", "0", 8*time.Second)
+			permCount := queryDatabase(t, "SELECT count(*) FROM permisos_instancia WHERE vmid_proxmox = 102;")
 			if permCount != "0" {
 				t.Errorf("BAC-24C: permisos de la 102 deben haberse eliminado, encontrados %s", permCount)
 			}

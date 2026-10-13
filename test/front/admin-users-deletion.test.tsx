@@ -103,11 +103,26 @@ afterEach(() => {
 
 describe('FIX-56 - distinguir suspensión y eliminación en la interfaz', () => {
   it('muestra etiquetas diferenciadas para usuarios activos, suspendidos y eliminados en la tabla', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      summary: { total: 3, admins: 1, operators: 2 },
-      users: [activeUser(), suspendedUser(), deletedUser()],
-    }));
+    // La vista por defecto oculta a los eliminados (pestaña "Eliminados" aparte).
+    // La pestaña se nutre de la auditoría, así que el mock debe ser coherente con ese contrato.
+    const deletedId = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (url.includes('/admin/audit')) {
+        return Promise.resolve(jsonResponse({
+          items: [{ accion: 'ELIMINAR_USUARIO', resultado: 'EXITO', fechaHora: '2026-09-15T12:00:00Z', detalles: JSON.stringify({ usuarioEliminado: deletedId }) }],
+          total: 1,
+          pagina: 1,
+        }));
+      }
+      if (url.includes(`/admin/users/${deletedId}`) && method === 'GET') return Promise.resolve(jsonResponse(deletedUserDetails(deletedId)));
+      if (url.includes('/admin/users') && method === 'GET') {
+        return Promise.resolve(jsonResponse({ summary: { total: 2, admins: 0, operators: 2 }, users: [activeUser(), suspendedUser()] }));
+      }
+      return Promise.resolve(jsonResponse({}, 200));
+    });
 
+    const user = userEvent.setup();
     renderUsersList(fetchMock);
     const table = await screen.findByRole('table');
 
@@ -121,7 +136,8 @@ describe('FIX-56 - distinguir suspensión y eliminación en la interfaz', () => 
     expect(suspendedBadge).toBeVisible();
     expect(suspendedBadge.textContent).not.toMatch(/eliminado/i);
 
-    // Usuario eliminado → etiqueta "Eliminado" (diferente a la de suspendido)
+    // Pestaña "Eliminados" → etiqueta "Eliminado" (diferente a la de suspendido)
+    await user.click(await screen.findByRole('tab', { name: /eliminados/i }));
     const deletedRow = (await within(table).findByText('Grace Hopper')).closest('tr')!;
     expect(within(deletedRow).getByText(/eliminado/i)).toBeVisible();
   });
@@ -129,10 +145,11 @@ describe('FIX-56 - distinguir suspensión y eliminación en la interfaz', () => 
   it('oculta usuarios eliminados en la vista por defecto de la lista', async () => {
     // La lista debería filtrar los eliminados por defecto, o el backend no los envía.
     // Si la UI recibe eliminados, debería ocultarlos a menos que se active un filtro.
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    // Response nueva por llamada (la vista consulta además GET /admin/audit para "Eliminados").
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       summary: { total: 3, admins: 1, operators: 2 },
       users: [activeUser(), suspendedUser(), deletedUser()],
-    }));
+    })));
 
     renderUsersList(fetchMock);
     const table = await screen.findByRole('table');
@@ -157,8 +174,9 @@ describe('FIX-56 - distinguir suspensión y eliminación en la interfaz', () => 
 
     renderUserDetail('u3');
 
-    // Esperar a que se cargue la ficha del usuario eliminado.
-    await screen.findByText('Grace Hopper');
+    // Esperar a que se cargue la ficha del usuario eliminado: la vista entra en modo
+    // solo lectura con el aviso correspondiente.
+    await screen.findByRole('heading', { name: /detalle de usuario eliminado/i });
 
     // Los botones de acciones destructivas o de edición deben estar deshabilitados o ausentes.
     const editButton = screen.queryByRole('button', { name: /editar usuario/i });
@@ -208,7 +226,7 @@ describe('FIX-56 - distinguir suspensión y eliminación en la interfaz', () => 
 
     // El diálogo de confirmación para eliminación debería mencionar historial y correo libre.
     const dialog = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'));
-    expect(within(dialog).getByText(/historial.*conserv|conserv.*historial|registros.*mantien/i)).toBeVisible();
+    expect(within(dialog).getByText(/historial.*(conserv|preserv|mantien)|(conserv|preserv).*historial/i)).toBeVisible();
     expect(within(dialog).getByText(/correo.*libera|email.*libera|correo.*disponible|email.*disponible/i)).toBeVisible();
   });
 

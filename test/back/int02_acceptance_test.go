@@ -122,9 +122,11 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 		}
 		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
 
-		status, actionResp := requestJSON(t, http.MethodPost, "/instances/101/start", operatorToken, nil)
+		// El stub reporta la 101 como "running": la orden válida es el apagado ordenado (stop).
+		// Con "start" el backend responde 409 INSTANCE_INVALID_STATE (correcto, BAC-24A).
+		status, actionResp := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", operatorToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("Paso 4: POST /instances/101/start esperado 202 Accepted, recibido %d: %#v", status, actionResp)
+			t.Fatalf("Paso 4: POST /instances/101/status/shutdown esperado 202 Accepted, recibido %d: %#v", status, actionResp)
 		}
 
 		tareaID := requiredString(t, actionResp, "tareaId")
@@ -143,8 +145,10 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 			}
 		}
 
-		// Liberar tarea en stub para que continúe
+		// Liberar tarea en stub para que continúe y esperar su fin, para que el Paso 5 pueda
+		// despachar una nueva orden sobre la 101 sin chocar con 409 INSTANCE_BUSY.
 		_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso")
+		waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 8*time.Second)
 	})
 
 	t.Run("Paso 5: Notificación en tiempo real TASK_FINISHED y desbloqueo de instancia", func(t *testing.T) {
@@ -171,13 +175,14 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 	})
 
 	t.Run("Paso 6: Auditoría — el ADMIN verifica registros correlacionados de la acción en /api/admin/audit", func(t *testing.T) {
-		status, auditList := requestJSONArray(t, http.MethodGet, "/admin/audit", adminToken)
+		// GET /api/admin/audit responde paginado: { items: [...], pagina, total }.
+		status, page := requestJSON(t, http.MethodGet, "/admin/audit", adminToken, nil)
 		if status != http.StatusOK {
 			t.Fatalf("Paso 6: GET /admin/audit con ADMIN esperado 200, recibido %d", status)
 		}
-
+		auditList, _ := page["items"].([]any)
 		if len(auditList) == 0 {
-			t.Errorf("Paso 6: la lista de auditoría no debe estar vacía")
+			t.Errorf("Paso 6: la lista de auditoría (items) no debe estar vacía: %#v", page)
 		}
 
 		// Verificar que el log de auditoría contenga registros vinculados a la instancia 101
@@ -196,7 +201,7 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 
 		if statusDel == http.StatusAccepted || statusDel == http.StatusNoContent {
 			// Esperar limpieza de permisos para la 101
-			waitForValue(t, "SELECT count(*) FROM permisos_instancia WHERE vmid = 101;", "0", 8*time.Second)
+			waitForValue(t, "SELECT count(*) FROM permisos_instancia WHERE vmid_proxmox = 101;", "0", 8*time.Second)
 
 			// El OPERATOR ya no debe ver la instancia en su inventario
 			status, list := requestJSONArray(t, http.MethodGet, "/instances", operatorToken)

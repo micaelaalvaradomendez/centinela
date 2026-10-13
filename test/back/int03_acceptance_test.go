@@ -133,9 +133,10 @@ func TestINT03_ValidacionServidorBordeTLS(t *testing.T) {
 	})
 
 	t.Run("Paso 4: Operación asíncrona sobre instancia permitida y auditoría a través del borde", func(t *testing.T) {
-		status, body := edgeRequest(http.MethodPost, "/instances/101/start", adminToken, nil)
+		// La 101 está encendida en el stub: la operación asíncrona válida es el apagado ordenado.
+		status, body := edgeRequest(http.MethodPost, "/instances/101/status/shutdown", adminToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("Paso 4: POST /instances/101/start vía Edge esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("Paso 4: POST /instances/101/status/shutdown vía Edge esperado 202, recibido %d: %#v", status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		upid := requiredString(t, body, "upid")

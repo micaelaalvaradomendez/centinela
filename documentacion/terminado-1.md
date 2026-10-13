@@ -742,3 +742,110 @@ Revisiones probadas: backend `4f68e44` y frontend `ee4644c`.
 - **Criterio de éxito:** El backend se recupera inmediatamente tras el restablecimiento del hipervisor sin quedar en un blackout de 5 segundos cuando no hay caché previa disponible.
 
 
+
+
+---
+
+## Actualización del 13/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `6afc017` / frontend `7fcc0bd`. El estado vigente es el bloque de cada tarea.
+
+
+#### `BAC-27` - Auditoría del resultado de las acciones de ciclo de vida en `auditoria` (`RF-08`)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestINT01` (Paso 4) pasa: cada acción deja registros de auditoría correlacionados por `upid`/`tareaId`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:**
+  - `BAC-18` y `FIX-23` (terminadas);
+  - `FIX-39` (registra la orden despachada; la del `DELETE`, `BAC-24B`);
+  - `BAC-25B`;
+  - `BAC-18B` (particionamiento de `auditoria`, que tiene que estar mergeado antes).
+- **Entregable:**
+  - Para cada tarea que termina, registrar en `auditoria` una segunda entrada con el mismo `upid` y `tareaId` que la de `FIX-39`, más `status: "SUCCESS"` o `"FAILED"` y `exitstatus`.
+  - La entrada de la orden despachada (`PENDING`) la hacen `FIX-39` y `BAC-24B`. Acá solo se verifica que tenga `action`, `user_id`, `resource_id` y `upid`.
+- **Criterio de éxito:**
+  - Cada acción deja exactamente dos registros correlacionados por `upid`, sin migraciones de esquema nuevas.
+  - Las tareas vencidas por timeout quedan como `FAILED`.
+  - `GET /api/admin/audit` permite filtrar por `accion`.
+
+
+
+#### `INF-09` (`BRG-06-INF`) - Configuración de Nginx para WebSockets y Streaming bidireccional (`RNF-06`)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026): implementada y con test en verde.** `TestINF09WebSocketsNginxEdge` (y `TestINT03` Paso 2) pasa: `docker/nginx-edge.conf` incluye `proxy_http_version 1.1`, `Upgrade`/`Connection` y `proxy_read_timeout 1h`.
+
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-07B`.
+- **Problema:** `INF-07B` configuró Nginx para SSE unidereccional. La telemetría en tiempo real de la Etapa 2 (`RF-05`) utiliza WebSockets (`/api/ws/*` o `/ws/*`), que requieren encabezados `Upgrade` y `Connection: "upgrade"`, además de timeouts extendidos para no interrumpir sesiones activas de monitoreo.
+- **Entregable:**
+  - Actualizar `docker/nginx-edge.conf` y la plantilla de despliegue del CT 103 con soporte de WebSockets:
+    `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s;`.
+- **Criterio de éxito:** Una conexión WebSocket establecida a través de Nginx completa el handshake HTTP 101 y se mantiene abierta transmitiendo datos sin cortes por buffer o timeout.
+
+### `FIX-72` - Sincronizar firma de `NewSeguimientoTareas` en pruebas unitarias de servicios (`BAC-25A`) (Backend / pruebas)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestEtapa1` (BAC-25A) pasa: las pruebas unitarias de `internal/core/services` vuelven a compilar con la firma vigente de `NewSeguimientoTareas`.
+
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro / Lucas
+- **Estimación:** 1 h
+- **Depende de:** `BAC-25A` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias del backend invocadas por la prueba de aceptación `TestEtapa1/BAC-25A` (`etapa1_acceptance_test.go:185`), la suite `go test ./internal/core/services/...` falla en compilación:
+  ```
+  internal/core/services/seguimiento_pool_test.go:89:60: too many arguments in call to services.NewSeguimientoTareas
+  	have (*proxmoxPool, *tareasEnMemoria, *publicadorFalso, *auditoriaGrabadora, services.ConfigSeguimiento)
+  	want (ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)
+  internal/core/services/seguimiento_tareas_test.go:131:54: too many arguments in call to services.NewSeguimientoTareas
+  	have (*proxmoxTareas, *tareasEnMemoria, *publicadorFalso, *auditoriaGrabadora, services.ConfigSeguimiento)
+  	want (ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)
+  ```
+  La firma del constructor `services.NewSeguimientoTareas` fue simplificada para recibir únicamente `(ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)`, pero los archivos de pruebas unitarias de servicios (`seguimiento_pool_test.go` y `seguimiento_tareas_test.go`) no fueron actualizados y siguen pasando 5 argumentos con stubs residuales.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/core/services/seguimiento_pool_test.go`, actualizar la llamada a `services.NewSeguimientoTareas` para pasar únicamente los 3 parámetros requeridos.
+  2. En `backend/internal/core/services/seguimiento_tareas_test.go`, actualizar la llamada a `services.NewSeguimientoTareas` a la firma de 3 parámetros.
+  3. Ejecutar `go test -v ./internal/core/services/...` en el repositorio backend y verificar que compilen y pasen todas las pruebas unitarias.
+- **Criterio de éxito:**
+  - `go test ./internal/core/services/...` compila limpiamente y pasa en verde.
+  - La prueba de aceptación `TestEtapa1/BAC-25A` en `test/back/etapa1_acceptance_test.go` pasa 100% en verde.
+
+
+
+
+### `FIX-77` - Mapeo de errores HTTP de ciclo de vida (`BAC-29`) y resiliencia de la máquina de estados (`FRN-16`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada parcialmente, con problema pendiente.** `instances-operation.test.tsx` mejoró de 8 a **5 fallos** (quedan casos de la máquina de estados D2). Corrección en **`FIX-86`** ([futuro-1.md](futuro-1.md)).
+
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-16`, `BAC-29`.
+- **Problema técnico detallado:**
+  Al despachar una orden de ciclo de vida sobre una instancia (`requestInstancePowerAction`), ante un rechazo del servidor la interfaz no mapea los códigos HTTP y claves de error acordados en el contrato D2 (`BAC-29`) a sus mensajes descriptivos específicos, y `ConfirmUserAction` suprime o desvía los errores 403. Al ejecutar `npx vitest run instances-operation.test.tsx`, fallan las pruebas por no encontrar los mensajes esperados:
+  - `409 INSTANCE_INVALID_STATE`: debe mostrar *"La instancia ya está encendida"* o *"El estado actual no corresponde a la acción"*.
+  - `409 INSTANCE_BUSY`: debe mostrar *"La instancia se encuentra ejecutando otra tarea. Aguarde a que finalice."*.
+  - `403 INSTANCE_PROTECTED`: debe indicar que la instancia es de infraestructura protegida.
+  - `403 INSTANCE_ACCESS_DENIED`: debe advertir que el operador no posee permisos sobre esa máquina.
+  - `502 PROXMOX_UNAVAILABLE`: debe informar que el hipervisor Proxmox no está disponible.
+  - `504 PROXMOX_TIMEOUT`: debe avisar que la respuesta de Proxmox agotó el tiempo de espera.
+  Además, al ocurrir un error, todos los controles de la fila deben desbloquearse inmediatamente saliendo del estado de spinner.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/components/features/instances/components/InstanceAction.tsx` (o servicio asociado), implementar una función de traducción que reciba el `ApiRequestError` (evaluando `status` y `errorCode`) y genere el mensaje exacto exigido por el contrato D2.
+  2. Asegurar que ante cualquier fallo se notifique el mensaje al usuario (vía toast o texto en modal), se resetee `pendingAction` y la fila recupere su interactividad normal.
+  3. Verificar que `npx vitest run instances-operation.test.tsx` pase en verde para todos los códigos de error documentados.
+- **Criterio de éxito:**
+  - Cada uno de los seis códigos de error despliega su mensaje diferenciado y la fila se desbloquea tras el fallo.
+  - La suite `instances-operation.test.tsx` pasa 9 de 9 pruebas en verde.
+

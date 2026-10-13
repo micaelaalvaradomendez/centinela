@@ -433,10 +433,9 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("estado final persistido inesperado: %q", persisted)
 		}
 
-		// Validación del flujo eliminar usuario y dar de alta:
-		// 1. Reintentar dar de alta con los mismos datos del usuario eliminado (baja lógica):
-		//    El backend debe responder 409 Conflict (USER_CONFLICT) porque el email y nombre de usuario
-		//    permanecen registrados en la organización para trazabilidad y auditoría.
+		// Validación del flujo eliminar usuario y dar de alta (contrato FIX-54):
+		// la baja es LÓGICA: se conserva la identidad histórica y se libera el correo,
+		// pero el nombre de usuario sigue reservado.
 		conflictUsernameStatus, conflictUsernameBody := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
 			"nombreCompleto": "Operador Reintentado",
 			"nombreUsuario":  "operador_aceptacion",
@@ -444,17 +443,18 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			"rol":            "OPERATOR",
 		})
 		if conflictUsernameStatus != http.StatusConflict {
-			t.Fatalf("alta con username de usuario eliminado: esperado 409, recibido %d (%#v)", conflictUsernameStatus, conflictUsernameBody)
+			t.Fatalf("alta con username de usuario eliminado: esperado 409 (el nombre de usuario sigue reservado), recibido %d (%#v)", conflictUsernameStatus, conflictUsernameBody)
 		}
 
-		conflictEmailStatus, conflictEmailBody := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
+		// El correo de un usuario eliminado queda libre: el alta debe completarse con 201.
+		reusedEmailStatus, reusedEmailBody := requestJSON(t, http.MethodPost, "/admin/users", accessToken, map[string]any{
 			"nombreCompleto": "Operador Reintentado",
 			"nombreUsuario":  "otro_nombre_usuario",
-			"emailUsuario":   newEmail, // "administrador.aceptacion@elcentinela.com"
+			"emailUsuario":   newEmail, // correo del usuario eliminado; FIX-54 lo libera
 			"rol":            "OPERATOR",
 		})
-		if conflictEmailStatus != http.StatusConflict {
-			t.Fatalf("alta con email de usuario eliminado: esperado 409, recibido %d (%#v)", conflictEmailStatus, conflictEmailBody)
+		if reusedEmailStatus != http.StatusCreated {
+			t.Fatalf("alta reutilizando el email de un usuario eliminado (libre por FIX-54): esperado 201, recibido %d (%#v)", reusedEmailStatus, reusedEmailBody)
 		}
 
 		// 2. Dar de alta un nuevo usuario legítimo tras haber eliminado el anterior:

@@ -75,7 +75,7 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     { status: 409, code: 'INSTANCE_BUSY', message: /otra tarea|ocupad/i },
     { status: 403, code: 'INSTANCE_PROTECTED', message: /protegid|infraestructura/i },
     { status: 403, code: 'INSTANCE_ACCESS_DENIED', message: /permiso/i },
-    { status: 502, code: 'PROXMOX_UNAVAILABLE', message: /no est[aá] disponible|no disponible/i },
+    { status: 502, code: 'PROXMOX_UNAVAILABLE', message: /no (est[aá]|se encuentra) disponible|no disponible|hipervisor/i },
     { status: 504, code: 'PROXMOX_TIMEOUT', message: /no respondi[oó] a tiempo|tiempo de espera|timeout/i },
   ];
   const shown = new Map<string, string>();

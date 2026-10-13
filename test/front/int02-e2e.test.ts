@@ -101,7 +101,8 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
   let userId = '';
   let temporary = '';
   let secret = '';
-  const password = 'Int02Pass123!';
+  // El backend limita la contraseña a 12 caracteres (maxLength del contrato CambiarContrasenaInput).
+  const password = 'Int02Pass12!';
   let operatorToken = '';
 
   beforeAll(() => { globalThis.fetch = browserFetch as typeof fetch; });
@@ -163,7 +164,8 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
 
   it('Paso 4: Ciclo de vida — despacho asíncrono y retorno 202 con tareaId', { timeout: 20000 }, async () => {
     window.sessionStorage.setItem('centinela_access', operatorToken);
-    const result = await apiClient.post<{ upid: string; tareaId: string }>('/instances/101/start');
+    // La 101 está encendida: la orden válida es el apagado ordenado (con /start sería 409 INSTANCE_INVALID_STATE).
+    const result = await apiClient.post<{ upid: string; tareaId: string }>('/instances/101/status/shutdown');
     expect(result.tareaId).toBeTruthy();
     expect(result.upid).toMatch(/^UPID:/);
   });
@@ -176,8 +178,9 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
 
   it('Paso 6: Auditoría — el ADMIN verifica registros de ciclo de vida', { timeout: 15000 }, async () => {
     asAdmin();
-    const audit = await apiClient.get<Array<Record<string, unknown>>>('/admin/audit');
-    expect(Array.isArray(audit)).toBe(true);
-    expect(audit.length).toBeGreaterThan(0);
+    // GET /api/admin/audit responde paginado: { items: [...], pagina, total }.
+    const audit = await apiClient.get<{ items: Array<Record<string, unknown>> }>('/admin/audit');
+    expect(Array.isArray(audit.items)).toBe(true);
+    expect(audit.items.length).toBeGreaterThan(0);
   });
 });
