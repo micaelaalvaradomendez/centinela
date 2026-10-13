@@ -408,3 +408,10 @@ Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a 
 
 ---
 
+
+## 🛠️ Stubs y placeholders detectados en los submódulos (13/10/2026)
+
+> Revisión de `backend` (`6afc017`) y `frontend` (`7fcc0bd`) buscando stubs/placeholders en código ya declarado terminado. Cada hallazgo cita el archivo y la tarea de `terminado.md` que afecta.
+
+---
+
