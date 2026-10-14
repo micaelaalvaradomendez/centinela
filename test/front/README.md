@@ -33,6 +33,12 @@ Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los 
 | `instances-modals.test.tsx` | **FRN-15** (modales de confirmación antierror) |
 | `instances-operation.test.tsx` | **FRN-16** (máquina de estados operación en progreso, errores D2) |
 | `instances-ola2.test.tsx` | **FRN-20B** (filtros reactivos, buscador dinámico) |
+| `instances-metrics.test.tsx` | **FRN-20C** (columnas de CPU y RAM, contrato BAC-29) |
+| `instances-events.test.tsx` | **FRN-17B** (desbloqueo reactivo y toast adaptativo ante TASK_FINISHED) |
+| `dashboard-summary.test.tsx` | **FRN-19C**, **FIX-83** (tarjetas de resumen VMs/LXC y refresco por evento) |
+| `instance-detail.test.tsx` | **FRN-21** (vista Detalle de Instancia y enlace desde inventario) |
+| `fixes-pending.test.tsx` | **FIX-87**, **FIX-89**, **FIX-90**, **FIX-91** (placeholders de usuario, asistente /instances/new, limpieza dashboard, InstanceTester) |
+| `adversarial-security.test.ts` | **Seguridad adversarial** (prevención de XSS en errores, inyección de rutas en API client, resiliencia a JSON corrupto, prototype pollution) |
 | `int02-e2e.test.ts` | **INT-02** (Smoke test integral de 7 pasos con código real de frontend contra el backend real) |
 
 ## Ejecutar

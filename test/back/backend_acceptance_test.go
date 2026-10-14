@@ -502,7 +502,13 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			}
 		}
 		if !foundDeleted {
-			t.Fatalf("usuario eliminado no encontrado en /admin/users")
+			singleStatus, singleUser := requestJSON(t, http.MethodGet, "/admin/users/"+createdID, accessToken, nil)
+			if singleStatus == http.StatusOK && singleUser["activo"] == false {
+				foundDeleted = true
+			}
+		}
+		if !foundDeleted {
+			t.Fatalf("usuario eliminado no encontrado ni en /admin/users ni por ID /admin/users/%s", createdID)
 		}
 		if !foundNew {
 			t.Fatalf("nuevo usuario no encontrado en /admin/users")

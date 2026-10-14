@@ -41,6 +41,17 @@ El token `centi-api@pve!backend-token` tiene alcance de administración sobre el
 | **Eliminación y limpieza** | `DELETE /nodes/{node}/{type}/{vmid}` | Destrucción de instancias y purga de sus volúmenes asociados. |
 | **Asignación de VMID** | `GET /cluster/nextid` | Reserva automática del siguiente identificador libre. |
 
+### 2.1 Privilegios del Token de API para Aprovisionamiento (`INF-07C`)
+
+Para habilitar la creación y configuración de instancias en la Etapa 2 (`RF-07`, `RF-10`), el rol asignado al token `centi-api@pve!backend-token` en Proxmox VE cuenta con los siguientes privilegios específicos:
+
+- `VM.Allocate`: Creación, registro y destrucción de instancias virtuales en el nodo.
+- `Datastore.AllocateSpace`: Reserva y aprovisionamiento de volúmenes de disco en los storages (`local`, `local-lvm`).
+- `VM.Config.CPU`: Configuración y ajuste de núcleos y sockets de CPU asignados a la instancia.
+- `VM.Config.Memory`: Asignación de memoria RAM y márgenes de memoria dinámica.
+- `VM.Config.Disk`: Vinculación de discos virtuales, interfaces SCSI/VirtIO y puntos de montaje.
+- `VM.Config.Network`: Configuración de interfaces de red virtuales y bridges (`vmbr0`, `vmbr1`).
+
 ---
 
 ## 3. Directivas de Protección: Operar sin modificar el Servidor

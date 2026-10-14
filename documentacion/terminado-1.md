@@ -902,3 +902,114 @@ Verificadas contra backend `6afc017` / frontend `7fcc0bd`. El estado vigente es 
   - La suite `TestPuenteEtapa1` pasa 100% en verde sin fallos espurios de `INSTANCE_BUSY`.
   - Cada orden de energía se procesa y audita ordenadamente.
 
+
+#### `BAC-30` (`BRG-06-BAC`) - Extensión del simulador de Proxmox para Aprovisionamiento, Storages y RRDdata (`RF-05`, `RF-07`)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada parcialmente, con problema pendiente.** Contra el simulador real, `POST /nodes/{node}/qemu|lxc` (UPID), `PUT .../config` y `GET .../rrddata` **pasan**; **falta `GET /nodes/{node}/storage` y `/storage/{storage}/content`** (501). Corrección en **`FIX-84`** ([futuro-1.md](futuro-1.md)).
+
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-28` y `FIX-35` (en `terminado-1.md`).
+- **Problema:** El simulador actual solo responde a acciones de ciclo de vida de energía, inventario, borrado e interfaces de red. Para desarrollar y probar la Etapa 2 en local (siguiendo la premisa de no depender del servidor real), el simulador debe soportar:
+  1. `POST /nodes/{node}/qemu` y `POST /nodes/{node}/lxc`: retornar un UPID válido de tipo `qmcreate` / `vzcreate`.
+  2. `PUT /nodes/{node}/{tipo}/{vmid}/config`: actualizar núcleos y memoria simulados.
+  3. `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content`: listar storages (`local`, `local-lvm`) y contenidos (templates LXC e imágenes ISO).
+  4. `GET /nodes/{node}/{tipo}/{vmid}/rrddata`: retornar array de métricas simuladas (CPU, RAM, red, disco).
+- **Entregable:**
+  - Nuevos handlers y rutas en `backend/cmd/proxmox-simulador`.
+  - Casos de prueba en `backend/cmd/proxmox-simulador/simulador_test.go` verificando respuestas y tipos de datos idénticos a Proxmox VE 9.x.
+- **Criterio de éxito:** Las suites de prueba y el desarrollo de la Etapa 2 pueden crear, editar y consultar métricas contra el simulador local sin errores `501 Not Implemented`.
+
+
+#### `BAC-31` (`BRG-07-BAC`) - Endpoints de inventario de Almacenamiento, Plantillas e ISOs (`RF-07`)
+
+> [!WARNING]
+> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** Los endpoints devuelven `502 Bad Gateway` al consultar el hipervisor en local (`TestEtapa1Ola3BAC31`). Corrección en **`FIX-92`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-14`, `BAC-30`.
+- **Problema:** El asistente de creación (Paso 3 de `RF-07`) requiere seleccionar en qué storage se creará el disco y qué plantilla LXC o imagen ISO se usará. Actualmente el backend no expone ningún endpoint de storages ni de contenidos del hipervisor.
+- **Entregable:**
+  1. Método en el cliente Proxmox para consumir `/nodes/{node}/storage` y `/nodes/{node}/storage/{storage}/content`.
+  2. Endpoints protegidos con rol `ADMIN`:
+     - `GET /api/node/storages`: lista storages habilitados con tipo, espacio total y libre.
+     - `GET /api/node/templates`: lista imágenes ISO y templates LXC disponibles normalizados.
+  3. Documentación en Swagger e inventario de errores.
+- **Criterio de éxito:** Un administrador consulta `GET /api/node/storages` y `GET /api/node/templates` y recibe el listado estructurado de discos e imágenes disponibles. Un operador recibe `403 Forbidden`.
+
+
+
+#### `INF-07C` (`BRG-07-INF`) - Ampliación de privilegios del Token de Proxmox para Aprovisionamiento (`RF-07`, `RF-10`)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico / Lucas
+- **Estimación:** 1.0 h
+- **Depende de:** `INF-07`.
+- **Problema:** El API Token actual (`centi-api@pve!backend-token`) solo posee `VM.PowerMgmt`, `Sys.Audit` y lectura. Si intenta crear instancias o reconfigurar cores/RAM en la Etapa 2, Proxmox rechazará las peticiones con `403 Permission check failed`.
+- **Entregable:**
+  - Incorporar los permisos `VM.Allocate`, `Datastore.AllocateSpace`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network` al rol del token en Proxmox VE.
+  - Verificar permisos con `pveum user permissions` o llamada de prueba con `curl`.
+  - Actualizar la documentación en `documentacion/api-proxmox.md`.
+- **Criterio de éxito:** El token permite consultar storages, crear contenedores de prueba y modificar configuraciones sin errores de autorización.
+
+
+### `FIX-80` - Alineación textual y normalización de copy en vistas de autenticación (`FIX-59`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignado:** Belinda / Nico
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-59`.
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/components/layout_auth/MainLayoutAuth.tsx`, el placeholder informal `"imagenes y informacion random"` fue eliminado con éxito y se incorporaron explicaciones sobre la infraestructura Proxmox VE y el valor de seguridad de 2FA. Sin embargo, la suite de pruebas `test/front/auth-branding.test.tsx` verifica la existencia de encabezados y títulos estructurados específicos acordados en las especificaciones de diseño:
+  - *"Tu infraestructura virtual, simplificada y bajo control"* (en el headline principal).
+  - *"Protección de infraestructura con doble factor"* (en la tarjeta de seguridad 2FA).
+  Adicionalmente, en la suite de pruebas de testing library, el uso de expresiones regulares amplias sobre selectores singulares provoca fallos por coincidencia múltiple de texto si no se estructuran jerárquicamente.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `MainLayoutAuth.tsx`, alinear el titular `HEADLINE` y el título del beneficio de 2FA en el array de `features` con las frases literales aprobadas en la especificación.
+  2. Mantener la estética responsiva, los efectos de animación y la legibilidad en pantallas reducidas.
+  3. Ejecutar `npx vitest run auth-branding.test.tsx` y comprobar que la suite pase al 100% en verde.
+- **Criterio de éxito:**
+  - El layout de autenticación contiene los textos institucionales precisos aprobados para Centinela y 2FA.
+  - La suite `auth-branding.test.tsx` pasa todos sus casos (incluido `FIX-59`).
+
+
+### `FIX-88` - Evitar que `EMAIL_PROVIDER` caiga en silencio en el correo simulado (`BAC-16B` / `INF-08B`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Tayra / Lisandro
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-16B`, `INF-08B` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/cmd/api/main.go` la selección del adaptador de correo es:
+  ```go
+  if os.Getenv("EMAIL_PROVIDER") == "smtp" { ... NewSMTPEmailService() } else { emailService = email.NewMockEmailService() }
+  ```
+  El `else` cubre "variable ausente o con cualquier otro valor": un despliegue al que se le olvide `EMAIL_PROVIDER=smtp` **usa el simulador por consola**, así que las claves temporales y los códigos OTP no se envían y nadie puede iniciar sesión, sin ningún error visible.
+- **Qué debe hacer el equipo de backend:**
+  1. Fallar al arrancar (o registrar un `WARN` muy visible) cuando `EMAIL_PROVIDER` no esté definido, salvo que se use explícitamente `EMAIL_PROVIDER=mock`.
+  2. Documentar en `SETUP.md` / `.env.example` que `mock` es solo para tests/CI.
+- **Criterio de éxito:** un arranque sin `EMAIL_PROVIDER` no pasa desapercibido.
+
+
+
+### `FIX-90` - Quitar los placeholders muertos del Dashboard (`FRN-19A` / `FRN-19B`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19A`, `FRN-19B` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  `frontend/centinela/src/pages/Dashboard.tsx` conserva tres tarjetas **estáticas** con textos fijos y botones **sin handler** (`onClick` aparece una sola vez en todo el archivo, para el `retry` de error):
+  - "Instancias recientes" → `<div>Sin instancias</div>` + botón "Ver todas".
+  - "Actividad reciente" → `<div>Sin novedades</div>` + botón "Ver todo".
+  - "Alertas y estado" → `<div>Sin alertas</div>` + botón "Ver todas".
+  Además hay un `chartPlaceholder` para el gráfico de tendencia. Son restos del mockup de diseño en una vista declarada terminada.
+- **Qué debe hacer el equipo de frontend:**
+  1. Conectar "Instancias recientes" al inventario real (o quitarla) y dar destino a los botones "Ver todas/Ver todo" (p. ej. `/instances` y `/auditoria`), o eliminarlos.
+  2. Quitar las tarjetas de Actividad/Alertas hasta que existan sus fuentes (auditoría de Etapa 3 y motor de alertas `RF-11`).
+- **Criterio de éxito:** el Dashboard no tiene controles sin acción ni bloques vacíos fijos.

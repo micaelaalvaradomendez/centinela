@@ -54,25 +54,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-#### `BAC-30` (`BRG-06-BAC`) - Extensión del simulador de Proxmox para Aprovisionamiento, Storages y RRDdata (`RF-05`, `RF-07`)
-
-> [!WARNING]
-> **Estado verificado (13/10/2026, backend `6afc017`): implementada parcialmente, con problema pendiente.** Contra el simulador real, `POST /nodes/{node}/qemu|lxc` (UPID), `PUT .../config` y `GET .../rrddata` **pasan**; **falta `GET /nodes/{node}/storage` y `/storage/{storage}/content`** (501). Corrección en **`FIX-84`** ([futuro-1.md](futuro-1.md)).
-
-
-- **Área:** Backend / Testing
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-28` y `FIX-35` (en `terminado-1.md`).
-- **Problema:** El simulador actual solo responde a acciones de ciclo de vida de energía, inventario, borrado e interfaces de red. Para desarrollar y probar la Etapa 2 en local (siguiendo la premisa de no depender del servidor real), el simulador debe soportar:
-  1. `POST /nodes/{node}/qemu` y `POST /nodes/{node}/lxc`: retornar un UPID válido de tipo `qmcreate` / `vzcreate`.
-  2. `PUT /nodes/{node}/{tipo}/{vmid}/config`: actualizar núcleos y memoria simulados.
-  3. `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content`: listar storages (`local`, `local-lvm`) y contenidos (templates LXC e imágenes ISO).
-  4. `GET /nodes/{node}/{tipo}/{vmid}/rrddata`: retornar array de métricas simuladas (CPU, RAM, red, disco).
-- **Entregable:**
-  - Nuevos handlers y rutas en `backend/cmd/proxmox-simulador`.
-  - Casos de prueba en `backend/cmd/proxmox-simulador/simulador_test.go` verificando respuestas y tipos de datos idénticos a Proxmox VE 9.x.
-- **Criterio de éxito:** Las suites de prueba y el desarrollo de la Etapa 2 pueden crear, editar y consultar métricas contra el simulador local sin errores `501 Not Implemented`.
 
 #### `BAC-24C` - Limpieza de permisos al eliminar una instancia (nueva)
 - **Área:** Backend
@@ -90,22 +71,11 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-#### `BAC-31` (`BRG-07-BAC`) - Endpoints de inventario de Almacenamiento, Plantillas e ISOs (`RF-07`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-14`, `BAC-30`.
-- **Problema:** El asistente de creación (Paso 3 de `RF-07`) requiere seleccionar en qué storage se creará el disco y qué plantilla LXC o imagen ISO se usará. Actualmente el backend no expone ningún endpoint de storages ni de contenidos del hipervisor.
-- **Entregable:**
-  1. Método en el cliente Proxmox para consumir `/nodes/{node}/storage` y `/nodes/{node}/storage/{storage}/content`.
-  2. Endpoints protegidos con rol `ADMIN`:
-     - `GET /api/node/storages`: lista storages habilitados con tipo, espacio total y libre.
-     - `GET /api/node/templates`: lista imágenes ISO y templates LXC disponibles normalizados.
-  3. Documentación en Swagger e inventario de errores.
-- **Criterio de éxito:** Un administrador consulta `GET /api/node/storages` y `GET /api/node/templates` y recibe el listado estructurado de discos e imágenes disponibles. Un operador recibe `403 Forbidden`.
 
 #### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
+
+> [!WARNING]
+> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** Falta acción `create` en el worker UPID y la autoasignación en `permisos_instancia` (`TestEtapa1Ola3BAC32`). Corrección en **`FIX-93`** ([futuro-1.md](futuro-1.md)).
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -121,6 +91,9 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 #### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
 
+> [!WARNING]
+> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** `GET /api/node/status` no devuelve el objeto `allocatable` (`TestEtapa1Ola3BAC33`). Corrección en **`FIX-94`** ([futuro-1.md](futuro-1.md)).
+
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 1.5 h
@@ -132,6 +105,9 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
 
 #### `FRN-21` (`BRG-06-FRN`) - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde notificaciones (`RF-03`, `RF-11`)
+
+> [!WARNING]
+> **Estado verificado (14/10/2026, frontend `add947f`): implementada parcialmente, con problema pendiente.** La vista existe pero falta registrar `/instances/:vmid` en `AppRoutes.tsx` y enlazar filas en `Instances.tsx` (`instance-detail.test.tsx`). Corrección en **`FIX-95`** ([futuro-1.md](futuro-1.md)).
 
 - **Área:** Frontend
 - **Asignado:** Cristian / Belinda
@@ -149,22 +125,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-#### `INF-07C` (`BRG-07-INF`) - Ampliación de privilegios del Token de Proxmox para Aprovisionamiento (`RF-07`, `RF-10`)
-
-- **Área:** Infraestructura
-- **Asignado:** Nico / Lucas
-- **Estimación:** 1.0 h
-- **Depende de:** `INF-07`.
-- **Problema:** El API Token actual (`centi-api@pve!backend-token`) solo posee `VM.PowerMgmt`, `Sys.Audit` y lectura. Si intenta crear instancias o reconfigurar cores/RAM en la Etapa 2, Proxmox rechazará las peticiones con `403 Permission check failed`.
-- **Entregable:**
-  - Incorporar los permisos `VM.Allocate`, `Datastore.AllocateSpace`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network` al rol del token en Proxmox VE.
-  - Verificar permisos con `pveum user permissions` o llamada de prueba con `curl`.
-  - Actualizar la documentación en `documentacion/api-proxmox.md`.
-- **Criterio de éxito:** El token permite consultar storages, crear contenedores de prueba y modificar configuraciones sin errores de autorización.
-
 ---
-
-
 
 
 ### `FIX-74` - Reactividad de filtros y etiquetas accesibles en vista de Auditoría (`FRN-14` / `FIX-36`) (Frontend)
@@ -189,26 +150,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Criterio de éxito:**
   - `npm test src/test/audit.test.tsx` en el frontend pasa al 100% sin errores de elementos no encontrados.
   - La vista de auditoría filtra reactivamente en función de los criterios seleccionados y cumple con accesibilidad.
-
-
-### `FIX-80` - Alineación textual y normalización de copy en vistas de autenticación (`FIX-59`) (Frontend)
-
-- **Área:** Frontend / UI
-- **Asignado:** Belinda / Nico
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-59`.
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/components/layout_auth/MainLayoutAuth.tsx`, el placeholder informal `"imagenes y informacion random"` fue eliminado con éxito y se incorporaron explicaciones sobre la infraestructura Proxmox VE y el valor de seguridad de 2FA. Sin embargo, la suite de pruebas `test/front/auth-branding.test.tsx` verifica la existencia de encabezados y títulos estructurados específicos acordados en las especificaciones de diseño:
-  - *"Tu infraestructura virtual, simplificada y bajo control"* (en el headline principal).
-  - *"Protección de infraestructura con doble factor"* (en la tarjeta de seguridad 2FA).
-  Adicionalmente, en la suite de pruebas de testing library, el uso de expresiones regulares amplias sobre selectores singulares provoca fallos por coincidencia múltiple de texto si no se estructuran jerárquicamente.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `MainLayoutAuth.tsx`, alinear el titular `HEADLINE` y el título del beneficio de 2FA en el array de `features` con las frases literales aprobadas en la especificación.
-  2. Mantener la estética responsiva, los efectos de animación y la legibilidad en pantallas reducidas.
-  3. Ejecutar `npx vitest run auth-branding.test.tsx` y comprobar que la suite pase al 100% en verde.
-- **Criterio de éxito:**
-  - El layout de autenticación contiene los textos institucionales precisos aprobados para Centinela y 2FA.
-  - La suite `auth-branding.test.tsx` pasa todos sus casos (incluido `FIX-59`).
 
 
 
@@ -345,23 +286,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Quitar/blanquear `additionalSecurityInformation` hasta que el perfil exponga esos campos (último cambio de contraseña, intentos fallidos, bloqueo).
 - **Criterio de éxito:** la ficha de usuario no muestra valores inventados ni textos de placeholder.
 
-### `FIX-88` - Evitar que `EMAIL_PROVIDER` caiga en silencio en el correo simulado (`BAC-16B` / `INF-08B`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Tayra / Lisandro
-- **Estimación:** 0,5 h
-- **Depende de:** `BAC-16B`, `INF-08B` (en `terminado.md`).
-- **Problema técnico detallado:**
-  En `backend/cmd/api/main.go` la selección del adaptador de correo es:
-  ```go
-  if os.Getenv("EMAIL_PROVIDER") == "smtp" { ... NewSMTPEmailService() } else { emailService = email.NewMockEmailService() }
-  ```
-  El `else` cubre "variable ausente o con cualquier otro valor": un despliegue al que se le olvide `EMAIL_PROVIDER=smtp` **usa el simulador por consola**, así que las claves temporales y los códigos OTP no se envían y nadie puede iniciar sesión, sin ningún error visible.
-- **Qué debe hacer el equipo de backend:**
-  1. Fallar al arrancar (o registrar un `WARN` muy visible) cuando `EMAIL_PROVIDER` no esté definido, salvo que se use explícitamente `EMAIL_PROVIDER=mock`.
-  2. Documentar en `SETUP.md` / `.env.example` que `mock` es solo para tests/CI.
-- **Criterio de éxito:** un arranque sin `EMAIL_PROVIDER` no pasa desapercibido.
-
 ### `FIX-89` - Ruta `/instances/new` con asistente estático sin lógica (`FIX-60`) (Frontend)
 
 - **Área:** Frontend
@@ -416,6 +340,53 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Ejecutar `npx vitest run instances-modals.test.tsx` hasta 6/6.
 - **Criterio de éxito:** `instances-modals.test.tsx` pasa 6 de 6.
 
+
+---
+
+
+### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-54` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llama `migrarUnicidadEmail(db)` **antes** de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecuta `SELECT … FROM auditoria` (`migrar_usuarios.go`), pero la tabla `auditoria` (particionada) la crea `migrarAuditoriaParticionada`. En una **base nueva** (deploy limpio o el stack de `test/back`, que parte de una base vacía) el arranque aborta:
+  ```
+  ❌ Error fatal al iniciar la base de datos: error al clasificar usuarios eliminados:
+     ERROR: relation "auditoria" does not exist (SQLSTATE 42P01)
+  ```
+  En el servidor de pruebas no se ve porque `auditoria` ya existía; en un entorno limpio el backend sale con código 1 y **toda** la suite de aceptación del backend (incluyendo la Etapa 1) queda bloqueada.
+- **Qué debe hacer el equipo de backend:**
+  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` **después** de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
+  2. Alternativa equivalente: que `clasificarEliminados` no consulte `auditoria` si la tabla todavía no existe (guarda con `existeTabla`).
+  3. Verificar con una base **vacía** (`docker compose down --volumes` + `up`) que el backend arranca y que la suite `test/back` corre completa sin parches.
+- **Criterio de éxito:**
+  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
+  - `test/back` deja de requerir el reordenamiento manual.
+
+
+### `FIX-95` - Declarar ruta `/instances/:vmid` y enlazar inventario con la vista de detalle (`FRN-21`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-21`.
+- **Problema técnico detallado:**
+  La vista `InstanceDetailPage.tsx` fue maquetada con éxito bajo `src/pages/InstanceDetailPage.tsx` e incluye la estructura de cabecera y pestañas ("General", "Métricas", "Configuración"). Sin embargo, la integración global evaluada por `test/front/instance-detail.test.tsx` falla en 2 aserciones:
+  1. La ruta protegida `/instances/:vmid` no está registrada en el enrutador principal (`frontend/centinela/src/routes/AppRoutes.tsx`).
+  2. La tabla de inventario (`frontend/centinela/src/pages/Instances.tsx`) no contiene enlaces ni eventos de navegación para acceder al detalle de la máquina al hacer clic sobre la fila o el identificador/nombre de la instancia.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/routes/AppRoutes.tsx`, importar `InstanceDetailPage` y declarar la ruta `<Route path="/instances/:vmid" element={<InstanceDetailPage />} />` dentro de `ProtectedLayout`.
+  2. En `frontend/centinela/src/pages/Instances.tsx`, hacer que el nombre o ID de cada fila sea un `<Link to={`/instances/${instance.id}`}>` o incorporar navegación programática con `useNavigate`.
+  3. Ejecutar `npx vitest run instance-detail.test.tsx` en `test/front` y certificar que pase 3 de 3 en verde.
+- **Criterio de éxito:**
+  - La ruta `/instances/:vmid` es accesible para usuarios autenticados.
+  - Al interactuar con una fila del inventario, la aplicación navega fluidamente hacia la vista de detalle.
+  - `test/front/instance-detail.test.tsx` pasa al 100% (3/3 en verde).
+
+
+
 ### `FIX-86` - Completar la máquina de estados y el mapeo D2 de operaciones (`FIX-77` / `FRN-16`) (Frontend)
 
 - **Área:** Frontend
@@ -423,10 +394,7 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 - **Estimación:** 2 h
 - **Depende de:** `FIX-77` (en `terminado-1.md`), `FRN-16`, `BAC-29`.
 - **Problema técnico detallado:**
-  `test/front/instances-operation.test.tsx` queda con **3 fallos** (de 9) y **todos son del mapeo de errores `403`**. Las otras dos causas ya se corrigieron en este repo (la redacción esperada del `502` y el caso principal, que además tenía dos defectos propios: exigía deshabilitar el botón de *copiar IP* y comprobaba el bloqueo con un helper siempre verdadero por el `<span role="status">` de ese botón):
-  1. `D2: 403 'INSTANCE_PROTECTED' muestra su mensaje y desbloquea la fila`.
-  2. `D2: 403 'INSTANCE_ACCESS_DENIED' muestra su mensaje y desbloquea la fila`.
-  3. `los seis mensajes de D2 son distintos entre sí` (consecuencia de 1 y 2).
+  `test/front/instances-operation.test.tsx` queda con **3 fallos** (de 9) y **todos son del mapeo de errores `403`**.
   En `components/common/ConfirmUserAction.tsx` los `401/403` **no** se muestran en el modal (se delegan al aviso global): `if (!(error instanceof ApiRequestError && [401,403].includes(error.status))) setErrorMessage(...)`. Y el aviso global (`ApiResponseNotifier.handleForbidden`) muestra el **mensaje crudo** del backend con el título genérico `Acción rechazada`, porque el mapa `forbiddenTitles` sólo conoce `INSUFFICIENT_PERMISSIONS`, `NO_ROLE`, `INVALID_ROLE`, `2FA_REQUIRED` y `PASSWORD_CHANGE_REQUIRED`. `utils/errorMapper.ts` **sí** traduce `INSTANCE_PROTECTED` ("infraestructura crítica") e `INSTANCE_ACCESS_DENIED` ("permisos"), pero ese camino no lo usa.
 - **Qué debe hacer el equipo de frontend:**
   1. Mostrar el mensaje diferenciado de estos códigos: usar `getErrorMessage(error)` en `ApiResponseNotifier.handleForbidden` (o agregar los códigos de instancia a `forbiddenTitles`).
@@ -434,31 +402,90 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   3. Ejecutar `npx vitest run instances-operation.test.tsx` hasta 9/9.
 - **Criterio de éxito:** `instances-operation.test.tsx` pasa 9 de 9.
 
+---
+ETAPA 2
+---
 
-### `FIX-90` - Quitar los placeholders muertos del Dashboard (`FRN-19A` / `FRN-19B`) (Frontend)
 
-- **Área:** Frontend
-- **Asignado:** Belinda
-- **Estimación:** 1 h
-- **Depende de:** `FRN-19A`, `FRN-19B` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  `frontend/centinela/src/pages/Dashboard.tsx` conserva tres tarjetas **estáticas** con textos fijos y botones **sin handler** (`onClick` aparece una sola vez en todo el archivo, para el `retry` de error):
-  - "Instancias recientes" → `<div>Sin instancias</div>` + botón "Ver todas".
-  - "Actividad reciente" → `<div>Sin novedades</div>` + botón "Ver todo".
-  - "Alertas y estado" → `<div>Sin alertas</div>` + botón "Ver todas".
-  Además hay un `chartPlaceholder` para el gráfico de tendencia. Son restos del mockup de diseño en una vista declarada terminada.
-- **Qué debe hacer el equipo de frontend:**
-  1. Conectar "Instancias recientes" al inventario real (o quitarla) y dar destino a los botones "Ver todas/Ver todo" (p. ej. `/instances` y `/auditoria`), o eliminarlos.
-  2. Quitar las tarjetas de Actividad/Alertas hasta que existan sus fuentes (auditoría de Etapa 3 y motor de alertas `RF-11`).
-- **Criterio de éxito:** el Dashboard no tiene controles sin acción ni bloques vacíos fijos.
+#### `BAC-34` - Adaptador de Proxmox RRDdata en el cliente y servicio de telemetría de instancia
 
-### `FIX-91` - Eliminar el componente muerto `InstanceTester` (`FRN-15` / `FRN-16`) (Frontend)
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-30` (simulador con soporte RRD).
+- **Problema:** Proxmox almacena las métricas históricas de rendimiento en formato RRD consumibles vía `/nodes/{node}/{qemu|lxc}/{vmid}/rrddata`. El cliente backend carece del adaptador para consultar este endpoint y normalizar las métricas heterogéneas entre VMs y LXCs.
+- **Entregable:**
+  1. Método en el cliente Proxmox `ObtenerMetricasRRD(ctx, nodo, tipo, vmid, timeframe)`.
+  2. DTO normalizado `PuntoMetricaDTO`: `{ timestamp: int64, cpuPercent: float64, ramUsedBytes: int64, ramTotalBytes: int64, netInBps: int64, netOutBps: int64, diskReadBps: int64, diskWriteBps: int64 }`.
+  3. Pruebas unitarias con mocks en `internal/adapters/secondary/proxmox/client_test.go`.
+- **Criterio de éxito:** Consulta exitosa de métricas para VM y LXC devolviendo series temporales con valores numéricos coherentes sin fallos de conversión.
 
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-15`, `FRN-16` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  `frontend/centinela/src/components/features/instances/components/InstanceTester.tsx` se titula **"Probador de Instancias (Mock Local)"**, define `INITIAL_INSTANCES` con datos falsos (ids 1..3, "servidor-web-produccion", "base-datos-staging", etc.) y **simula** las transiciones con `setTimeout`, además de decir "Recargá la página para reiniciar el mock". **No se importa desde ningún archivo**: es el harness de desarrollo usado para `FRN-15`/`FRN-16`, y hoy es código muerto con datos mock que puede confundirse con código de producto.
-- **Qué debe hacer el equipo de frontend:** eliminar el componente (o moverlo a `src/test` si se quiere conservar como utilidad de desarrollo).
-- **Criterio de éxito:** no queda código de producto con datos mock ni componentes sin importar.
+
+#### `BAC-35` - Canal WebSocket de métricas en tiempo real con ticket efímero
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-34`, `BAC-21C` (patrón de tickets en Redis).
+- **Problema:** Enviar peticiones REST cada pocos segundos para monitorear métricas degrada el rendimiento. Se requiere un canal bidireccional eficiente por WebSocket `/api/ws/instances/:vmid/metrics` que no exponga credenciales JWT en los query parameters.
+- **Entregable:**
+  1. Endpoint de emisión de ticket efímero `POST /api/auth/ws-ticket` (TTL 30 s en Redis).
+  2. Handler WebSocket `/api/ws/instances/:vmid/metrics?ticket=...` que valide el ticket, verifique acceso mediante `RequireInstanceAccess` y establezca la conexión.
+  3. Poller desacoplado por conexión que sondee el estado actual de la instancia cada 2 segundos y envíe el paquete JSON al cliente.
+  4. Cierre ordenado y limpieza de goroutines al desconectar el cliente.
+- **Criterio de éxito:** Un cliente autenticado con ticket recibe métricas periódicas por WebSocket. Un ticket inválido o expirado responde `401 Unauthorized` antes del handshake.
+
+#### `BAC-37` - Servicio de validación de cuotas del host y bloqueo distribuido
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-33` (allocatable del host).
+- **Problema:** Permitir la creación de máquinas sin validar los límites físicos del hipervisor puede provocar el colapso del host (`Out Of Memory` o disco lleno). Además, peticiones concurrentes simultáneas pueden sobreasignar la misma memoria libre si no existe un bloqueo transaccional.
+- **Entregable:**
+  1. Servicio de dominio `CuotasService.ValidarDisponibilidad(cores, ramMb, discoGb, storageId)`.
+  2. Verificación de seguridad: $\text{RAM\_Solicitada} \le \text{RAM\_Libre} - \text{Headroom}(15\%)$ y $\text{Disco\_Solicitado} \le \text{Disco\_Libre}(storageId)$.
+  3. Bloqueo distribuido en Redis `lock:instance:provisioning` mediante `SETNX` (TTL 30 s) para garantizar atomicidad durante la evaluación y despacho.
+  4. Mapeo a error `409 Conflict` con código estructurado `RESOURCE_QUOTA_EXCEEDED` ante saturación.
+- **Criterio de éxito:** Peticiones que superan los recursos seguros son rechazadas inmediatamente sin tocar Proxmox. Peticiones simultáneas compitiendo por el remanente resuelven una con éxito y otra con 409 sin condición de carrera.
+
+
+#### `BAC-38` - Endpoint `POST /api/instances` para creación de VMs y Contenedores LXC
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-30`, `BAC-37`.
+- **Problema:** No existe el endpoint de aprovisionamiento de recursos. Se requiere un endpoint unificado que oculte las diferencias nativas de Proxmox entre la creación de máquinas virtuales (`/nodes/{node}/qemu`) y contenedores (`/nodes/{node}/lxc`).
+- **Entregable:**
+  1. Endpoint `POST /api/instances` con rol obligatorio `ADMIN`.
+  2. Payload validado:
+     ```json
+     {
+       "tipo": "vm", // "vm" o "lxc"
+       "nombre": "srv-prod-01",
+       "cores": 2,
+       "ramMb": 2048,
+       "discoGb": 20,
+       "storageId": "local-lvm",
+       "templateOso": "debian-12-standard.tar.zst",
+       "red": { "modo": "dhcp" } // o "static" con ip y gateway
+     }
+     ```
+  3. Asignación automática del próximo identificador libre mediante `/cluster/nextid`.
+  4. Envío de la orden a Proxmox, captura del UPID de creación (`qmcreate`/`vzcreate`), inserción en `tareas_asincronas` con estado `RUNNING` y respuesta `HTTP 202 Accepted { upid, tareaId, vmid }`.
+- **Criterio de éxito:** Una solicitud válida responde `202 Accepted` en menos de 1 s, Proxmox comienza el aprovisionamiento y el UPID queda registrado para seguimiento.
+
+
+#### `INF-10` - Verificación y disponibilidad de plantillas LXC e ISOs en el servidor Proxmox real
+
+- **Área:** Infraestructura
+- **Asignados:** Nico y Lucas
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-07C` (permisos de token en Proxmox).
+- **Problema:** Para que la validación en el servidor real (`INT-06`) funcione, los almacenamientos de Proxmox deben contener las imágenes base necesarias.
+- **Entregable:**
+  1. Descargar o verificar la presencia de una plantilla LXC liviana oficial (ej. `alpine-3.19-default` o `debian-12-standard`) en el storage `local:vztmpl`.
+  2. Verificar una imagen ISO de prueba en `local:iso`.
+  3. Comprobar que el API Token puede listar ambos contenidos mediante consulta HTTPS a `/storage/{storage}/content`.
+- **Criterio de éxito:** El backend desplegado en el servidor lista las plantillas e ISOs reales a través de `GET /api/node/templates` sin errores de permisos.

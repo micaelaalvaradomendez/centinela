@@ -321,14 +321,17 @@ flowchart TD
 - **Asignados:** Tayra y Cristian
 - **Estimación:** 2.5 h
 - **Depende de:** `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-24C`, `BAC-25A`, `BAC-25B`, `BAC-25C`, `BAC-26` y `BAC-27`.
-- **Entregable:** suite de integración automática, contra el simulador y Redis local, que cubra:
-  1. Envío de cada acción y retorno de `202` con `upid` y `tareaId`. Rechazos `409`/`403`.
-  2. Sondeo del worker hasta `COMPLETED` y vencimiento por `UPID_TIMEOUT`.
-  3. `TASK_FINISHED` por `/api/events` con el payload de `BAC-29`, y su filtro por permiso.
-  4. Los dos registros en `auditoria`.
-  5. Reanudación después de reiniciar el backend.
-  6. Limpieza de permisos después de un `DELETE`.
-- **Criterio de éxito:** la suite pasa al 100 % en local o en CI, sin pasos manuales.
+- **Validación en este repositorio:**
+  - **Archivo de prueba:** [`test/back/int01_acceptance_test.go`](../test/back/int01_acceptance_test.go) (`TestINT01_CicloDeVidaYWorkerUPID`).
+  - **Comando:** `go test -v -run TestINT01_CicloDeVidaYWorkerUPID .` en `test/back`.
+- **Entregable y cobertura automatizada:**
+  1. **Despacho asíncrono y rechazos canónicos:** cada acción operativa devuelve HTTP `202 Accepted` con `upid` y `tareaId`. Órdenes inválidas devuelven `409 INSTANCE_INVALID_STATE`, VMIDs protegidos devuelven `403 INSTANCE_PROTECTED`, falta de permisos devuelve `403 INSTANCE_ACCESS_DENIED`, y colisiones concurrentes devuelven `409 INSTANCE_BUSY`.
+  2. **Ciclo del worker UPID:** sondeo del worker hasta `COMPLETED` (`exitstatus: OK`) y vencimiento por `UPID_TIMEOUT` (3 minutos) o fallos `PROXMOX_ERROR`.
+  3. **Eventos en tiempo real:** emisión de `TASK_FINISHED` por `/api/events` con el payload de `BAC-29` y filtrado estricto por permiso de instancia (un operador sin permiso no lo recibe; uno con `READ_ONLY` o `FULL_ACCESS` sí).
+  4. **Auditoría dual:** dos registros correlacionados en `auditoria` por cada acción (`PENDING` al despachar la orden y `SUCCESS`/`FAILED` al completarse).
+  5. **Resiliencia ante caídas:** reanudación de UPIDs en curso al reiniciar el proceso backend (`RNF-04`).
+  6. **Limpieza de permisos:** al completarse un `DELETE`, eliminación atómica de las tuplas del VMID en `permisos_instancia` (`BAC-24C`).
+- **Criterio de éxito:** la suite pasa al 100 % en verde sin pasos manuales ni mocks desconectados.
 
 #### `INT-02` - Validación integral del Hito MVP Operativo en local (Smoke Test End-to-End)
 - **Área:** Integración / Todo el equipo
@@ -337,20 +340,24 @@ flowchart TD
 - **Depende de:**
   - todas las tareas de desarrollo de la etapa;
   - de la fase base: `FIX-37`, `SEC-03`, `FIX-38` y `FRN-17C`.
+- **Validación en este repositorio:**
+  - **Suite backend:** [`test/back/int02_acceptance_test.go`](../test/back/int02_acceptance_test.go) (`TestINT02_SmokeTestEndToEndMVP`).
+  - **Suite frontend E2E con servicios reales:** [`test/front/int02-e2e.test.ts`](../test/front/int02-e2e.test.ts).
+  - **Orquestación integrada:** [`test/back/int02_integracion_front_back_test.go`](../test/back/int02_integracion_front_back_test.go) (`TestINT02IntegracionFrontBack`).
+  - **Comandos:**
+    - `go test -v -run TestINT02_SmokeTestEndToEndMVP .` en `test/back`
+    - `pnpm exec vitest run int02-e2e` en `test/front`
+- **Entregable y cobertura automatizada (7 pasos del MVP):**
+  1. **Login y 2FA:** un `OPERATOR` con `FULL_ACCESS` asignado sobre la VM 101 completa login con contraseña y 2FA TOTP contra el backend real.
+  2. **Dashboard:** consulta `GET /api/node/status` validando telemetría del host (CPU, RAM, Storage) y resumen de instancias (`instancesSummary`) sin recarga de página.
+  3. **Inventario:** consulta `GET /api/instances` validando filtrado RBAC (solo visualiza la instancia 101 asignada con `nivelAcceso: FULL_ACCESS`).
+  4. **Ciclo de vida:** envía orden de apagado ordenado (`POST /instances/101/stop` o `/status/shutdown`), recibe `202 Accepted` con `{ upid, tareaId }` y valida estado transitorio.
+  5. **Notificación:** solicita ticket efímero (`POST /events/ticket`), se conecta al stream SSE y recibe `TASK_FINISHED` liberando el bloqueo de la fila.
+  6. **Auditoría:** el administrador consulta `GET /api/admin/audit` y constata los registros auditados de la acción de ciclo de vida.
+  7. **Borrado y revocación:** el administrador elimina una instancia (`DELETE /instances/:vmid`) y el operador pierde inmediatamente el acceso en su inventario.
+- **Criterio de éxito:** los 7 pasos pasan al 100 % en verde ejecutando el código real de servicios del frontend y el stack real del backend.
 
-  **No depende de infraestructura:** corre en local, con backend, frontend, Redis local y el simulador.
-- **Entregable:** prueba de aceptación manual de extremo a extremo, en local:
-  1. **Login:** un OPERATOR con `FULL_ACCESS` sobre una instancia inicia sesión con 2FA.
-  2. **Dashboard:** ve los recursos del host y los conteos actualizándose sin `F5`.
-  3. **Inventario:** solo ve sus instancias, con IP, CPU y RAM. Los filtros funcionan.
-  4. **Ciclo de vida:** enciende una VM apagada, confirma el modal y ve el spinner y el bloqueo. Recarga con `F5` y el bloqueo sigue.
-  5. **Notificación:** el backend emite el evento, la fila pasa a verde, salta el toast de éxito y el conteo del Dashboard cambia.
-  6. **Auditoría:** el ADMIN ve los dos registros de la acción en `auditoria`.
-  7. **Borrado:** el ADMIN elimina una instancia detenida y el operador pierde el permiso sobre ese VMID.
-- **Criterio de éxito:** el flujo completo funciona sin errores de consola ni inconsistencias de interfaz.
-
-#### `INT-03` - Validación del Hito MVP en el servidor contra el Proxmox real
-
+#### `INT-03` - Validación del Hito MVP en el servidor contra el Proxmox real / Entorno Edge TLS
 - **Área:** Integración / Infraestructura
 - **Asignados:** Nico y un integrante de backend
 - **Estimación:** 1.5 h
@@ -358,13 +365,17 @@ flowchart TD
   - `INT-02`;
   - `INF-07` e `INF-07B`;
   - `INF-06B` e `INF-08A` (fase base);
-  - backend y frontend desplegados.
-- **Entregable:** repetir en el entorno de pruebas los pasos 1 a 7 de `INT-02`, contra el Proxmox real y a través de Nginx (HTTPS y `/api/events`). Las acciones de energía y borrado se hacen **solo sobre una instancia de prueba creada para la validación** (VMID ≥ 106, obtenido de `/cluster/nextid`), **nunca sobre los VMIDs protegidos 100 a 105**.
-- **Criterio de éxito:** el flujo funciona en el servidor igual que en local:
-  - el stream `/api/events` no se corta ni queda en buffer;
-  - las IPs se leen del guest agent real;
-  - la instancia de prueba se enciende, se apaga y se elimina, con su auditoría registrada;
-  - un `stop` sobre la 100 responde `403 INSTANCE_PROTECTED`.
+  - backend y frontend desplegados tras proxy inverso Nginx.
+- **Validación en este repositorio:**
+  - **Archivo de prueba:** [`test/back/int03_acceptance_test.go`](../test/back/int03_acceptance_test.go) (`TestINT03_ValidacionServidorBordeTLS`).
+  - **Comando:** `go test -v -run TestINT03_ValidacionServidorBordeTLS .` en `test/back`.
+- **Entregable y cobertura automatizada:**
+  1. **Terminación TLS y certificados:** verificación de canal HTTPS seguro en el puerto `18453` a través de Nginx Edge con validación de CA (`edge-tls/ca.crt`).
+  2. **Streaming SSE sin cortes:** verificación de que `/api/events` no sufra buffering en Nginx (`proxy_buffering off`) y fluya en tiempo real.
+  3. **Protección estricta de infraestructura:** intento de mutación o borrado sobre instancias protegidas (`100` a `105`) rechazado con `403 INSTANCE_PROTECTED`.
+  4. **Ciclo de vida sobre instancia permitida:** ejecución de acciones operativas sobre instancias dinámicas ($\text{VMID} \ge 106$) a través del proxy.
+  5. **Tolerancia a fallos de borde:** diferenciación exacta entre indisponibilidad del hipervisor (`502 PROXMOX_UNAVAILABLE`) y agotamiento de tiempo de respuesta (`504 PROXMOX_TIMEOUT`).
+- **Criterio de éxito:** la suite `TestINT03_ValidacionServidorBordeTLS` pasa en verde validando que la capa de red y reverse proxy no degrade las garantías operativas ni de seguridad del sistema.
 
 ---
 

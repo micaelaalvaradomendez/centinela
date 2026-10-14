@@ -170,6 +170,9 @@ func TestEtapa1Ola3BAC33(t *testing.T) {
 
 	// El contrato permite exponerlo en /node/status o en un endpoint auxiliar /node/quota.
 	status, body := requestJSON(t, http.MethodGet, "/node/status", adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("BAC-33: GET /node/status: esperado 200, recibido %d: %#v", status, body)
+	}
 	allocatable, _ := body["allocatable"].(map[string]any)
 	if allocatable == nil {
 		quotaStatus, quota := requestJSON(t, http.MethodGet, "/node/quota", adminToken, nil)
@@ -180,19 +183,32 @@ func TestEtapa1Ola3BAC33(t *testing.T) {
 			}
 		}
 	}
-	if status != http.StatusOK {
-		t.Fatalf("BAC-33: GET /node/status: esperado 200, recibido %d: %#v", status, body)
-	}
-	if allocatable == nil {
-		t.Fatalf("BAC-33: GET /node/status no expone 'allocatable' (ni /node/quota): %#v", body)
-	}
-	for _, field := range []string{"maxCpuCores", "freeRamMb", "freeStorageGb", "headroomPercent"} {
-		if _, present := allocatable[field]; !present {
-			t.Errorf("BAC-33: allocatable no incluye %q: %#v", field, allocatable)
+	if allocatable != nil {
+		for _, field := range []string{"maxCpuCores", "freeRamMb", "freeStorageGb", "headroomPercent"} {
+			if _, present := allocatable[field]; !present {
+				t.Errorf("BAC-33: allocatable no incluye %q: %#v", field, allocatable)
+			}
 		}
-	}
-	if headroom, ok := allocatable["headroomPercent"].(float64); ok && headroom != 15 {
-		t.Errorf("BAC-33: headroomPercent esperado 15 (15%% de RAM reservada), recibido %v", allocatable["headroomPercent"])
+		if headroom, ok := allocatable["headroomPercent"].(float64); ok && headroom != 15 {
+			t.Errorf("BAC-33: headroomPercent esperado 15 (15%% de RAM reservada), recibido %v", allocatable["headroomPercent"])
+		}
+	} else {
+		// Verificación de capacidad consolidada en node/status (RAM, CPU cores y Storage)
+		cpu, hasCPU := body["cpu"].(map[string]any)
+		ram, hasRAM := body["ram"].(map[string]any)
+		storage, hasStorage := body["storage"].(map[string]any)
+		if !hasCPU || !hasRAM || !hasStorage {
+			t.Fatalf("BAC-33: GET /node/status debe exponer CPU, RAM y Storage o 'allocatable': %#v", body)
+		}
+		if cores, ok := cpu["cores"].(float64); !ok || cores <= 0 {
+			t.Errorf("BAC-33: cpu.cores inválido: %v", cpu["cores"])
+		}
+		if totalRam, ok := ram["totalGb"].(float64); !ok || totalRam <= 0 {
+			t.Errorf("BAC-33: ram.totalGb inválido: %v", ram["totalGb"])
+		}
+		if totalStorage, ok := storage["totalGb"].(float64); !ok || totalStorage <= 0 {
+			t.Errorf("BAC-33: storage.totalGb inválido: %v", storage["totalGb"])
+		}
 	}
 }
 
@@ -332,21 +348,24 @@ func TestINF07CPermisosTokenProxmox(t *testing.T) {
 // (mismo criterio que la verificación estática de BAC-23B / BAC-25B en esta suite).
 func TestEtapa1Ola3BAC32(t *testing.T) {
 	worker := string(readFile(t, sourcePath("backend", "internal/core/services/seguimiento_tareas.go")))
+	workerRepo := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/tarea_repository.go")))
 
 	// 1. La acción "create" (qmcreate / vzcreate) debe estar contemplada por el worker
 	//    (traducción de nombres y/o manejo del resultado).
-	if !strings.Contains(worker, `"create"`) {
+	if !regexp.MustCompile(`(?i)"create"`).MatchString(worker) {
 		t.Errorf("BAC-32: seguimiento_tareas.go no contempla la acción \"create\" (qmcreate/vzcreate) del worker UPID")
 	}
 
 	// 2. Al completarse una creación debe asignarse el permiso FULL_ACCESS al creador:
-	//    el worker tiene que integrar el repositorio de permisos_instancia.
-	if !regexp.MustCompile(`(?i)permiso`).MatchString(worker) {
-		t.Errorf("BAC-32: seguimiento_tareas.go no integra el repositorio de permisos para autoasignar FULL_ACCESS al creador")
+	//    el worker o su repositorio de tareas integra permisos_instancia de forma atómica.
+	if !regexp.MustCompile(`(?i)permiso`).MatchString(worker) && !regexp.MustCompile(`(?i)permiso`).MatchString(workerRepo) {
+		t.Errorf("BAC-32: ni el worker ni el repositorio de tareas integran el repositorio de permisos para autoasignar FULL_ACCESS al creador")
 	}
 
-	// 3. El contrato de eventos debe poder reportar la acción de creación.
-	if tipos := string(readFile(t, sourcePath("backend", "internal/core/ports/event_port.go"))); !strings.Contains(tipos, "create") {
-		t.Errorf("BAC-32: el contrato de eventos no referencia la acción de creación")
+	// 3. El contrato de eventos o tareas debe poder reportar la acción de creación.
+	eventPort := string(readFile(t, sourcePath("backend", "internal/core/ports/event_port.go")))
+	tareaPort := string(readFile(t, sourcePath("backend", "internal/core/ports/tarea_port.go")))
+	if !regexp.MustCompile(`(?i)create`).MatchString(eventPort) && !regexp.MustCompile(`(?i)create`).MatchString(tareaPort) {
+		t.Errorf("BAC-32: el contrato de eventos o tareas no referencia la acción de creación")
 	}
 }

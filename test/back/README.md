@@ -32,13 +32,15 @@ Estas pruebas contrastan el backend (`backend/`, Go + Gin) con los criterios de 
 | `puente_etapa1_acceptance_test.go` | **BAC-21B**/**FIX-39** (instancias extendidas, energía, `DELETE`), **BAC-21C** (tickets y `/api/events`), **FIX-40** (`504 PROXMOX_TIMEOUT`), **INF-07B** (`/api/events` a través del borde Nginx), **RNF-07** (bus Redis Pub/Sub multirréplica) |
 | `etapa1_acceptance_test.go` | Ola 1 de la Etapa 1: **BAC-29** (contrato), **BAC-22** (`/api/node/status`, caché y último estado), **BAC-23A** (adaptador de IP), **BAC-25A** (pool de UPID) |
 | `etapa1_ola2_acceptance_test.go` | Ola 2 de la Etapa 1: **BAC-25B** (timeout de UPID y fallos `PROXMOX_ERROR`), **BAC-27** (auditoría del resultado con UPID), **BAC-22B** / **BAC-23B** |
+| `etapa1_ola3_acceptance_test.go` | Ola 3 de la Etapa 1: **BAC-26**, **BAC-30**, **BAC-31**, **BAC-32**, **BAC-33**, **FIX-71**, **INF-07C**, **INF-09** |
 | `simulador_proxmox_acceptance_test.go` | Verificación del stub de Proxmox VE, tokens de API y switches de prueba |
-| `fixes_acceptance_test.go` | Pruebas de regresión para FIX-44 a FIX-70 |
+| `fixes_acceptance_test.go` | Pruebas de regresión para FIX-44 a FIX-70, **FIX-88** |
 | `login04_integracion_front_back_test.go` | **LOGIN-04** con el código real del frontend (`test/front/login04-e2e.test.ts`) contra este backend |
 | `int01_acceptance_test.go` | **INT-01** (Bloque 6 de `etapa1.md`): ciclo de vida completo (start, stop, shutdown, reboot, delete), sondeo UPID, timeout, TASK_FINISHED RBAC, auditoría dual y limpieza BAC-24C |
 | `int02_acceptance_test.go` | **INT-02** (Bloque 6 de `etapa1.md`): Smoke test integral del MVP en local (flujo de 7 pasos: login 2FA, dashboard, inventario, acción 202, evento, auditoría, borrado) |
 | `int02_integracion_front_back_test.go` | **INT-02** front ↔ back: orquestación de `test/front/int02-e2e.test.ts` con el código real del frontend contra el stack |
 | `int03_acceptance_test.go` | **INT-03** (Bloque 6 de `etapa1.md`): validación sobre Nginx Edge TLS en HTTPS (:18453), SSE sin buffering, VMIDs protegidos y tolerancia de hipervisor |
+| `adversarial_integrity_test.go` | **Integridad adversarial del sistema**: contención de escalamiento de privilegios RBAC, inmunidad de VMIDs protegidos (103), colisión de órdenes concurrentes (409 INSTANCE_BUSY), adulteración de firmas JWT, revocación de sesiones, tickets efímeros de uso único y prevención de inyecciones (path traversal / SQL injection) |
 
 ## Aislamiento de la red real
 

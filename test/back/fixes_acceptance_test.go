@@ -17,6 +17,7 @@ import (
 //   - FIX-53: Unificar códigos de acción y resultado en la auditoría de instancias (BAC-24A).
 //   - FIX-54: Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend).
 //   - FIX-55: Alinear baja, validación y autenticación con identidad histórica (Backend).
+//   - FIX-88: Evitar que EMAIL_PROVIDER caiga en silencio en el correo simulado (BAC-16B / INF-08B).
 func TestFixesPendientes(t *testing.T) {
 	requireIntegration(t)
 
@@ -368,5 +369,37 @@ func TestFixesPendientes(t *testing.T) {
 			t.Errorf("Content-Type de /api/events debe ser text/event-stream, recibido %q", contentType)
 		}
 	})
+
+	t.Run("FIX-88 evita que EMAIL_PROVIDER caiga en silencio en el correo simulado", func(t *testing.T) {
+		mainContent := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
+
+		// 1. No debe usar un else ciego donde cualquier valor o ausencia de EMAIL_PROVIDER caiga
+		// silenciosamente en NewMockEmailService() sin validación ni aviso explícito.
+		// El criterio exige: fallar al arrancar (o registrar un WARN muy visible) cuando EMAIL_PROVIDER
+		// no esté definido, salvo que se use explícitamente EMAIL_PROVIDER=mock.
+		blindFallback := regexp.MustCompile(`(?s)if\s+os\.Getenv\("EMAIL_PROVIDER"\)\s*==\s*"smtp"\s*\{.*?\}\s*else\s*\{\s*emailService\s*=\s*email\.NewMockEmailService\(\)\s*log\.Println\("📧 Email Provider:\s*MOCK`)
+		if blindFallback.MatchString(mainContent) {
+			t.Errorf("FIX-88: cmd/api/main.go cae silenciosamente en NewMockEmailService cuando EMAIL_PROVIDER no es 'smtp', sin validar si está vacío ni requerir explícitamente 'mock'")
+		}
+
+		// 2. Si EMAIL_PROVIDER está vacío o no configurado, debe emitirse un log de advertencia (WARN/WARNING)
+		// o impedirse la selección silenciosa de mock.
+		if !regexp.MustCompile(`(?i)(warn|warning|faltante|no\s+definid|mock\s+explicito)`).MatchString(mainContent) &&
+			!strings.Contains(mainContent, `EMAIL_PROVIDER == "mock"`) &&
+			!strings.Contains(mainContent, `os.Getenv("EMAIL_PROVIDER") == "mock"`) {
+			t.Errorf("FIX-88: cmd/api/main.go no exige EMAIL_PROVIDER=mock explícito ni registra advertencia visible ante ausencia de EMAIL_PROVIDER")
+		}
+
+		// 3. Documentación en .env.example: debe advertir que 'mock' es solo para tests/CI/desarrollo
+		// y no sugerir dejarlo vacío de forma descuidada.
+		envExample := string(readFile(t, sourcePath("backend", ".env.example")))
+		if strings.Contains(envExample, "déjalo vacío para log/mock") {
+			t.Errorf("FIX-88: backend/.env.example sugiere 'déjalo vacío para log/mock'; debe indicar que mock es solo para tests/CI")
+		}
+		if !regexp.MustCompile(`(?i)(test|ci|desarrollo)`).MatchString(envExample) || !strings.Contains(envExample, "EMAIL_PROVIDER") {
+			t.Errorf("FIX-88: backend/.env.example no documenta claramente el uso restringido de mock para tests/CI")
+		}
+	})
 }
+
 

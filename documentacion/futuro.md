@@ -362,49 +362,10 @@ Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a 
 
 ---
 
-## 🛠️ Fixes detectados en la verificación del 09/10/2026: Auditoría y entorno de pruebas
-
-
-
-### `FIX-75` - Detección de conectividad saliente y tolerancia a puerto 587 bloqueado en suite de aceptación (`INF-08B`) (Infraestructura / Pruebas)
-
-- **Área:** Infraestructura / Backend / Pruebas
-- **Asignado:** Lucas / Lisandro
-- **Estimación:** 1 h
-- **Depende de:** `INF-08B` (en `terminado.md`).
-- **Problema técnico detallado:**
-  En `test/back/cierre_fase_base_acceptance_test.go:298`, la prueba `INF-08B_variables_SMTP_en_backend/.env.example_y_credenciales_reales_que_autentican_contra_el_relay` intenta negociar una conexión SMTP real con autenticación contra `smtp-relay.brevo.com:587`.
-  En entornos de desarrollo local, contenedores sin salida a Internet, proxies o redes corporativas donde el puerto 587 TCP saliente está bloqueado por firewall, la prueba queda congelada durante 30 segundos y falla por `i/o timeout` (`dial tcp 1.179.117.1:587: i/o timeout`).
-  Aunque la configuración y las credenciales de Brevo son válidas y el circuito funcional con Mailpit (`BAC-16B`) pasa al 100%, la prueba de aceptación falla de forma no determinística debido a restricciones del entorno de red externo.
-- **Qué debe hacer el equipo:**
-  1. En `cierre_fase_base_acceptance_test.go`, incorporar un pre-chequeo con timeout breve (2 s) que determine si existe conectividad TCP saliente al relay de Brevo. Si la red local rechaza o agota el tiempo de conexión a hosts externos, la prueba debe omitirse de forma controlada (`t.Skip("sin salida a Internet por puerto 587 en el entorno actual")`) sin marcar la suite en rojo.
-  2. Mantener la aserción estricta de variables en `backend/.env.example` y la verificación de credenciales cuando la conectividad esté disponible.
-- **Criterio de éxito:**
-  - `go test -v -run TestCierreFaseBase .` en `test/back` no bloquea por timeouts externos y pasa en verde.
 
 
 ## 🛠️ Fixes detectados en la verificación del 13/10/2026 (fase base)
 
-### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-54` (en `terminado.md`).
-- **Problema técnico detallado:**
-  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llama `migrarUnicidadEmail(db)` **antes** de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecuta `SELECT … FROM auditoria` (`migrar_usuarios.go`), pero la tabla `auditoria` (particionada) la crea `migrarAuditoriaParticionada`. En una **base nueva** (deploy limpio o el stack de `test/back`, que parte de una base vacía) el arranque aborta:
-  ```
-  ❌ Error fatal al iniciar la base de datos: error al clasificar usuarios eliminados:
-     ERROR: relation "auditoria" does not exist (SQLSTATE 42P01)
-  ```
-  En el servidor de pruebas no se ve porque `auditoria` ya existía; en un entorno limpio el backend sale con código 1 y **toda** la suite de aceptación del backend queda bloqueada.
-- **Qué debe hacer el equipo de backend:**
-  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` **después** de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
-  2. Alternativa equivalente: que `clasificarEliminados` no consulte `auditoria` si la tabla todavía no existe (guarda con `existeTabla`).
-  3. Verificar con una base **vacía** (`docker compose down --volumes` + `up`) que el backend arranca y que la suite `test/back` corre completa sin parches.
-- **Criterio de éxito:**
-  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
-  - `test/back` deja de requerir el reordenamiento manual.
 
 ---
 

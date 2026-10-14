@@ -67,12 +67,12 @@ describe('FIX-59 - Sustituir placeholder de desarrollo por mensaje informativo d
     expect(screen.queryByText(/imagenes y informacion random/i)).toBeNull();
 
     // 2. Debe explicar la propuesta de valor de Centinela (orquestación / infraestructura / Proxmox).
-    const plataformaCopy = screen.queryByText(/infraestructura|proxmox|orquestaci[oó]n|virtualizad|m[aá]quinas virtuales|servidores/i);
-    expect(plataformaCopy, 'falta el copy explicativo sobre el propósito de la plataforma Centinela').not.toBeNull();
+    const plataformaCopy = screen.queryAllByText(/infraestructura|proxmox|orquestaci[oó]n|virtualizad|m[aá]quinas virtuales|servidores/i);
+    expect(plataformaCopy.length, 'falta el copy explicativo sobre el propósito de la plataforma Centinela').toBeGreaterThan(0);
 
     // 3. Debe fundamentar la seguridad y el valor del doble factor (2FA).
-    const seguridadCopy = screen.queryByText(/2fa|doble factor|dos pasos|seguridad|protecci[oó]n/i);
-    expect(seguridadCopy, 'falta el copy explicativo sobre la importancia del segundo factor de autenticación (2FA)').not.toBeNull();
+    const seguridadCopy = screen.queryAllByText(/2fa|doble factor|dos pasos|seguridad|protecci[oó]n/i);
+    expect(seguridadCopy.length, 'falta el copy explicativo sobre la importancia del segundo factor de autenticación (2FA)').toBeGreaterThan(0);
 
     // 4. Debe contener los títulos estructurados aprobados en actual.md
     expect(screen.getByText(/Tu infraestructura virtual, simplificada y bajo control/i)).toBeInTheDocument();
@@ -88,7 +88,20 @@ describe('FIX-60 - Reubicación del botón "Crear instancia" del Dashboard a la 
       rol: 'ADMIN', instanciasPermitidas: [], tiene2FA: true,
     }));
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/node/status')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          cpu: { usagePercent: 10, cores: 4 },
+          ram: { usedGb: 2, totalGb: 8, usagePercent: 25 },
+          storage: { usedGb: 10, totalGb: 50, usagePercent: 20 },
+          uptimeSeconds: 1000,
+          instancesSummary: { vms: { running: 0, stopped: 0, paused: 0, total: 0 }, lxc: { running: 0, stopped: 0, paused: 0, total: 0 } },
+          stale: false,
+          fetchedAt: '2026-10-14T00:00:00Z',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
+      return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }));
 
     render(withProtectedProviders(
       <MemoryRouter initialEntries={['/dashboard']}>
