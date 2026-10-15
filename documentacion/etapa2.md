@@ -131,7 +131,24 @@ flowchart TD
     INF10 --> INT06
     INF07C --> INT06
 
+    subgraph PuenteE3 [Puente a Etapa 3]
+        BAC50[BAC-50: Simulador Proxmox Snapshots]:::bridge
+        BAC51[BAC-51: Candado 409 INSTANCE_BUSY]:::bridge
+        FRN36[FRN-36: Detalle Modular y Transiciones]:::bridge
+        BAC52[BAC-52: Broker SSE Alertas Globales]:::bridge
+        INF13[INF-13: Storage Snapshots Proxmox Real]:::bridge
+        BAC53[BAC-53: Particionado Tabla Auditoría]:::bridge
+    end
+
+    INT05 --> BAC50
+    INT05 --> BAC51
+    INT05 --> FRN36
+    INT05 --> BAC52
+    INT05 --> BAC53
+    INT06 --> INF13
+
     classDef base fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef bridge fill:#fef3c7,stroke:#f59e0b,color:#92400e
 ```
 
 ---
@@ -145,6 +162,7 @@ flowchart TD
 | **3** | `BAC-39`, `BAC-40`, `FRN-23`, `FRN-26`, `FRN-27` | Ola 2. Requiere endpoints de creación, métricas y estructuras base del wizard |
 | **4** | `BAC-41`, `FRN-28`, `INT-04` | Ola 3. Cierra la auditoría, la edición en frontend y la suite automática |
 | **5** | `INT-05`, y después `INT-06` | Todo lo anterior implementado. `INT-06` requiere `INF-10` y Proxmox real |
+| **6 (Puente a Etapa 3)** | `BAC-50`, `BAC-51`, `FRN-36`, `BAC-52`, `INF-13`, `BAC-53` | Olas 4 y 5 de Etapa 2. Cubren los baches operativos y de entorno para habilitar la Etapa 3 |
 
 **Camino crítico:** `BAC-37` $\rightarrow$ `BAC-38` $\rightarrow$ `BAC-39` $\rightarrow$ `FRN-26` $\rightarrow$ `INT-04` $\rightarrow$ `INT-05` $\rightarrow$ `INT-06`.
 
@@ -155,70 +173,16 @@ flowchart TD
 ### Bloque 1: Backend - Telemetría Avanzada y Streaming de Métricas (`RF-05`)
 
 
-
-#### `BAC-36` - Endpoint REST de métricas históricas de instancia (`timeframe=2h|24h`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-34`.
-- **Problema:** Al abrir la vista de una máquina, los gráficos necesitan renderizar de inmediato la tendencia histórica sin aguardar la llegada de los primeros paquetes del WebSocket.
-- **Entregable:**
-  1. Endpoint `GET /api/instances/:vmid/metrics?timeframe=2h|24h` protegido con `RequireAuth` y `RequireInstanceAccess`.
-  2. Parámetro `timeframe` configurable (por defecto `2h`, soportando `24h`), mapeado a los intervalos de Proxmox (`hour` y `day`).
-  3. Caché corta en Redis (TTL 30 s) para evitar consultas repetitivas al hipervisor ante recargas de página.
-- **Criterio de éxito:** Responde en menos de 100 ms desde caché con el arreglo histórico de métricas formateado para el consumo de gráficos.
-
 ---
 
 ### Bloque 2: Backend - Motor de Aprovisionamiento y Validación de Cuotas (`RF-07`)
 
 
-#### `BAC-39` - Seguimiento de creación, autoasignación de permisos y eventos (`RF-07`, `RF-11`)
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-38`, `BAC-32` (worker con soporte de creación).
-- **Problema:** Una máquina recién creada no pertenece a ningún operador por defecto. El creador debe obtener acceso inmediato sin requerir que otro administrador configure manualmente sus permisos en `/admin/users`.
-- **Entregable:**
-  1. Integración en `seguimiento_tareas.go`: al detectar fin exitoso (`exitstatus: "OK"`) de un UPID de creación, insertar atómicamente `(creador_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
-  2. Emisión por el canal SSE `/api/events` de `TASK_FINISHED`:
-     `{ tipo: "TASK_FINISHED", recursoTipo: "VM", recursoId: "108", detalles: { tareaId, accion: "create", estado: "COMPLETED" } }`.
-  3. Si la tarea de creación falla en Proxmox, liberar bloqueos y registrar el evento con `estado: "FAILED"`.
-- **Criterio de éxito:** Al finalizar la creación, el inventario del usuario incluye la nueva máquina y la interfaz recibe la notificación en tiempo real.
 
 ---
 
 ### Bloque 3: Backend - Edición Dinámica de Recursos y Auditoría (`RF-10`, `RF-08`)
 
-#### `BAC-40` - Endpoint `PUT /api/instances/:vmid/config` con cálculo diferencial ($\Delta\text{RAM}$) y detección de hot-plug
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-37`.
-- **Problema:** La modificación de recursos debe validar que los incrementos solicitados no saturen el nodo y debe advertir con precisión si el cambio exige reiniciar el sistema operativo huésped.
-- **Entregable:**
-  1. Endpoint `PUT /api/instances/:vmid/config` accesible para usuarios con rol `ADMIN` o con `FULL_ACCESS` sobre la instancia.
-  2. Payload: `{ cores?: number, ramMb?: number }`.
-  3. Cálculo diferencial: si $\Delta\text{RAM} > 0$, validar contra la cuota libre con `CuotasService`.
-  4. Invocación de `PUT /nodes/{node}/{tipo}/{vmid}/config` en Proxmox.
-  5. Inspección del resultado: si la instancia está `running` y no aplica en caliente, responder `HTTP 200 OK` con `{ requiresReboot: true, message: "Recursos modificados; los cambios se aplicarán tras reiniciar la instancia." }`. Si aplica en caliente, `{ requiresReboot: false }`.
-- **Criterio de éxito:** Incrementos excesivos son rechazados con `409 RESOURCE_QUOTA_EXCEEDED`. Cambios válidos se persisten y notifican el estado de hot-plug.
-
-#### `BAC-41` - Auditoría inmutable de aprovisionamiento y cambios de recursos (`RF-08`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-38`, `BAC-40`.
-- **Problema:** Toda alteración en la infraestructura debe quedar registrada inalterablemente en la tabla `auditoria` para trazabilidad institucional de los operadores.
-- **Entregable:**
-  1. Registro de `CREATE_INSTANCE`: entrada inicial con `resultado: "PENDING"` al recibir la orden, y entrada final con `resultado: "SUCCESS"` o `"FAILED"` vinculada al `upid` y `tareaId`.
-  2. Registro de `CONFIG_INSTANCE`: entrada auditando los valores anteriores y los nuevos parámetros en `detalles` (JSONB).
-  3. Verificación de inmutabilidad contra la base particionada.
-- **Criterio de éxito:** `GET /api/admin/audit` refleja las acciones de creación y edición correlacionadas por identificador de tarea sin omisiones de datos.
 
 ---
 
@@ -236,7 +200,10 @@ flowchart TD
   2. Hook personalizado `useInstanceMetrics(vmid)` que gestione conexión, estado (`conectando`, `conectado`, `reconectando`, `error`) y almacenamiento en búfer de los últimos $N$ puntos de telemetría.
   3. Reintento con backoff exponencial ante desconexión accidental.
   4. Cierre explícito del socket al desmontar el componente o cambiar de pestaña.
-- **Criterio de éxito:** El hook entrega series de datos actualizadas cada 2 s sin fugas de memoria en pruebas de componente con Vitest.
+  5. **Contrato de telemetría unificado (escala y nulos):**
+     - La CPU transmitida en vivo por WebSocket (`MetricasEnVivoDTO.cpu`) y en el histórico RRDdata (`PuntoMetricaDTO.cpuPercent`) viaja **en escala porcentual directa ($0$ a $100$)**, no como fracción $0..1$. El hook debe almacenar la telemetría en dicha escala sin multiplicar por 100.
+     - Cuando la instancia esté apagada (`stopped`), el backend envía `cpu: null` y `mem: null`. El hook debe manejar valores nulos de forma segura (sin invocar `.toFixed()` directamente sobre `null`) e indicar en el estado del búfer la inactividad temporal.
+- **Criterio de éxito:** El hook entrega series de datos actualizadas cada 2 s sin fugas de memoria en pruebas de componente con Vitest y maneja instancias apagadas (`null`) sin excepciones de tipo en consola.
 
 #### `FRN-23` - Componentes de gráficos interactivos de rendimiento y selector de rango temporal
 
@@ -247,14 +214,15 @@ flowchart TD
 - **Problema:** La pestaña "Métricas" de `InstanceDetailPage.tsx` carece de componentes visuales para interpretar el consumo de recursos de la máquina.
 - **Entregable:**
   1. Incorporación de componentes de gráficos interactivos (utilizando Recharts o Chart.js):
-     - Gráfico de CPU (%)
-     - Gráfico de Memoria RAM (Usada vs Total)
-     - Gráfico de Tráfico de Red (KB/s In/Out)
-     - Gráfico de I/O de Disco (KB/s Read/Write)
+     - Gráfico de CPU (%) en escala directa $0-100\%$ (compatible con `PuntoMetricaDTO.cpuPercent` y WebSocket).
+     - Gráfico de Memoria RAM (Usada vs Total).
+     - Gráfico de Tráfico de Red (KB/s In/Out).
+     - Gráfico de I/O de Disco (KB/s Read/Write).
   2. Selector de rango temporal: "En vivo" (WebSocket), "Últimas 2 horas" y "Últimas 24 horas" (REST `BAC-36`).
   3. Formateo legible de unidades (bytes a MB/GB, bps a KB/s).
   4. Tooltips explicativos y estados de carga (skeletons) mientras se obtienen los primeros datos.
-- **Criterio de éxito:** Al abrir la pestaña "Métricas", se visualiza la serie histórica y los gráficos continúan actualizándose dinámicamente con los eventos en vivo.
+  5. **Tolerancia a valores nulos:** cuando la máquina esté detenida (`cpu: null`, `mem: null`), los gráficos deben pintar discontinuidades temporales o mostrar el estado "Instancia detenida" sin romper el ciclo de vida del componente con errores `NaN` o `TypeError`.
+- **Criterio de éxito:** Al abrir la pestaña "Métricas", se visualiza la serie histórica y los gráficos continúan actualizándose dinámicamente con los eventos en vivo, tolerando paradas de la máquina sin fallos visuales.
 
 ---
 
@@ -386,6 +354,46 @@ flowchart TD
     4. Destruir el contenedor de prueba con `DELETE /api/instances/:vmid` (`BAC-24B`/`BAC-24C`) para dejar el entorno limpio.
 - **Criterio de éxito:** El aprovisionamiento, telemetría y edición funcionan idénticamente en el servidor físico, registrando auditoría y respetando los VMIDs protegidos.
 
+### Bloque 8: Tareas Puente (Bridge) y Cierre de Baches para el Paso a la Etapa 3
+
+> [!IMPORTANT]
+> **Cierre de Brechas Operativas y de Entorno Local (Etapa 2 $\rightarrow$ Etapa 3):**
+> Estas tareas cubren los baches técnicos y arquitectónicos detectados en la verificación de la Etapa 2 que destraban directamente el inicio sin fricciones de los Snapshots (`RF-06`), la Auditoría Completa (`RF-08`), las Alertas por Saturación (`RF-11`) y el Hardening Final:
+> 1. El simulador de Proxmox en local debe responder endpoints de snapshots (`create`, `list`, `rollback`, `delete`) y emitir UPIDs simulados para que el equipo desarrolle la Etapa 3 sin depender del hardware físico.
+> 2. Debe existir una guarda centralizada de concurrencia operativa a nivel de instancia que rechace con `409 INSTANCE_BUSY` cualquier acción mutante concurrente mientras una tarea asíncrona (como snapshot o rollback) está en curso.
+> 3. La vista de Detalle de Instancia (`/instances/:vmid`) debe modularizarse para admitir la nueva pestaña de Snapshots, badges de estados transitorios (`SNAPSHOTTING`, `ROLLING_BACK`) y propagación de bloqueo a la botonera de la cabecera.
+> 4. El broker de eventos SSE (`/api/events`) debe generalizarse para emitir alertas globales del host (`ALERT_TRIGGERED`, `ALERT_RESOLVED`) sin requerir un VMID obligatorio.
+> 5. El almacenamiento del Proxmox real debe auditarse para verificar que el pool de discos admita snapshots nativos (LVM-thin, ZFS o qcow2) y no falle en la validación de hardware.
+> 6. La tabla `auditoria` debe contar preventivamente con particiones trimestrales creadas e índices compuestos para soportar el partition pruning y streaming masivo de la Etapa 3.
+
+
+#### `FRN-36` (`BRG-10-FRN`) - Modularización de `InstanceDetailPage` para Pestaña de Snapshots y Estados Transitorios
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-21`, `FRN-28`.
+- **Problema:** La página de detalle actual tiene pestañas fijas y no propaga el estado de bloqueo a la cabecera cuando una máquina está en transición asíncrona.
+- **Entregable:**
+  1. Reestructuración de `InstanceDetailPage.tsx` con soporte para pestañas modulares (dejando listo el slot para "Snapshots").
+  2. Soporte en el badge de estado para etiquetas transitorias: `SNAPSHOTTING` (azul), `ROLLING_BACK` (amarillo/naranja).
+  3. Deshabilitación reactiva de la botonera de acciones rápidas de la cabecera cuando `instance.activeTask != null`.
+- **Criterio de éxito:** Si la máquina reporta `activeTask`, los botones de la cabecera se bloquean con spinner y la pestaña de Snapshots cuenta con su contenedor maquetado.
+
+
+#### `INF-13` (`BRG-11-INF`) - Verificación y Validación de Storage Compatible con Snapshots en Proxmox Real
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-10`.
+- **Problema:** Si el Proxmox físico (`100.81.49.19`) utiliza discos `raw` sobre LVM estándar, la API de snapshots fallará en la validación final (`INT-09`).
+- **Entregable:**
+  1. Verificación del almacenamiento configurado en Proxmox (`local-lvm` con thin-pool, `zfs` o `qcow2`).
+  2. Si el storage por defecto no soporta snapshots, configurar un pool LVM-thin o storage de directorio para las instancias de prueba del Centinela.
+  3. Documentar en `documentacion/api-proxmox.md` los storages aptos para snapshots.
+- **Criterio de éxito:** Ejecución manual de `qm snapshot <vmid> test` por CLI en el Proxmox real completa exitosamente sin errores de formato de disco.
+
+---
+
 ---
 
 ## 6. Resumen de Distribución y Carga de Trabajo
@@ -411,7 +419,13 @@ flowchart TD
 | 4 | `INT-04` | Testing | Tayra, Lisandro | 2.5 h | — | `BAC-36`, `BAC-39`, `BAC-41` |
 | 5 | `INT-05` | Integración | Equipo completo | 2.0 h | — | `INT-04`, `FRN-23`, `FRN-26`, `FRN-28` |
 | 5 | `INT-06` | Integración / Infra | Nico + backend | 2.0 h | — | `INT-05`, `INF-10` |
-| | **Total** | | | **38.0 h** | | **19 tareas, promedio 2.0 h** |
+| 6 | `BAC-50` (BRG-10) | Testing / Back | Lisandro | 2.0 h | `BAC-30` | — |
+| 6 | `BAC-51` (BRG-11) | Backend | Tayra | 2.0 h | `BAC-29`, `BAC-37` | — |
+| 6 | `FRN-36` (BRG-10) | Frontend | Cristian | 2.0 h | `FRN-21`, `FRN-28` | — |
+| 6 | `BAC-52` (BRG-12) | Backend | Tayra | 1.5 h | `BAC-21C`, `BAC-26` | — |
+| 6 | `INF-13` (BRG-11) | Infraestructura | Nico | 1.5 h | `INF-10` | — |
+| 6 | `BAC-53` (BRG-13) | Backend / DB | Lisandro | 1.5 h | `BAC-18`, `BAC-41` | — |
+| | **Total** | | | **48.5 h** | | **25 tareas, promedio 1.94 h** |
 
 ---
 
@@ -419,12 +433,12 @@ flowchart TD
 
 | Integrante | Rol | Horas Asignadas | Tareas |
 |---|---|---:|---|
-| **Lisandro** | Backend | 9.0 h + `INT-04` | `BAC-34`, `BAC-38`, `BAC-39` |
-| **Tayra** | Backend | 9.5 h + `INT-04` | `BAC-37`, `BAC-35`, `BAC-36`, `BAC-40`, `BAC-41` |
+| **Lisandro** | Backend | 12.5 h + `INT-04` | `BAC-34`, `BAC-38`, `BAC-39`, `BAC-50`, `BAC-53` |
+| **Tayra** | Backend | 13.0 h + `INT-04` | `BAC-37`, `BAC-35`, `BAC-36`, `BAC-40`, `BAC-41`, `BAC-51`, `BAC-52` |
 | **Belinda** | Frontend | 4.5 h | `FRN-24`, `FRN-22` |
 | **Luz** | Frontend | 4.5 h | `FRN-25`, `FRN-23` |
-| **Cristian** | Frontend | 5.5 h | `FRN-26`, `FRN-27`, `FRN-28` |
-| **Nico** | Infraestructura | 2.5 h + `INT-06` | `INF-10` (compartida), `INT-06` |
+| **Cristian** | Frontend | 7.5 h | `FRN-26`, `FRN-27`, `FRN-28`, `FRN-36` |
+| **Nico** | Infraestructura | 4.0 h + `INT-06` | `INF-10` (compartida), `INT-06`, `INF-13` |
 | **Lucas** | Infraestructura | 0.75 h | `INF-10` (compartida) |
 | **Equipo Completo** | Integración | 2.0 h | `INT-05` (Smoke test end-to-end) |
 

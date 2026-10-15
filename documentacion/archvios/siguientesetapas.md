@@ -385,3 +385,18 @@ Para cubrir los requerimientos formales de `requerimientos.md` que no contaban c
   1. Adaptación de las notificaciones flotantes (Toasts) y de los elementos del Centro de Notificaciones para incluir un botón o enlace directo `"Ver Instancia"` cuando la notificación tenga un `recursoId` asociado.
   2. Navegación directa hacia `/instances/:vmid`, activando la pestaña pertinente (ej. pestaña "Snapshots" si fue un evento de rollback, o "Métricas" si fue una alerta de saturación).
 - **Criterio de éxito:** Al hacer clic en la notificación de una instancia, el usuario accede directamente a la vista de detalle correspondiente sin pasos intermedios.
+
+---
+
+### 4. Bloque Puente Consolidado (Etapa 2 $\rightarrow$ Etapa 3)
+
+Para garantizar un paso sin fricciones técnicas entre el cierre de la Etapa 2 y el inicio de la Etapa 3 (replicando la estructura del Bloque 7 de la Etapa 1), se incorporaron formalmente en [`etapa2.md`](etapa2.md) y [`etapa3.md`](etapa3.md) las siguientes tareas puente:
+
+| Tarea | Área | Responsable | Est. | Problema que resuelve y propósito como puente |
+|---|---|---|---|---|
+| `BAC-50` (`BRG-10-BAC`) | Backend / Test | Lisandro | 2.0 h | **Simulador Proxmox:** Soporte mock de endpoints de snapshots y UPIDs en memoria para permitir el desarrollo local de `BAC-42` y `BAC-43` sin depender del hipervisor físico. |
+| `BAC-51` (`BRG-11-BAC`) | Backend | Tayra | 2.0 h | **Guarda Concurrente:** Middleware de exclusión mutua por instancia (`409 INSTANCE_BUSY`) para bloquear órdenes de energía y config mientras corre un snapshot o rollback. |
+| `FRN-36` (`BRG-10-FRN`) | Frontend | Cristian | 2.0 h | **Layout Modular:** Reestructuración de `InstanceDetailPage.tsx` para admitir la pestaña de Snapshots (`FRN-29`) y badges de estados transitorios (`SNAPSHOTTING`/`ROLLING_BACK`). |
+| `BAC-52` (`BRG-12-BAC`) | Backend | Tayra | 1.5 h | **Broker SSE Global:** Generalización de `/api/events` para transmitir eventos de alerta a nivel `HOST` (`ALERT_TRIGGERED`) a todos los administradores sin requerir un VMID obligatorio. |
+| `INF-13` (`BRG-11-INF`) | Infraestructura | Nico | 1.5 h | **Storage Proxmox Real:** Verificación y habilitación de pools compatibles con snapshots nativos (`qcow2`, `lvm-thin`, `zfs`) en el Proxmox físico antes de la validación final. |
+| `BAC-53` (`BRG-13-BAC`) | Backend / DB | Lisandro | 1.5 h | **Particionado Preventivo:** Creación preventiva de particiones trimestrales e índices compuestos en `auditoria` para habilitar el partition pruning y streaming de `BAC-45`. |

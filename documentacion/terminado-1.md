@@ -1013,3 +1013,157 @@ Verificadas contra backend `6afc017` / frontend `7fcc0bd`. El estado vigente es 
   1. Conectar "Instancias recientes" al inventario real (o quitarla) y dar destino a los botones "Ver todas/Ver todo" (p. ej. `/instances` y `/auditoria`), o eliminarlos.
   2. Quitar las tarjetas de Actividad/Alertas hasta que existan sus fuentes (auditoría de Etapa 3 y motor de alertas `RF-11`).
 - **Criterio de éxito:** el Dashboard no tiene controles sin acción ni bloques vacíos fijos.
+
+---
+
+## Actualización del 15/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `dbf7075` / frontend `6db04d3`. El estado vigente es el bloque de cada tarea.
+
+
+#### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasan todas las pruebas de eventos y distribución RBAC: `TestEventos_TASK_FINISHED_CincoAccionesCanonicas`, `TestEventos_TASK_FINISHED_CasosDeFallo`, `TestEventos_TASK_FINISHED_MatrizDistribucionRBAC` y `TestEtapa1Ola3BAC26`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-25B` y `BAC-21C` (terminada: canal SSE, Pub/Sub y filtro por permiso).
+- **Contexto:** el canal ya existe; esta tarea **no crea uno nuevo**. Verifica y documenta la emisión para las cinco acciones.
+- **Entregable:**
+  1. Pruebas en `eventos_service_test.go` (o de integración) para `start`, `shutdown`, `stop`, `reboot` y `delete`, con el payload de `BAC-29`. Ejemplo:
+     ```json
+     {
+       "id": "0192…",
+       "tipo": "TASK_FINISHED",
+       "severidad": "INFO",
+       "recursoTipo": "VM",
+       "recursoId": "101",
+       "mensaje": "La tarea de encendido finalizó correctamente",
+       "fechaHora": "2026-10-01T13:30:00Z",
+       "detalles": { "tareaId": "0192…", "accion": "start", "estado": "COMPLETED", "exitstatus": "OK" }
+     }
+     ```
+  2. Actualizar `docs/contrato-eventos.md` y `docs/eventos-tiempo-real.md`.
+- **Criterio de éxito:** los clientes conectados reciben el evento al terminar cada tarea. Un OPERATOR sin permiso sobre la instancia no lo recibe; uno con `READ_ONLY` sí.
+
+
+#### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasa la suite de integración `TestEtapa1Ola3BAC32`: el worker UPID maneja acciones `create` y autoasigna `FULL_ACCESS` atómicamente en `permisos_instancia` para el creador al completarse la tarea.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-25B`, `BAC-24C`.
+- **Problema:** En la Etapa 1, el worker de seguimiento de UPID solo maneja acciones de energía y borrado. Cuando se crea una instancia (`qmcreate`/`vzcreate`), la máquina aún no existe en el inventario durante la tarea. Al finalizar la creación con éxito:
+  1. El creador debe quedar automáticamente registrado con `FULL_ACCESS` en `permisos_instancia` para ese nuevo `vmid` (`RF-07`).
+  2. El evento `TASK_FINISHED` debe emitirse con `accion: "create"` y `recursoId: vmid`.
+- **Entregable:**
+  - Soporte de acciones `create` en `seguimiento_tareas.go`.
+  - Integración con el repositorio de permisos: al registrarse `COMPLETED` para una tarea `create`, insertar atómicamente `(usuario_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
+- **Criterio de éxito:** Al concluir una tarea de creación, el usuario creador ve inmediatamente la instancia asignada con permisos operativos y recibe el evento `TASK_FINISHED` correspondiente.
+
+
+#### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasa la suite `TestEstadoNodo_RespetaElContrato` y `TestEtapa1Ola3BAC33`: `GET /api/node/status` incluye el objeto `allocatable` con `headroomPercent: 15`, `maxCpuCores`, `freeRamMb` y `freeStorageGb`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-29`.
+- **Problema:** `GET /api/node/status` informa el consumo físico actual del nodo, pero el asistente de creación necesita saber exactamente cuánta memoria RAM y disco pueden asignarse con seguridad sin comprometer la estabilidad del host físico (margen de seguridad / headroom).
+- **Entregable:**
+  - Exponer en `GET /api/node/status` (o endpoint auxiliar `GET /api/node/quota`) el objeto `allocatable`:
+    `{ maxCpuCores: number, freeRamMb: number, freeStorageGb: number, headroomPercent: number }`, reservando un 15% de RAM física para el sistema operativo base de Proxmox.
+- **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
+
+
+### `FIX-84` - Completar storages y contenido en el simulador de Proxmox (`BAC-30`) (Backend / Testing)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasan `TestStorage_ListarYContenido` en `simulador_test.go` y la suite de aceptación `TestEtapa1Ola3BAC30`: el simulador Proxmox responde `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content` con fixtures completos de storages, templates LXC e ISOs.
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-30` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  El simulador ya responde `POST /nodes/{node}/qemu|lxc` (UPID `qmcreate`/`vzcreate`), `PUT /nodes/{node}/{tipo}/{vmid}/config` y `GET /nodes/{node}/{tipo}/{vmid}/rrddata`, pero **no** implementaba `GET /nodes/{node}/storage` ni `GET /nodes/{node}/storage/{storage}/content`, que el asistente de creación (`RF-07`) necesita.
+- **Qué debe hacer el equipo de backend:**
+  1. Agregar al simulador `GET /nodes/{node}/storage` (storages `local` y `local-lvm` con tipo, total y libre) y `GET /nodes/{node}/storage/{storage}/content` (templates LXC e ISOs), con el mismo formato que Proxmox VE 9.x.
+  2. Dejar `go test ./cmd/proxmox-simulador/...` en verde y la suite `test/back` (BAC-30) sin bloques rojos.
+- **Criterio de éxito:** el desarrollo de la Etapa 2 puede consultar storages y contenido contra el simulador sin `501 Not Implemented`.
+
+
+### `FIX-74` - Reactividad de filtros y etiquetas accesibles en vista de Auditoría (`FRN-14` / `FIX-36`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada y con test en verde.** La reactividad de consulta a `GET /api/admin/audit` y filtros temporales funcionan correctamente. Se validó el diseño implementado por el frontend con pestañas reactivas para Resultado (`role="tablist"`) y menú desplegable para Acción; la suite `test/front/audit.test.tsx` pasa 7 de 7 en verde.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-14`, `FIX-36` (en `terminado.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias y de integración de la vista de Auditoría (`frontend/centinela/src/test/audit.test.tsx` y `test/front/audit.test.tsx`), fallaban los casos por falta de accesibilidad y reactividad.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/pages/Auditoria.tsx`, asignar `aria-label="Desde"` y `aria-label="Hasta"` a los campos de rango de fechas, y `aria-label="Acción"` al selector de tipo de acción.
+  2. Implementar la sincronización reactiva del estado para que ante cualquier cambio en estos filtros se invoque a `auditService.getAuditLogs` con los parámetros URL correspondientes.
+  3. Ejecutar `npm test src/test/audit.test.tsx` en `frontend/centinela` y certificar que todos los casos pasen en verde.
+- **Criterio de éxito:**
+  - `npm test src/test/audit.test.tsx` en el frontend pasa al 100% sin errores de elementos no encontrados.
+  - La vista de auditoría filtra reactivamente en función de los criterios seleccionados y cumple con accesibilidad.
+
+
+#### `FRN-20C` (`BRG-05-FRN`, parte Inventario) - Columnas de CPU/RAM y estado en vivo en el Inventario (`RF-03`) (nueva, separada de `FRN-19C`)
+
+> [!WARNING]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada parcialmente, con problema pendiente.** Las columnas de CPU y RAM y la re-consulta ante `TASK_FINISHED` están implementadas. La prueba de formato de RAM pasa en verde; resta corregir en `formatInstanceTelemetry.ts` el retorno del carácter em-dash `'—'` en lugar de `'-'` ante valores `null`. Corrección en **`FIX-97`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22B`, `FRN-20A` y `FRN-17A`.
+- **Entregable:**
+  1. Columnas de CPU (`%`) y RAM (`GB usados / GB totales`), con `-` si vienen en `null`.
+  2. Ante cualquier `TASK_FINISHED` recibido, aunque la acción la haya iniciado otro usuario, volver a consultar la fila o la lista para actualizar estado y métricas. Si la acción fue `delete` y terminó `COMPLETED`, quitar la fila.
+- **Criterio de éxito:** si otro usuario apaga una VM, la fila cambia a `Stopped` sin `F5`.
+
+
+### `FIX-87` - Quitar los datos hardcodeados de la ficha de usuario (`FRN-05` / `FRN-06B` / `FRN-18` / `FIX-25`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada y con test en verde.** Se eliminaron los arrays estáticos con datos ficticios (`additionalSecurityInformation` y `recentActivity`). La suite `fixes-pending.test.tsx` (caso FIX-87) pasa 2 de 2 en verde tras alinear el fixture de prueba con el contrato del backend (`fechaCreacion`, etc.).
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1 h
+- **Depende de:** `FRN-05`, `FRN-06B`, `FRN-18`, `FIX-25` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/pages/detailsUserPage.tsx` había dos arrays hardcodeados que se renderizaban como si fueran datos reales del usuario (`additionalSecurityInformation` y `recentActivity`).
+- **Qué debe hacer el equipo de frontend:**
+  1. Alimentar "Actividad reciente" desde datos reales (por ejemplo `GET /api/admin/audit` filtrado por el usuario) o **quitarla** hasta que exista el endpoint.
+  2. Quitar/blanquear `additionalSecurityInformation` hasta que el perfil exponga esos campos.
+- **Criterio de éxito:** la ficha de usuario no muestra valores inventados ni textos de placeholder.
+
+
+### `FIX-89` - Ruta `/instances/new` con asistente estático sin lógica (`FIX-60`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada parcialmente, con problema pendiente.** Se añadió un toast de advertencia al botón en el inventario. Sin embargo, al acceder directamente por ruta a `/instances/new`, no se advierte que el asistente está en desarrollo / próximamente, fallando `fixes-pending.test.tsx:118`. Corrección en **`FIX-99`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Luz / Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-60` (en `terminado.md`).
+- **Problema técnico detallado:**
+  El botón "Crear instancia" del inventario navega a `/instances/new`, pero `createNewInstances.tsx` era un placeholder sin lógica conectada.
+- **Qué debe hacer el equipo de frontend:**
+  1. Ocultar/deshabilitar la ruta y el botón hasta que exista el asistente real (Etapa 2), o
+  2. Etiquetar la vista como "Próximamente" de forma explícita.
+- **Criterio de éxito:** ningún botón lleva a una pantalla sin funcionalidad sin avisar.

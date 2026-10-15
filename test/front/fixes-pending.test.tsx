@@ -35,9 +35,11 @@ const mockUserDetails = {
   rol: 'OPERATOR',
   activo: true,
   totpVinculado: true,
-  creadoEn: '2026-10-01T12:00:00Z',
-  actualizadoEn: '2026-10-05T15:30:00Z',
+  cambioContrasenaRequerido: false,
+  fechaCreacion: '2026-10-01T12:00:00Z',
+  fechaUltimoAcceso: '2026-10-05T15:30:00Z',
   eliminadoEn: null,
+  instanciasPermitidas: [],
 };
 
 function renderUserDetail(userId = 'usr-10') {
@@ -76,7 +78,7 @@ describe('FIX-87 - Quitar los datos hardcodeados de la ficha de usuario', () => 
   it('no muestra valores inventados de cambio de contraseña ni actividad reciente ficticia en la UI', async () => {
     renderUserDetail('usr-10');
 
-    await screen.findByText('Usuario de Prueba');
+    await screen.findByDisplayValue('Usuario de Prueba');
 
     // 1. Fecha hardcodeada de cambio de contraseña inventada
     expect(screen.queryByText(/02\/05\/2024/i), 'se encontró la fecha hardcodeada "02/05/2024"').toBeNull();

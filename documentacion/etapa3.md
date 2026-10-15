@@ -1,7 +1,7 @@
 # Etapa 3: Snapshots, Auditoría Inmutable, Alertas por Saturación y Hardening Final
 
 > **Estado:** Planificada.
-> **Dependencia previa:** Cierre formal de la Etapa 2 ([`etapa2.md`](etapa2.md)), con sus pruebas de aceptación e integración de aprovisionamiento, cuotas y telemetría en verde (`INT-04`, `INT-05` e `INT-06`).
+> **Dependencia previa:** Cierre formal de la Etapa 2 ([`etapa2.md`](etapa2.md)), incluyendo sus tareas puente de infraestructura, concurrencia y simulador (`Bloque 8`: `BAC-50` a `BAC-53`, `FRN-36` e `INF-13`), con sus pruebas de aceptación e integración de aprovisionamiento, cuotas y telemetría en verde (`INT-04`, `INT-05` e `INT-06`).
 > **Requerimientos cubiertos:** `RF-06` (Puntos de Restauración / Snapshots), `RF-08` (Audit Log inalterable y exportación), `RF-11` (Motor proactivo de alertas por saturación y despacho de correo), `RNF-01` a `RNF-06` (Seguridad, rendimiento, trazabilidad y hardening de producción).
 
 ---
@@ -29,12 +29,14 @@
 
 ## 2. Estado del Código al Inicio de la Etapa 3 (Punto de Partida)
 
-| Componente | Estado que deja la Etapa 2 | Tarea de Etapa 3 que lo evoluciona |
+| Componente | Estado que deja la Etapa 2 (con Bloque Puente) | Tarea de Etapa 3 que lo evoluciona |
 |---|---|---|
-| Simulador de Proxmox (`backend/cmd/proxmox-simulador`) | ✅ Soporta ciclo de vida, storages, cuotas y RRDdata | Se extiende para responder snapshots y rollback simulados (`BAC-42`) |
-| Vista Detalle de Instancia (`/instances/:vmid`) | ✅ Cabecera, pestañas "General", "Métricas" y "Configuración" | Incorpora la nueva pestaña "Snapshots" (`FRN-29`) |
-| Tabla `auditoria` particionada | ✅ Almacena eventos de autenticación, usuarios y aprovisionamiento | Se amplía para capturar snapshots, rollbacks y exportación (`BAC-44`, `BAC-45`) |
-| Canal SSE (`/api/events`) y Pub/Sub Redis | ✅ Emite `TASK_FINISHED` con filtro por permiso | Canaliza eventos de saturación `ALERT_TRIGGERED` (`BAC-47`) |
+| Simulador de Proxmox (`backend/cmd/proxmox-simulador`) | ✅ Soporta endpoints mock de snapshots y UPIDs en memoria (`BAC-50`) | Implementación de cliente oficial y endpoints (`BAC-42`) |
+| Bloqueo concurrente de instancias | ✅ Guarda `RequireInstanceIdle` con lock `409 INSTANCE_BUSY` (`BAC-51`) | Rollback y snapshots con bloqueo transitorio 409 (`BAC-43`) |
+| Vista Detalle de Instancia (`/instances/:vmid`) | ✅ Layout modular y estados transitorios `SNAPSHOTTING`/`ROLLING_BACK` (`FRN-36`) | Pestaña interactiva "Snapshots" y modal destructivo (`FRN-29`, `FRN-30`) |
+| Canal SSE (`/api/events`) y Pub/Sub Redis | ✅ Broker generalizado para eventos de broadcast a nivel `HOST` (`BAC-52`) | Emisión multicanal de alertas por saturación (`BAC-47`) |
+| Storage en Proxmox Real | ✅ Auditado y validado con soporte nativo de snapshots (`INF-13`) | Validación y UAT sobre hardware físico (`INT-09`) |
+| Tabla `auditoria` particionada | ✅ Particiones trimestrales preventivas e índices compuestos (`BAC-53`) | Consultas avanzadas y streaming de exportación (`BAC-44`, `BAC-45`) |
 | Adapter de Correo (`EmailService`) | ✅ Resuelto mediante puerto hexagonal (`MockEmailService`) | Despacha correos automáticos ante alertas críticas de saturación (`BAC-47`) |
 | Inmuno-seguridad en Frontend | ✅ Interceptores de error D2 y protección XSS en alertas | Incorpora soporte de cookies seguras `HttpOnly` y modales antierror (`FRN-30`, `FRN-34`) |
 
@@ -44,10 +46,14 @@
 
 ```mermaid
 flowchart TD
-    subgraph Base [Cimientos de Etapas 1 y 2]
+    subgraph Base [Cimientos de Etapa 2 y Bloque Puente]
         E2_INT05[E2: Smoke Test Aprovisionamiento y Métricas]:::base
-        E2_AUDIT[E2: Auditoría Particionada y Eventos]:::base
-        E2_DETAIL[E2: Vista Detalle /instances/:vmid]:::base
+        BRG_BAC50[BAC-50: Simulador Proxmox Snapshots]:::bridge
+        BRG_BAC51[BAC-51: Candado 409 INSTANCE_BUSY]:::bridge
+        BRG_FRN36[FRN-36: Detalle Modular y Transiciones]:::bridge
+        BRG_BAC52[BAC-52: Broker SSE Alertas Globales]:::bridge
+        BRG_BAC53[BAC-53: Particionado Tabla Auditoría]:::bridge
+        BRG_INF13[INF-13: Storage Snapshots Proxmox Real]:::bridge
     end
 
     subgraph Snapshots [Puntos de Restauración - RF-06]
@@ -82,20 +88,22 @@ flowchart TD
         INT09[INT-09: Validación Final en Servidor Proxmox Real]
     end
 
-    E2_INT05 --> BAC42
-    E2_DETAIL --> FRN29
+    BRG_BAC50 --> BAC42
+    BRG_BAC51 --> BAC43
+    BRG_FRN36 --> FRN29
     BAC42 --> BAC43
     BAC42 --> FRN29
     BAC43 --> FRN30
     FRN29 --> FRN30
 
-    E2_AUDIT --> BAC44
+    BRG_BAC53 --> BAC44
     BAC44 --> BAC45
     BAC44 --> FRN31
     BAC45 --> FRN32
     FRN31 --> FRN32
 
     E2_INT05 --> BAC46
+    BRG_BAC52 --> BAC47
     BAC46 --> BAC47
     BAC47 --> FRN33
 
@@ -114,8 +122,10 @@ flowchart TD
     FRN34 --> INT08
     INT08 --> INT09
     INF11 --> INT09
+    BRG_INF13 --> INT09
 
     classDef base fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef bridge fill:#fef3c7,stroke:#f59e0b,color:#92400e
 ```
 
 ---
@@ -142,7 +152,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignado:** Lisandro
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-30` (extensión de endpoints de snapshot en simulador).
+- **Depende de:** `BAC-50` (`BRG-10-BAC`: simulador con soporte de snapshots).
 - **Problema:** Los usuarios autorizados necesitan registrar puntos de restauración para congelar el estado de sus máquinas antes de realizar operaciones de riesgo.
 - **Entregable:**
   1. Métodos en el cliente Proxmox: `CrearSnapshot(ctx, node, tipo, vmid, snapname, descripcion)` y `ListarSnapshots(ctx, node, tipo, vmid)`.
@@ -155,7 +165,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-42`.
+- **Depende de:** `BAC-42`, `BAC-51` (`BRG-11-BAC`: guarda de concurrencia `409 INSTANCE_BUSY`).
 - **Problema:** La reversión o borrado de snapshots altera profundamente el almacenamiento del hipervisor. Si se ejecutan en simultáneo con órdenes de energía o creación, se corre riesgo de corrupción de datos.
 - **Entregable:**
   1. Endpoint `POST /api/instances/:vmid/snapshots/:snapname/rollback` (requiere `ADMIN` o `FULL_ACCESS`).
@@ -168,7 +178,7 @@ flowchart TD
 - **Área:** Frontend
 - **Asignada:** Luz
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-42`, `FRN-21` (página de detalle).
+- **Depende de:** `BAC-42`, `FRN-36` (`BRG-10-FRN`: detalle modularizado y estados transitorios).
 - **Problema:** La vista de detalle no cuenta con una interfaz visual para inspeccionar los puntos de restauración existentes ni disparar un nuevo guardado.
 - **Entregable:**
   1. Pestaña "Snapshots" dentro de `InstanceDetailPage.tsx`.
@@ -198,7 +208,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-41` (auditoría de Etapa 2).
+- **Depende de:** `BAC-41`, `BAC-53` (`BRG-13-BAC`: particionado preventivo e índices compuestos de auditoría).
 - **Problema:** La auditoría debe consolidar eventos de todas las etapas con filtros combinados eficientes (por usuario, rango de fechas, tipo de recurso, acción y severidad) aprovechando las particiones de PostgreSQL.
 - **Entregable:**
   1. Extensión del interceptor de auditoría para registrar: `SNAPSHOT_CREATE`, `SNAPSHOT_ROLLBACK`, `SNAPSHOT_DELETE`, `ALERT_TRIGGERED` y `CONFIG_UPDATED`.
@@ -269,7 +279,7 @@ flowchart TD
 - **Área:** Backend
 - **Asignada:** Tayra
 - **Estimación:** 2.0 h
-- **Depende de:** `BAC-46`.
+- **Depende de:** `BAC-46`, `BAC-52` (`BRG-12-BAC`: broker SSE generalizado para alertas globales).
 - **Problema:** Una vez detectada la saturación, todos los administradores conectados deben ser prevenidos en sus pantallas y por canal de contingencia (correo).
 - **Entregable:**
   1. Emisión de eventos `ALERT_TRIGGERED` y `ALERT_RESOLVED` a través del canal `/api/events` hacia los clientes SSE.
@@ -372,7 +382,7 @@ flowchart TD
 - **Área:** Integración / Infraestructura
 - **Asignados:** Nico, Lucas y un integrante de backend
 - **Estimación:** 2.0 h
-- **Depende de:** `INT-08`, `INF-11`.
+- **Depende de:** `INT-08`, `INF-11`, `INF-13` (`BRG-11-INF`: storage compatible con snapshots en Proxmox real).
 - **Problema:** Certificación definitiva sobre el hipervisor real a través de Tailscale y proxy inverso con certificados antes del cierre formal del proyecto.
 - **Entregable:**
   1. Ejecución de snapshots y rollback sobre una instancia real en Proxmox VE.

@@ -17,6 +17,7 @@ import (
 //   - FIX-53: Unificar códigos de acción y resultado en la auditoría de instancias (BAC-24A).
 //   - FIX-54: Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend).
 //   - FIX-55: Alinear baja, validación y autenticación con identidad histórica (Backend).
+//   - FIX-81: Corregir el orden de migraciones: migrarUnicidadEmail antes de crear auditoria (Backend).
 //   - FIX-88: Evitar que EMAIL_PROVIDER caiga en silencio en el correo simulado (BAC-16B / INF-08B).
 func TestFixesPendientes(t *testing.T) {
 	requireIntegration(t)
@@ -400,6 +401,39 @@ func TestFixesPendientes(t *testing.T) {
 			t.Errorf("FIX-88: backend/.env.example no documenta claramente el uso restringido de mock para tests/CI")
 		}
 	})
+
+	t.Run("FIX-81 orden de migraciones para arranque limpio de base de datos", func(t *testing.T) {
+		dbContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/db.go")))
+		migrarUsuariosContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/migrar_usuarios.go")))
+
+		// 1. Verificación del orden en db.go: migrarAuditoriaParticionada debe llamarse antes de migrarUnicidadEmail,
+		// O clasificarEliminados en migrar_usuarios.go debe verificar si la tabla auditoria existe antes de hacer SELECT.
+		idxEmail := strings.Index(dbContent, "migrarUnicidadEmail(db)")
+		idxAudit := strings.Index(dbContent, "migrarAuditoriaParticionada(db)")
+
+		tieneGuardaTablaAuditoria := regexp.MustCompile(`existeTabla\s*\(\s*[a-zA-Z0-9_.]+\s*,\s*"auditoria"\s*\)`).MatchString(migrarUsuariosContent)
+
+		if idxEmail != -1 && idxAudit != -1 && idxEmail < idxAudit && !tieneGuardaTablaAuditoria {
+			t.Errorf("FIX-81: db.go llama migrarUnicidadEmail(db) (pos %d) ANTES de migrarAuditoriaParticionada(db) (pos %d) y clasificarEliminados no verifica si la tabla auditoria existe antes de consultarla. En base limpia el arranque aborta con SQLSTATE 42P01 (relation 'auditoria' does not exist)", idxEmail, idxAudit)
+		}
+	})
+}
+
+// TestFIX81_OrdenMigracionesBaseLimpia verifica que las migraciones del backend
+// puedan ejecutarse sobre una base de datos nueva/limpia sin fallar por
+// dependencias cruzadas entre auditoria y usuarios (FIX-81).
+func TestFIX81_OrdenMigracionesBaseLimpia(t *testing.T) {
+	dbContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/db.go")))
+	migrarUsuariosContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/migrar_usuarios.go")))
+
+	idxEmail := strings.Index(dbContent, "migrarUnicidadEmail(db)")
+	idxAudit := strings.Index(dbContent, "migrarAuditoriaParticionada(db)")
+
+	tieneGuardaTablaAuditoria := regexp.MustCompile(`existeTabla\s*\(\s*[a-zA-Z0-9_.]+\s*,\s*"auditoria"\s*\)`).MatchString(migrarUsuariosContent)
+
+	if idxEmail != -1 && idxAudit != -1 && idxEmail < idxAudit && !tieneGuardaTablaAuditoria {
+		t.Errorf("FIX-81: db.go llama migrarUnicidadEmail(db) (pos %d) ANTES de migrarAuditoriaParticionada(db) (pos %d) y clasificarEliminados no verifica si la tabla auditoria existe antes de consultarla. En base limpia el arranque aborta con SQLSTATE 42P01 (relation 'auditoria' does not exist)", idxEmail, idxAudit)
+	}
 }
 
 

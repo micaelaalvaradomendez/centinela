@@ -3,11 +3,14 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Estado del tablero (13/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de resolución** de la Etapa 1 y los `FIX` abiertos. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md).
+> **Estado del tablero (15/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de resolución** de la Etapa 1 y los `FIX` abiertos. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md).
 >
-> **Pasados a `terminado-1.md` el 13/10/2026 (ya resueltos, sin trabajo pendiente):**
-> - `FIX-73` — sincronización de tareas consecutivas en `test/back` (ya aplicada en este repo; `TestPuenteEtapa1` en verde).
-> - `FIX-78` — desduplicación del semáforo del nodo (`dashboard-node.test.tsx` 12/12).
+> **Pasados a `terminado-1.md` el 15/10/2026:**
+> - `BAC-26`, `BAC-32`, `BAC-33`, `FIX-84`, `FIX-74`, `FIX-87` (resueltos y con tests en verde).
+> - `FRN-20C`, `FIX-89` (implementados; correcciones abiertas en `FIX-97` y `FIX-99` de `futuro-1.md`).
+>
+> **Pasados a `terminado2.md` el 15/10/2026 (Etapa 2):**
+> - `BAC-34`, `BAC-35`, `BAC-37`, `BAC-38` (resueltos y con tests en verde).
 
 Hito: Gestión Administrativa de Usuarios
 
@@ -24,37 +27,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 ---
 
-
-#### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
-
-> [!NOTE]
-> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestEtapa1Ola3BAC26` pasa: TASK_FINISHED por `/api/events` para las acciones de energía con el payload de BAC-29 (`tareaId`, `accion`, `estado`, `exitstatus`) y filtrado por permiso.
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-25B` y `BAC-21C` (terminada: canal SSE, Pub/Sub y filtro por permiso).
-- **Contexto:** el canal ya existe; esta tarea **no crea uno nuevo**. Verifica y documenta la emisión para las cinco acciones.
-- **Entregable:**
-  1. Pruebas en `eventos_service_test.go` (o de integración) para `start`, `shutdown`, `stop`, `reboot` y `delete`, con el payload de `BAC-29`. Ejemplo:
-     ```json
-     {
-       "id": "0192…",
-       "tipo": "TASK_FINISHED",
-       "severidad": "INFO",
-       "recursoTipo": "VM",
-       "recursoId": "101",
-       "mensaje": "La tarea de encendido finalizó correctamente",
-       "fechaHora": "2026-10-01T13:30:00Z",
-       "detalles": { "tareaId": "0192…", "accion": "start", "estado": "COMPLETED", "exitstatus": "OK" }
-     }
-     ```
-  2. Actualizar `docs/contrato-eventos.md` y `docs/eventos-tiempo-real.md`.
-- **Criterio de éxito:** los clientes conectados reciben el evento al terminar cada tarea. Un OPERATOR sin permiso sobre la instancia no lo recibe; uno con `READ_ONLY` sí.
-
-
-
-
 #### `BAC-24C` - Limpieza de permisos al eliminar una instancia (nueva)
 - **Área:** Backend
 - **Asignada:** Tayra
@@ -70,39 +42,28 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-
-
-#### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
-
-> [!WARNING]
-> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** Falta acción `create` en el worker UPID y la autoasignación en `permisos_instancia` (`TestEtapa1Ola3BAC32`). Corrección en **`FIX-93`** ([futuro-1.md](futuro-1.md)).
+#### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
 
 - **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-25B`, `BAC-24C`.
-- **Problema:** En la Etapa 1, el worker de seguimiento de UPID solo maneja acciones de energía y borrado. Cuando se crea una instancia (`qmcreate`/`vzcreate`), la máquina aún no existe en el inventario durante la tarea. Al finalizar la creación con éxito:
-  1. El creador debe quedar automáticamente registrado con `FULL_ACCESS` en `permisos_instancia` para ese nuevo `vmid` (`RF-07`).
-  2. El evento `TASK_FINISHED` debe emitirse con `accion: "create"` y `recursoId: vmid`.
-- **Entregable:**
-  - Soporte de acciones `create` en `seguimiento_tareas.go`.
-  - Integración con el repositorio de permisos: al registrarse `COMPLETED` para una tarea `create`, insertar atómicamente `(usuario_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
-- **Criterio de éxito:** Al concluir una tarea de creación, el usuario creador ve inmediatamente la instancia asignada con permisos operativos y recibe el evento `TASK_FINISHED` correspondiente.
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-54` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llama `migrarUnicidadEmail(db)` **antes** de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecuta `SELECT … FROM auditoria` (`migrar_usuarios.go`), pero la tabla `auditoria` (particionada) la crea `migrarAuditoriaParticionada`. En una **base nueva** (deploy limpio o el stack de `test/back`, que parte de una base vacía) el arranque aborta:
+  ```
+  ❌ Error fatal al iniciar la base de datos: error al clasificar usuarios eliminados:
+     ERROR: relation "auditoria" does not exist (SQLSTATE 42P01)
+  ```
+  En el servidor de pruebas no se ve porque `auditoria` ya existía; en un entorno limpio el backend sale con código 1 y **toda** la suite de aceptación del backend (incluyendo la Etapa 1) queda bloqueada.
+- **Qué debe hacer el equipo de backend:**
+  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` **después** de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
+  2. Alternativa equivalente: que `clasificarEliminados` no consulte `auditoria` si la tabla todavía no existe (guarda con `existeTabla`).
+  3. Verificar con una base **vacía** (`docker compose down --volumes` + `up`) que el backend arranca y que la suite `test/back` corre completa sin parches.
+- **Criterio de éxito:**
+  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
+  - `test/back` deja de requerir el reordenamiento manual.
 
-#### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
-
-> [!WARNING]
-> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** `GET /api/node/status` no devuelve el objeto `allocatable` (`TestEtapa1Ola3BAC33`). Corrección en **`FIX-94`** ([futuro-1.md](futuro-1.md)).
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22`, `BAC-29`.
-- **Problema:** `GET /api/node/status` informa el consumo físico actual del nodo, pero el asistente de creación necesita saber exactamente cuánta memoria RAM y disco pueden asignarse con seguridad sin comprometer la estabilidad del host físico (margen de seguridad / headroom).
-- **Entregable:**
-  - Exponer en `GET /api/node/status` (o endpoint auxiliar `GET /api/node/quota`) el objeto `allocatable`:
-    `{ maxCpuCores: number, freeRamMb: number, freeStorageGb: number, headroomPercent: number }`, reservando un 15% de RAM física para el sistema operativo base de Proxmox.
-- **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
+---
 
 #### `FRN-21` (`BRG-06-FRN`) - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde notificaciones (`RF-03`, `RF-11`)
 
@@ -122,35 +83,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
      - Botón de retorno / breadcrumb hacia `/instances`.
   3. Vincular la tabla de inventario (`Instances.tsx`) y los toasts de notificación (`FRN-17B`) con enlace directo a `/instances/:vmid`.
 - **Criterio de éxito:** Al hacer clic en una fila o en un toast de tarea completada, la aplicación navega a `/instances/:vmid` mostrando los datos reales de la máquina y sus pestañas base listas.
-
-
-
----
-
-
-### `FIX-74` - Reactividad de filtros y etiquetas accesibles en vista de Auditoría (`FRN-14` / `FIX-36`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Luz
-- **Estimación:** 1,5 h
-- **Depende de:** `FRN-14`, `FIX-36` (en `terminado.md`).
-- **Problema técnico detallado:**
-  Al ejecutar las pruebas unitarias y de integración de la vista de Auditoría (`frontend/centinela/src/test/audit.test.tsx` y `test/front/audit.test.tsx`), fallan los casos:
-  - `AuditoriaPage > Reactividad de Filtros: debe invocar al endpoint con los query params al cambiar los filtros`
-  - `FRN-14 - Suite de pruebas para vista de Auditoría > actualiza los query parameters de filtro al cambiar los selectores reactivos`
-  El error lanzado por Testing Library es:
-  ```
-  TestingLibraryElementError: Unable to find a label with the text of: Desde
-  ```
-  En `Auditoria.tsx` (y sus controles subordinados), los inputs de filtrado temporal ("Desde", "Hasta") y el selector de "Acción" no exponen un `aria-label` o `<label>` asociado que coincida con el contrato de accesibilidad requerido por las pruebas. Además, al modificar interactivamente estos selectores, la vista no dispara la actualización reactiva ni traslada los query parameters (`?desde=...&hasta=...&accion=...`) a la petición `GET /api/admin/audit`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/pages/Auditoria.tsx`, asignar `aria-label="Desde"` y `aria-label="Hasta"` a los campos de rango de fechas, y `aria-label="Acción"` al selector de tipo de acción.
-  2. Implementar la sincronización reactiva del estado para que ante cualquier cambio en estos filtros se invoque a `auditService.getAuditLogs` con los parámetros URL correspondientes.
-  3. Ejecutar `npm test src/test/audit.test.tsx` en `frontend/centinela` y certificar que todos los casos pasen en verde.
-- **Criterio de éxito:**
-  - `npm test src/test/audit.test.tsx` en el frontend pasa al 100% sin errores de elementos no encontrados.
-  - La vista de auditoría filtra reactivamente en función de los criterios seleccionados y cumple con accesibilidad.
-
 
 
 
@@ -220,21 +152,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 
 
 
-#### `FRN-20C` (`BRG-05-FRN`, parte Inventario) - Columnas de CPU/RAM y estado en vivo en el Inventario (`RF-03`) (nueva, separada de `FRN-19C`)
-
-> [!NOTE]
-> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada y con test en verde.** `instances-metrics.test.tsx` (3/3) pasa: columnas de CPU (%) y RAM (usado / total) con `—` en `null`; la re-consulta ante `TASK_FINISHED` la aporta `useInstances` (`FRN-17A/B`).
-
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22B`, `FRN-20A` y `FRN-17A`.
-- **Entregable:**
-  1. Columnas de CPU (`%`) y RAM (`GB usados / GB totales`), con `-` si vienen en `null`.
-  2. Ante cualquier `TASK_FINISHED` recibido, aunque la acción la haya iniciado otro usuario, volver a consultar la fila o la lista para actualizar estado y métricas. Si la acción fue `delete` y terminó `COMPLETED`, quitar la fila.
-- **Criterio de éxito:** si otro usuario apaga una VM, la fila cambia a `Stopped` sin `F5`.
-
 
 
 #### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa
@@ -260,45 +177,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ---
 
 
-### `FIX-87` - Quitar los datos hardcodeados de la ficha de usuario (`FRN-05` / `FRN-06B` / `FRN-18` / `FIX-25`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian / Belinda
-- **Estimación:** 1 h
-- **Depende de:** `FRN-05`, `FRN-06B`, `FRN-18`, `FIX-25` (en `terminado.md`).
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/pages/detailsUserPage.tsx` hay dos arrays **hardcodeados** que se renderizan como si fueran datos reales del usuario:
-  ```ts
-  const additionalSecurityInformation = [
-    { label: 'Último cambio de contraseña', value: '02/05/2024, 09:10', ... },
-    { label: 'Intentos de inicio fallidos', value: '0', ... },
-    { label: 'Bloqueado', value: 'No', ... },
-  ];
-  const recentActivity = [
-    { title: 'Inició sesión correctamente', time: 'Hoy, 17:41', address: '192.168.1.77', ... },
-    { title: 'Inició instancia Windows 11 (102)', ... },
-    { title: 'Tomó snapshot de Ubuntu Server (101)', ... },
-  ];
-  ```
-  Son **placeholders de diseño**: muestran una fecha de cambio de contraseña inventada y una "actividad reciente" ficticia (instancias 101/102 y una snapshot que el sistema todavía no toma). Quedaron en una vista declarada terminada.
-- **Qué debe hacer el equipo de frontend:**
-  1. Alimentar "Actividad reciente" desde datos reales (por ejemplo `GET /api/admin/audit` filtrado por el usuario) o **quitarla** hasta que exista el endpoint.
-  2. Quitar/blanquear `additionalSecurityInformation` hasta que el perfil exponga esos campos (último cambio de contraseña, intentos fallidos, bloqueo).
-- **Criterio de éxito:** la ficha de usuario no muestra valores inventados ni textos de placeholder.
-
-### `FIX-89` - Ruta `/instances/new` con asistente estático sin lógica (`FIX-60`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz / Belinda
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-60` (en `terminado.md`).
-- **Problema técnico detallado:**
-  El botón "Crear instancia" del inventario (`FIX-60`) navega a `/instances/new`, pero `frontend/centinela/src/pages/createNewInstances.tsx` es un **placeholder**: declara `steps = ['General','Sistema','Disco','Red','SO','Resumen']` y un `Stepper`, sin ninguna llamada al backend ni servicio (no importa `apiClient` ni `*Service`). Un ADMIN que llega desde un botón real termina en una pantalla sin funcionalidad.
-- **Qué debe hacer el equipo de frontend:**
-  1. Ocultar/deshabilitar la ruta y el botón hasta que exista el asistente real (Etapa 2), o
-  2. Etiquetar la vista como "Próximamente" de forma explícita.
-- **Criterio de éxito:** ningún botón lleva a una pantalla sin funcionalidad sin avisar.
-
 
 
 ### `FIX-83` - Refrescar el conteo de instancias ante `TASK_FINISHED` (`FRN-19C`) (Frontend)
@@ -314,18 +192,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   2. Ejecutar `npx vitest run dashboard-summary.test.tsx` hasta 2/2.
 - **Criterio de éxito:** tras encender o apagar una instancia, el conteo cambia en menos de 2 s sin `F5`.
 
-### `FIX-84` - Completar storages y contenido en el simulador de Proxmox (`BAC-30`) (Backend / Testing)
-
-- **Área:** Backend / Testing
-- **Asignado:** Lisandro
-- **Estimación:** 1 h
-- **Depende de:** `BAC-30` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  El simulador ya responde `POST /nodes/{node}/qemu|lxc` (UPID `qmcreate`/`vzcreate`), `PUT /nodes/{node}/{tipo}/{vmid}/config` y `GET /nodes/{node}/{tipo}/{vmid}/rrddata`, pero **no** implementa `GET /nodes/{node}/storage` ni `GET /nodes/{node}/storage/{storage}/content`, que el asistente de creación (`RF-07`) necesita. Hoy responden `501 Not Implemented`.
-- **Qué debe hacer el equipo de backend:**
-  1. Agregar al simulador `GET /nodes/{node}/storage` (storages `local` y `local-lvm` con tipo, total y libre) y `GET /nodes/{node}/storage/{storage}/content` (templates LXC e ISOs), con el mismo formato que Proxmox VE 9.x.
-  2. Dejar `go test ./cmd/proxmox-simulador/...` en verde y la suite `test/back` (BAC-30) sin bloques rojos.
-- **Criterio de éxito:** el desarrollo de la Etapa 2 puede consultar storages y contenido contra el simulador sin `501 Not Implemented`.
 
 ### `FIX-85` - Cerrar la confirmación de `Start` en los modales de energía (`FIX-76` / `FRN-15`) (Frontend)
 
@@ -339,31 +205,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   1. Revisar `InstanceAction` / `ConfirmUserAction` para que `Start` abra el modal de confirmación y que cancelarlo **no** dispare ninguna petición (`POST /instances/:vmid/start` o `/status/start`).
   2. Ejecutar `npx vitest run instances-modals.test.tsx` hasta 6/6.
 - **Criterio de éxito:** `instances-modals.test.tsx` pasa 6 de 6.
-
-
----
-
-
-### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lisandro / Tayra
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-54` (en `terminado.md`).
-- **Problema técnico detallado:**
-  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llama `migrarUnicidadEmail(db)` **antes** de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecuta `SELECT … FROM auditoria` (`migrar_usuarios.go`), pero la tabla `auditoria` (particionada) la crea `migrarAuditoriaParticionada`. En una **base nueva** (deploy limpio o el stack de `test/back`, que parte de una base vacía) el arranque aborta:
-  ```
-  ❌ Error fatal al iniciar la base de datos: error al clasificar usuarios eliminados:
-     ERROR: relation "auditoria" does not exist (SQLSTATE 42P01)
-  ```
-  En el servidor de pruebas no se ve porque `auditoria` ya existía; en un entorno limpio el backend sale con código 1 y **toda** la suite de aceptación del backend (incluyendo la Etapa 1) queda bloqueada.
-- **Qué debe hacer el equipo de backend:**
-  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` **después** de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
-  2. Alternativa equivalente: que `clasificarEliminados` no consulte `auditoria` si la tabla todavía no existe (guarda con `existeTabla`).
-  3. Verificar con una base **vacía** (`docker compose down --volumes` + `up`) que el backend arranca y que la suite `test/back` corre completa sin parches.
-- **Criterio de éxito:**
-  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
-  - `test/back` deja de requerir el reordenamiento manual.
 
 
 ### `FIX-95` - Declarar ruta `/instances/:vmid` y enlazar inventario con la vista de detalle (`FRN-21`) (Frontend)
@@ -385,8 +226,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
   - Al interactuar con una fila del inventario, la aplicación navega fluidamente hacia la vista de detalle.
   - `test/front/instance-detail.test.tsx` pasa al 100% (3/3 en verde).
 
-
-
 ### `FIX-86` - Completar la máquina de estados y el mapeo D2 de operaciones (`FIX-77` / `FRN-16`) (Frontend)
 
 - **Área:** Frontend
@@ -406,77 +245,6 @@ Si un usuario con rol OPERATOR intenta consultar estos endpoints o la vista, rec
 ETAPA 2
 ---
 
-
-#### `BAC-34` - Adaptador de Proxmox RRDdata en el cliente y servicio de telemetría de instancia
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-30` (simulador con soporte RRD).
-- **Problema:** Proxmox almacena las métricas históricas de rendimiento en formato RRD consumibles vía `/nodes/{node}/{qemu|lxc}/{vmid}/rrddata`. El cliente backend carece del adaptador para consultar este endpoint y normalizar las métricas heterogéneas entre VMs y LXCs.
-- **Entregable:**
-  1. Método en el cliente Proxmox `ObtenerMetricasRRD(ctx, nodo, tipo, vmid, timeframe)`.
-  2. DTO normalizado `PuntoMetricaDTO`: `{ timestamp: int64, cpuPercent: float64, ramUsedBytes: int64, ramTotalBytes: int64, netInBps: int64, netOutBps: int64, diskReadBps: int64, diskWriteBps: int64 }`.
-  3. Pruebas unitarias con mocks en `internal/adapters/secondary/proxmox/client_test.go`.
-- **Criterio de éxito:** Consulta exitosa de métricas para VM y LXC devolviendo series temporales con valores numéricos coherentes sin fallos de conversión.
-
-
-#### `BAC-35` - Canal WebSocket de métricas en tiempo real con ticket efímero
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.5 h
-- **Depende de:** `BAC-34`, `BAC-21C` (patrón de tickets en Redis).
-- **Problema:** Enviar peticiones REST cada pocos segundos para monitorear métricas degrada el rendimiento. Se requiere un canal bidireccional eficiente por WebSocket `/api/ws/instances/:vmid/metrics` que no exponga credenciales JWT en los query parameters.
-- **Entregable:**
-  1. Endpoint de emisión de ticket efímero `POST /api/auth/ws-ticket` (TTL 30 s en Redis).
-  2. Handler WebSocket `/api/ws/instances/:vmid/metrics?ticket=...` que valide el ticket, verifique acceso mediante `RequireInstanceAccess` y establezca la conexión.
-  3. Poller desacoplado por conexión que sondee el estado actual de la instancia cada 2 segundos y envíe el paquete JSON al cliente.
-  4. Cierre ordenado y limpieza de goroutines al desconectar el cliente.
-- **Criterio de éxito:** Un cliente autenticado con ticket recibe métricas periódicas por WebSocket. Un ticket inválido o expirado responde `401 Unauthorized` antes del handshake.
-
-#### `BAC-37` - Servicio de validación de cuotas del host y bloqueo distribuido
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-33` (allocatable del host).
-- **Problema:** Permitir la creación de máquinas sin validar los límites físicos del hipervisor puede provocar el colapso del host (`Out Of Memory` o disco lleno). Además, peticiones concurrentes simultáneas pueden sobreasignar la misma memoria libre si no existe un bloqueo transaccional.
-- **Entregable:**
-  1. Servicio de dominio `CuotasService.ValidarDisponibilidad(cores, ramMb, discoGb, storageId)`.
-  2. Verificación de seguridad: $\text{RAM\_Solicitada} \le \text{RAM\_Libre} - \text{Headroom}(15\%)$ y $\text{Disco\_Solicitado} \le \text{Disco\_Libre}(storageId)$.
-  3. Bloqueo distribuido en Redis `lock:instance:provisioning` mediante `SETNX` (TTL 30 s) para garantizar atomicidad durante la evaluación y despacho.
-  4. Mapeo a error `409 Conflict` con código estructurado `RESOURCE_QUOTA_EXCEEDED` ante saturación.
-- **Criterio de éxito:** Peticiones que superan los recursos seguros son rechazadas inmediatamente sin tocar Proxmox. Peticiones simultáneas compitiendo por el remanente resuelven una con éxito y otra con 409 sin condición de carrera.
-
-
-#### `BAC-38` - Endpoint `POST /api/instances` para creación de VMs y Contenedores LXC
-
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.5 h
-- **Depende de:** `BAC-30`, `BAC-37`.
-- **Problema:** No existe el endpoint de aprovisionamiento de recursos. Se requiere un endpoint unificado que oculte las diferencias nativas de Proxmox entre la creación de máquinas virtuales (`/nodes/{node}/qemu`) y contenedores (`/nodes/{node}/lxc`).
-- **Entregable:**
-  1. Endpoint `POST /api/instances` con rol obligatorio `ADMIN`.
-  2. Payload validado:
-     ```json
-     {
-       "tipo": "vm", // "vm" o "lxc"
-       "nombre": "srv-prod-01",
-       "cores": 2,
-       "ramMb": 2048,
-       "discoGb": 20,
-       "storageId": "local-lvm",
-       "templateOso": "debian-12-standard.tar.zst",
-       "red": { "modo": "dhcp" } // o "static" con ip y gateway
-     }
-     ```
-  3. Asignación automática del próximo identificador libre mediante `/cluster/nextid`.
-  4. Envío de la orden a Proxmox, captura del UPID de creación (`qmcreate`/`vzcreate`), inserción en `tareas_asincronas` con estado `RUNNING` y respuesta `HTTP 202 Accepted { upid, tareaId, vmid }`.
-- **Criterio de éxito:** Una solicitud válida responde `202 Accepted` en menos de 1 s, Proxmox comienza el aprovisionamiento y el UPID queda registrado para seguimiento.
-
-
 #### `INF-10` - Verificación y disponibilidad de plantillas LXC e ISOs en el servidor Proxmox real
 
 - **Área:** Infraestructura
@@ -489,3 +257,110 @@ ETAPA 2
   2. Verificar una imagen ISO de prueba en `local:iso`.
   3. Comprobar que el API Token puede listar ambos contenidos mediante consulta HTTPS a `/storage/{storage}/content`.
 - **Criterio de éxito:** El backend desplegado en el servidor lista las plantillas e ISOs reales a través de `GET /api/node/templates` sin errores de permisos.
+
+#### `BAC-36` - Endpoint REST de métricas históricas de instancia (`timeframe=2h|24h`)
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-34`.
+- **Problema:** Al abrir la vista de una máquina, los gráficos necesitan renderizar de inmediato la tendencia histórica sin aguardar la llegada de los primeros paquetes del WebSocket.
+- **Entregable:**
+  1. Endpoint `GET /api/instances/:vmid/metrics?timeframe=2h|24h` protegido con `RequireAuth` y `RequireInstanceAccess`.
+  2. Parámetro `timeframe` configurable (por defecto `2h`, soportando `24h`), mapeado a los intervalos de Proxmox (`hour` y `day`).
+  3. Caché corta en Redis (TTL 30 s) para evitar consultas repetitivas al hipervisor ante recargas de página.
+- **Criterio de éxito:** Responde en menos de 100 ms desde caché con el arreglo histórico de métricas formateado para el consumo de gráficos.
+
+#### `BAC-39` - Seguimiento de creación, autoasignación de permisos y eventos (`RF-07`, `RF-11`)
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-38`, `BAC-32` (worker con soporte de creación).
+- **Problema:** Una máquina recién creada no pertenece a ningún operador por defecto. El creador debe obtener acceso inmediato sin requerir que otro administrador configure manualmente sus permisos en `/admin/users`.
+- **Entregable:**
+  1. Integración en `seguimiento_tareas.go`: al detectar fin exitoso (`exitstatus: "OK"`) de un UPID de creación, insertar atómicamente `(creador_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
+  2. Emisión por el canal SSE `/api/events` de `TASK_FINISHED`:
+     `{ tipo: "TASK_FINISHED", recursoTipo: "VM", recursoId: "108", detalles: { tareaId, accion: "create", estado: "COMPLETED" } }`.
+  3. Si la tarea de creación falla en Proxmox, liberar bloqueos y registrar el evento con `estado: "FAILED"`.
+- **Criterio de éxito:** Al finalizar la creación, el inventario del usuario incluye la nueva máquina y la interfaz recibe la notificación en tiempo real.
+
+
+#### `BAC-40` - Endpoint `PUT /api/instances/:vmid/config` con cálculo diferencial ($\Delta\text{RAM}$) y detección de hot-plug
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-37`.
+- **Problema:** La modificación de recursos debe validar que los incrementos solicitados no saturen el nodo y debe advertir con precisión si el cambio exige reiniciar el sistema operativo huésped.
+- **Entregable:**
+  1. Endpoint `PUT /api/instances/:vmid/config` accesible para usuarios con rol `ADMIN` o con `FULL_ACCESS` sobre la instancia.
+  2. Payload: `{ cores?: number, ramMb?: number }`.
+  3. Cálculo diferencial: si $\Delta\text{RAM} > 0$, validar contra la cuota libre con `CuotasService`.
+  4. Invocación de `PUT /nodes/{node}/{tipo}/{vmid}/config` en Proxmox.
+  5. Inspección del resultado: si la instancia está `running` y no aplica en caliente, responder `HTTP 200 OK` con `{ requiresReboot: true, message: "Recursos modificados; los cambios se aplicarán tras reiniciar la instancia." }`. Si aplica en caliente, `{ requiresReboot: false }`.
+- **Criterio de éxito:** Incrementos excesivos son rechazados con `409 RESOURCE_QUOTA_EXCEEDED`. Cambios válidos se persisten y notifican el estado de hot-plug.
+
+#### `BAC-41` - Auditoría inmutable de aprovisionamiento y cambios de recursos (`RF-08`)
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-38`, `BAC-40`.
+- **Problema:** Toda alteración en la infraestructura debe quedar registrada inalterablemente en la tabla `auditoria` para trazabilidad institucional de los operadores.
+- **Entregable:**
+  1. Registro de `CREATE_INSTANCE`: entrada inicial con `resultado: "PENDING"` al recibir la orden, y entrada final con `resultado: "SUCCESS"` o `"FAILED"` vinculada al `upid` y `tareaId`.
+  2. Registro de `CONFIG_INSTANCE`: entrada auditando los valores anteriores y los nuevos parámetros en `detalles` (JSONB).
+  3. Verificación de inmutabilidad contra la base particionada.
+- **Criterio de éxito:** `GET /api/admin/audit` refleja las acciones de creación y edición correlacionadas por identificador de tarea sin omisiones de datos.
+
+
+#### `BAC-50` (`BRG-10-BAC`) - Extensión del simulador de Proxmox para Snapshots y Rollback
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-30` (simulador base).
+- **Problema:** Lisandro y Tayra no pueden desarrollar `BAC-42` ni `BAC-43` de forma local si el simulador no responde los endpoints de snapshot.
+- **Entregable:**
+  1. Handlers simulados en `backend/cmd/proxmox-simulador`:
+     - `POST /api2/json/nodes/:node/qemu/:vmid/snapshot` y `POST .../lxc/...` (persiste snapshot en memoria y devuelve UPID).
+     - `GET /api2/json/nodes/:node/qemu/:vmid/snapshot` (lista ordenada con `name`, `snaptime`, `description`).
+     - `POST .../rollback` y `DELETE .../snapshot/:snapname` (devuelven UPID y simulan la demora asíncrona).
+- **Criterio de éxito:** Pruebas con `curl` al simulador permiten crear, listar y revertir un snapshot simulado con seguimiento de UPID.
+
+#### `BAC-51` (`BRG-11-BAC`) - Guarda centralizada de concurrencia operativa y exclusión mutua (`409 INSTANCE_BUSY`)
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-29` (`activeTask`), `BAC-37` (lock de cuotas).
+- **Problema:** Si una instancia entra en snapshot o rollback, los endpoints de ciclo de vida (`start`, `stop`, `reboot` de Etapa 1) y edición de hardware (`PUT /config` de Etapa 2) permitirían mutaciones concurrentes que corrompen el estado.
+- **Entregable:**
+  1. Middleware/guard de dominio `RequireInstanceIdle`: valida si la instancia tiene una tarea activa en `tareas_asincronas` o un candado en Redis (`lock:instance:{vmid}:operation`).
+  2. Si está ocupada, rechaza inmediatamente con `HTTP 409 Conflict` (`INSTANCE_BUSY`).
+  3. Integración de la guarda en: `POST /api/instances/:id/status/:action` y `PUT /api/instances/:id/config`.
+- **Criterio de éxito:** Una solicitud de encendido o reconfiguración sobre una máquina con tarea activa devuelve `409` estructurado de forma determinística.
+
+
+#### `BAC-52` (`BRG-12-BAC`) - Generalización del Broker SSE para Eventos Globales de Alerta (`ALERT_TRIGGERED`)
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-21C`, `BAC-26`.
+- **Problema:** El canal `/api/events` asume que todo evento es `TASK_FINISHED` sobre una VM específica; las alertas del host de `BAC-47` no tienen VMID y deben transmitirse a todos los administradores.
+- **Entregable:**
+  1. Extensión del modelo `Evento` en Go para admitir `recursoTipo: "HOST" | "VM" | "LXC"`, siendo `recursoId` opcional.
+  2. Regla de enrutamiento en Redis Pub/Sub: los eventos con `recursoTipo == "HOST"` se difunden a todos los clientes con rol `ADMIN`.
+  3. Actualización de `docs/contrato-eventos.md`.
+- **Criterio de éxito:** Un evento de prueba `ALERT_TRIGGERED` a nivel `HOST` es recibido en el navegador por un administrador y descartado silenciosamente para un operador.
+
+
+#### `BAC-53` (`BRG-13-BAC`) - Particionado Preventivo e Indexación Compuesta de la Tabla `auditoria`
+- **Área:** Backend / Base de Datos
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-18`, `BAC-41`.
+- **Problema:** En PostgreSQL, si no existen las particiones para los trimestres de trabajo (Q3/Q4 2026), las inserciones de auditoría fallarán. Además, el streaming de `BAC-45` requiere índices compuestos para evitar escaneos secuenciales.
+- **Entregable:**
+  1. Script de migración SQL DDL que crea preventivamente las particiones trimestrales: `auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1`.
+  2. Índices compuestos para partition pruning: `CREATE INDEX idx_auditoria_query ON auditoria (fecha_hora DESC, usuario_id, accion)`.
+- **Criterio de éxito:** `EXPLAIN ANALYZE` sobre una consulta por rango de fechas confirma que PostgreSQL solo lee la partición correspondiente (*partition pruning*) sin recorrer la tabla completa.

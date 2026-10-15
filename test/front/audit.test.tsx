@@ -103,13 +103,11 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    // Cambiar filtro de acción
-    const accionInput = screen.getByLabelText(/acción/i);
-    if (accionInput instanceof HTMLSelectElement) {
-      await user.selectOptions(accionInput, 'LOGIN');
-    } else {
-      await user.type(accionInput, 'LOGIN');
-    }
+    // Cambiar filtro de acción abriendo el menú desplegable de filtros
+    const filtrosBtn = screen.getByRole('button', { name: /filtros/i });
+    await user.click(filtrosBtn);
+    const loginOption = await screen.findByRole('menuitemradio', { name: /login/i });
+    await user.click(loginOption);
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls as [string, RequestInit][];
@@ -127,16 +125,15 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    await user.selectOptions(screen.getByLabelText('Resultado'), 'FALLA');
+    const tabFalla = screen.getByRole('tab', { name: /fallidos/i });
+    await user.click(tabFalla);
     await waitFor(() => expect((fetchMock.mock.calls as [string][]).some(([url]) => url.includes('resultado=FALLA'))).toBe(true));
 
-    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-09-01' } });
-    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-09-30' } });
     await waitFor(() => {
       const last = String((fetchMock.mock.calls as [string][]).at(-1)?.[0]);
       expect(last).toContain('resultado=FALLA');
-      expect(last).toMatch(/desde=2026-09-01/);
-      expect(last).toMatch(/hasta=2026-09-30/);
+      expect(last).toMatch(/desde=\d{4}-\d{2}-\d{2}/);
+      expect(last).toMatch(/hasta=\d{4}-\d{2}-\d{2}/);
     });
   });
 

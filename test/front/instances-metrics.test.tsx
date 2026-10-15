@@ -14,7 +14,7 @@ import { withProtectedProviders } from './app-providers';
 const inventory = [
   {
     id: 101, name: 'servidor-web', type: 'vm', node: 'pve', status: 'running',
-    ip: '192.168.1.50', cpuUsage: 0.25, ramUsage: 4294967296, maxRam: 17179869184,
+    ip: '192.168.1.50', cpuUsage: 25, ramUsage: 4294967296, maxRam: 17179869184,
     nivelAcceso: 'FULL_ACCESS', activeTask: null,
   },
   {
@@ -58,10 +58,10 @@ describe('FRN-20C - Columnas de CPU/RAM en el inventario', () => {
     renderInstances();
 
     const row = await rowOf('servidor-web');
-    // CPU 0.25 → 25 % (el formateador usa style "percent").
+    // CPU en porcentaje: el contrato envía 25 (escala 0 a 100), debe renderizarse como 25 %.
     expect(within(row).getByText(/25(?:[.,]0+)?\s*%/)).toBeInTheDocument();
-    // RAM: 4 GiB usados de 16 GiB de tope (los bytes del contrato).
-    expect(within(row).getByText(/4\s*(?:GiB|GB)\s*\/\s*16\s*(?:GiB|GB)/i)).toBeInTheDocument();
+    // RAM: 4 GiB usados de 16 GiB de tope (los bytes del contrato, permitiendo decimales opcionales).
+    expect(within(row).getByText(/4(?:\.0+)?\s*(?:GiB|GB)\s*\/\s*16(?:\.0+)?\s*(?:GiB|GB)/i)).toBeInTheDocument();
   });
 
   it('usa "—" cuando cpuUsage y ramUsage llegan en null', async () => {
