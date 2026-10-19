@@ -25,7 +25,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-centinela_admin}:${POSTGRES_PASSWORD:-centinela_password}@db:5432/${POSTGRES_DB:-centinela_db}?sslmode=disable
       HTTP_ADDR: :8080
       JWT_SECRET: ${JWT_SECRET:-development-only-jwt-secret-change-me-32}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      # Debe medir exactamente 32 bytes ASCII: crypto.CifrarSecreto lo valida y
+      # rechaza cualquier otro largo, así que el alta de 2FA falla si no coincide.
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
