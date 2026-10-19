@@ -263,7 +263,7 @@ func TestEtapa1(t *testing.T) {
 		if after := stubWrites(t, 101); after != before {
 			t.Errorf("con un 403 por permisos el backend igual escribió en Proxmox")
 		}
-		// 5. Órdenes válidas: 202 con upid y tareaId.
+		// 5. Órdenes válidas: 202 con tareaId (sin upid público).
 		for _, order := range []struct {
 			vmid   int
 			action string
@@ -274,7 +274,9 @@ func TestEtapa1(t *testing.T) {
 				t.Errorf("%s: esperado 202, recibido %d: %#v", path, status, body)
 				continue
 			}
-			requiredString(t, body, "upid")
+			if _, expuesto := body["upid"]; expuesto {
+				t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+			}
 			tareaID := requiredString(t, body, "tareaId")
 			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
@@ -314,7 +316,7 @@ func TestEtapa1(t *testing.T) {
 			}
 		}
 
-		// Sobre la 102 (detenida): 202 con upid y tareaId, la orden queda auditada y llega TASK_FINISHED de un LXC.
+		// Sobre la 102 (detenida): 202 con tareaId (sin upid público), la orden queda auditada y llega TASK_FINISHED de un LXC.
 		admin := createActiveUser(t, adminToken, "admin_delete", "ADMIN")
 		adminSession := loginWithTOTP(t, admin.Email, admin.Password, admin.Secret)
 		events := listenEvents(t, adminSession.AccessToken)
@@ -322,11 +324,14 @@ func TestEtapa1(t *testing.T) {
 		if status != http.StatusAccepted {
 			t.Fatalf("DELETE de la 102 (stopped) con ADMIN: esperado 202, recibido %d: %#v", status, body)
 		}
-		upid := requiredString(t, body, "upid")
+		if _, expuesto := body["upid"]; expuesto {
+			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+		}
 		tareaID := requiredString(t, body, "tareaId")
 		if stubDeletes(t, 102) != before[102]+1 {
 			t.Errorf("el DELETE aceptado no llegó a Proxmox (DELETE /nodes/pve/lxc/102)")
 		}
+		upid := queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID))
 		audit := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE detalles::text LIKE '%%%s%%';", strings.ReplaceAll(upid, "'", "''"))
 		if queryDatabase(t, audit) == "0" {
 			t.Errorf("la orden de borrado no quedó en auditoria con su upid")

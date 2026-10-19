@@ -107,7 +107,8 @@ describe('FRN-20B - Filtros reactivos por tipo, estado y buscador dinámico', ()
     }
   });
 
-  it('permite filtrar reactivamente por tipo de recurso (Todas, VM, LXC)', async () => {
+  // FRN-20B / FIX-79: Exposición directa de controles para selector reactivo por tipo de recurso (Todas, VM, LXC)
+  it('permite filtrar reactivamente por tipo de recurso (Todas, VM, LXC) (FIX-79)', async () => {
     const user = userEvent.setup();
     renderInstancesPage();
 

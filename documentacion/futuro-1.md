@@ -38,3 +38,7 @@ Correcciones de tareas de la Etapa 1 que ya están implementadas pero no cumplen
 
 ---
 
+## 🛠️ Fixes detectados en la verificación del 19/10/2026 (Etapa 1)
+
+Verificados contra frontend `91eabf4` y backend `8daaf87`.
+

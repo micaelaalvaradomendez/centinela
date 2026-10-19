@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,6 +84,127 @@ func (s proxmoxSimulator) get(t *testing.T, path string) (int, []byte) {
 	return response.StatusCode, body
 }
 
+func (s proxmoxSimulator) post(t *testing.T, path string, bodyData io.Reader) (int, []byte) {
+	t.Helper()
+	request, _ := http.NewRequest(http.MethodPost, s.baseURL+path, bodyData)
+	request.Header.Set("Authorization", s.auth)
+	if bodyData != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	return response.StatusCode, body
+}
+
+func (s proxmoxSimulator) delete(t *testing.T, path string) (int, []byte) {
+	t.Helper()
+	request, _ := http.NewRequest(http.MethodDelete, s.baseURL+path, nil)
+	request.Header.Set("Authorization", s.auth)
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("DELETE %s: %v", path, err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	return response.StatusCode, body
+}
+
+// TestEtapa2BAC50_SimuladorSnapshotsYRollback verifica los entregables de BAC-50 (Etapa 2):
+// Extensión del simulador de Proxmox para Snapshots y Rollback (BRG-10-BAC).
+// Entregables:
+//  1. Handlers simulados en backend/cmd/proxmox-simulador:
+//     - POST /api2/json/nodes/:node/qemu/:vmid/snapshot y POST .../lxc/... (persiste snapshot en memoria y devuelve UPID).
+//     - GET /api2/json/nodes/:node/qemu/:vmid/snapshot (lista ordenada con name, snaptime, description).
+//     - POST .../rollback y DELETE .../snapshot/:snapname (devuelven UPID y simulan la demora asíncrona).
+// Criterio de éxito: pruebas al simulador permiten crear, listar y revertir un snapshot simulado con seguimiento de UPID.
+func TestEtapa2BAC50_SimuladorSnapshotsYRollback(t *testing.T) {
+	sim := startProxmoxSimulator(t)
+
+	t.Run("BAC-50: Crear snapshot en QEMU y LXC devuelve UPID", func(t *testing.T) {
+		payloadVM := strings.NewReader(`{"snapname":"snap-test-qemu","description":"Snapshot de prueba QEMU"}`)
+		status, body := sim.post(t, "/nodes/proxmox/qemu/100/snapshot", payloadVM)
+		if status != http.StatusOK {
+			t.Fatalf("POST qemu/100/snapshot: esperado 200, recibido %d: %s", status, body)
+		}
+		var resVM struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resVM); err != nil || !strings.HasPrefix(resVM.Data, "UPID:proxmox:") {
+			t.Errorf("POST qemu/100/snapshot debe devolver UPID de tarea, recibido %s", body)
+		}
+
+		payloadLXC := strings.NewReader(`{"snapname":"snap-test-lxc","description":"Snapshot de prueba LXC"}`)
+		statusLXC, bodyLXC := sim.post(t, "/nodes/proxmox/lxc/101/snapshot", payloadLXC)
+		if statusLXC != http.StatusOK {
+			t.Fatalf("POST lxc/101/snapshot: esperado 200, recibido %d: %s", statusLXC, bodyLXC)
+		}
+		var resLXC struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(bodyLXC, &resLXC); err != nil || !strings.HasPrefix(resLXC.Data, "UPID:proxmox:") {
+			t.Errorf("POST lxc/101/snapshot debe devolver UPID de tarea, recibido %s", bodyLXC)
+		}
+	})
+
+	t.Run("BAC-50: GET lista los snapshots con name, snaptime y description", func(t *testing.T) {
+		status, body := sim.get(t, "/nodes/proxmox/qemu/100/snapshot")
+		if status != http.StatusOK {
+			t.Fatalf("GET qemu/100/snapshot: esperado 200, recibido %d: %s", status, body)
+		}
+		var res struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil {
+			t.Fatalf("respuesta no es JSON: %v", err)
+		}
+		found := false
+		for _, item := range res.Data {
+			if item["name"] == "snap-test-qemu" {
+				found = true
+				if _, ok := item["snaptime"]; !ok {
+					t.Errorf("snapshot no incluye snaptime: %#v", item)
+				}
+				if desc, _ := item["description"].(string); !strings.Contains(desc, "QEMU") {
+					t.Errorf("snapshot no incluye description esperada: %#v", item)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("snapshot 'snap-test-qemu' no encontrado en el listado de snapshots: %s", body)
+		}
+	})
+
+	t.Run("BAC-50: Rollback de snapshot devuelve UPID", func(t *testing.T) {
+		status, body := sim.post(t, "/nodes/proxmox/qemu/100/snapshot/snap-test-qemu/rollback", nil)
+		if status != http.StatusOK {
+			t.Fatalf("POST rollback: esperado 200, recibido %d: %s", status, body)
+		}
+		var res struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil || !strings.HasPrefix(res.Data, "UPID:proxmox:") {
+			t.Errorf("POST rollback debe devolver UPID de tarea, recibido %s", body)
+		}
+	})
+
+	t.Run("BAC-50: DELETE snapshot devuelve UPID", func(t *testing.T) {
+		status, body := sim.delete(t, "/nodes/proxmox/qemu/100/snapshot/snap-test-qemu")
+		if status != http.StatusOK {
+			t.Fatalf("DELETE snapshot: esperado 200, recibido %d: %s", status, body)
+		}
+		var res struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil || !strings.HasPrefix(res.Data, "UPID:proxmox:") {
+			t.Errorf("DELETE snapshot debe devolver UPID de tarea, recibido %s", body)
+		}
+	})
+}
+
 func startProxmoxSimulator(t *testing.T) proxmoxSimulator {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "proxmox-simulador")
@@ -106,6 +228,7 @@ func startProxmoxSimulator(t *testing.T) proxmoxSimulator {
 		"PROXMOX_NODE=proxmox",
 		"PROXMOX_TOKEN_ID="+tokenID,
 		"PROXMOX_TOKEN_SECRET="+tokenSecret,
+		"PROXMOX_SIM_DURACION_TAREA=0",
 	)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("no se pudo iniciar el simulador: %v", err)

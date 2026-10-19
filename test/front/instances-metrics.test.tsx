@@ -53,7 +53,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('FRN-20C - Columnas de CPU/RAM en el inventario', () => {
+// FRN-20C / FIX-97: Normalización de telemetría de inventario (escala porcentual 0-100, desacople de stopped y glifo em-dash)
+describe('FRN-20C / FIX-97 - Columnas de CPU/RAM en el inventario', () => {
   it('muestra el consumo de CPU (%) y de RAM (usado / total) de cada instancia', async () => {
     renderInstances();
 

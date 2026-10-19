@@ -139,10 +139,15 @@ func TestINT03_ValidacionServidorBordeTLS(t *testing.T) {
 			t.Fatalf("Paso 4: POST /instances/101/status/shutdown vía Edge esperado 202, recibido %d: %#v", status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
-		upid := requiredString(t, body, "upid")
-
+		if tareaID == "" {
+			t.Fatalf("Paso 4: respuesta 202 vía Edge debe contener tareaId no vacío")
+		}
+		if _, expuesto := body["upid"]; expuesto {
+			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública vía Edge (BAC-29)")
+		}
+		upid := queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID))
 		if !strings.HasPrefix(upid, "UPID:") {
-			t.Errorf("Paso 4: upid recibido no tiene prefijo UPID: %s", upid)
+			t.Errorf("Paso 4: upid en base de datos no tiene prefijo UPID: %s", upid)
 		}
 
 		// Esperar que la tarea finalice

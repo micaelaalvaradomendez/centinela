@@ -3,6 +3,7 @@ package back_test
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -130,9 +131,15 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 		}
 
 		tareaID := requiredString(t, actionResp, "tareaId")
-		upid := requiredString(t, actionResp, "upid")
-		if tareaID == "" || upid == "" {
-			t.Fatalf("Paso 4: respuesta 202 debe contener tareaId y upid no vacíos")
+		if tareaID == "" {
+			t.Fatalf("Paso 4: respuesta 202 debe contener tareaId no vacío")
+		}
+		if _, expuesto := actionResp["upid"]; expuesto {
+			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+		}
+		upid := queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID))
+		if !strings.HasPrefix(upid, "UPID:") {
+			t.Errorf("Paso 4: campo upid en base de datos debe iniciar con 'UPID:', encontrado %q", upid)
 		}
 
 		// Consulta inmediata de inventario debe informar activeTask no nulo (operación en progreso)

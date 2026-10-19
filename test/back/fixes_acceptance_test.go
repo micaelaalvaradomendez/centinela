@@ -159,7 +159,11 @@ func TestFixesPendientes(t *testing.T) {
 		// Ambas rutas deben registrar el mismo código de acción en auditoría.
 		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/stop", adminToken, nil)
 		if status == http.StatusAccepted {
-			upid := strings.ReplaceAll(requiredString(t, body, "upid"), "'", "''")
+			tareaID := requiredString(t, body, "tareaId")
+			if _, expuesto := body["upid"]; expuesto {
+				t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+			}
+			upid := strings.ReplaceAll(queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID)), "'", "''")
 			accionAuditoria := queryDatabase(t, fmt.Sprintf("SELECT accion FROM auditoria WHERE detalles::text LIKE '%%%s%%' LIMIT 1;", upid))
 			if accionAuditoria != "STOP" && accionAuditoria != "DETENER_VM" {
 				t.Errorf("accion de auditoría inesperada para stop: %q", accionAuditoria)

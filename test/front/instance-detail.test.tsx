@@ -25,7 +25,8 @@ function collectPaths(route: AnyRoute, parent = ''): string[] {
 
 const declaredPaths = applicationRoutes.flatMap((route) => collectPaths(route));
 
-describe('FRN-21 - Vista Detalle de Instancia (/instances/:vmid)', () => {
+// FRN-21 / FIX-95: Declarar ruta /instances/:vmid y enlazar inventario con la vista de detalle
+describe('FRN-21 / FIX-95 - Vista Detalle de Instancia (/instances/:vmid)', () => {
   it('declara la ruta /instances/:vmid dentro del árbol de rutas de la aplicación', () => {
     expect(
       declaredPaths,

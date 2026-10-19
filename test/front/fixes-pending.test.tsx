@@ -11,9 +11,10 @@ import { withAppProviders, withProtectedProviders } from './app-providers';
 
 // Pruebas de aceptación para los FIX pendientes de Frontend en documentacion/actual.md:
 // - FIX-87: Quitar los datos hardcodeados de la ficha de usuario (detailsUserPage.tsx).
-// - FIX-89: Ruta /instances/new con asistente estático sin lógica (createNewInstances.tsx).
+// - FIX-89 / FIX-99: Advertencia visible 'Próximamente' en vista directa /instances/new (createNewInstances.tsx).
 // - FIX-90: Quitar los placeholders muertos del Dashboard (Dashboard.tsx).
 // - FIX-91: Eliminar el componente muerto InstanceTester (InstanceTester.tsx).
+// - FIX-100: Manejo seguro de valores undefined en formatCount del Dashboard (Dashboard.tsx).
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -101,7 +102,7 @@ describe('FIX-87 - Quitar los datos hardcodeados de la ficha de usuario', () => 
   });
 });
 
-describe('FIX-89 - Ruta /instances/new con asistente estático sin lógica', () => {
+describe('FIX-89 / FIX-99 - Advertencia visible "Próximamente" en vista directa /instances/new', () => {
   it('el asistente estático debe advertir explícitamente que es próximamente o estar deshabilitado', () => {
     render(
       withProtectedProviders(
@@ -187,3 +188,45 @@ describe('FIX-91 - Eliminar el componente muerto InstanceTester', () => {
     ).toBe(false);
   });
 });
+
+describe('FIX-100 - Manejo seguro de valores undefined en formatCount del Dashboard', () => {
+  it('el Dashboard no arroja TypeError y tolera templates.count undefined o nulo', async () => {
+    window.sessionStorage.setItem('centinela_access', 'token-dashboard-fix100');
+    window.localStorage.setItem('centinela_user', JSON.stringify({
+      id: 'admin-1', organizacionId: 'org-1', nombreCompleto: 'Admin Test', email: 'admin@centinela.local',
+      rol: 'ADMIN', instanciasPermitidas: [], tiene2FA: true,
+    }));
+
+    const mockStatus = {
+      cpu: { usagePercent: 20, cores: 4 },
+      ram: { usedGb: 4, totalGb: 16, usagePercent: 25 },
+      storage: { usedGb: 10, totalGb: 100, usagePercent: 10 },
+      uptimeSeconds: 12000,
+      instancesSummary: {
+        vms: { running: 1, stopped: 0, paused: 0, total: 1 },
+        lxc: { running: 0, stopped: 0, paused: 0, total: 0 },
+      },
+      stale: false,
+      fetchedAt: '2026-10-14T08:00:00Z',
+    };
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/node/status')) return Promise.resolve(jsonResponse(mockStatus));
+      if (String(url).includes('/events/ticket')) return Promise.resolve(jsonResponse({ ticket: 'dummy' }));
+      if (String(url).includes('/node/templates')) return Promise.resolve(jsonResponse({ items: [] }));
+      return Promise.resolve(jsonResponse({}));
+    }));
+
+    render(
+      withProtectedProviders(
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <DashboardPage />
+        </MemoryRouter>
+      )
+    );
+
+    // Debe renderizarse sin desmontar el árbol por TypeError
+    expect(await screen.findByText(/resumen general de tus instancias/i)).toBeInTheDocument();
+  });
+});
+

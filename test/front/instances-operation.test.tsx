@@ -25,7 +25,8 @@ async function confirmStop() {
   return { user, row };
 }
 
-describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', () => {
+// FRN-16 / FIX-86: Completar la máquina de estados y el mapeo D2 de operaciones (INSTANCE_PROTECTED / INSTANCE_ACCESS_DENIED)
+describe('FRN-16 / FIX-86 - Máquina de estados "Operación en progreso" por instancia y errores D2', () => {
   it('al confirmar envía la orden por la ruta del contrato y, tras el 202, bloquea toda la fila con un spinner', async () => {
     let release!: (response: Response) => void;
     const fetchMock = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));

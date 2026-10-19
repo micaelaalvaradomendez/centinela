@@ -165,9 +165,9 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
   it('Paso 4: Ciclo de vida — despacho asíncrono y retorno 202 con tareaId', { timeout: 20000 }, async () => {
     window.sessionStorage.setItem('centinela_access', operatorToken);
     // La 101 está encendida: la orden válida es el apagado ordenado (con /start sería 409 INSTANCE_INVALID_STATE).
-    const result = await apiClient.post<{ upid: string; tareaId: string }>('/instances/101/status/shutdown');
+    const result = await apiClient.post<{ tareaId: string; upid?: string }>('/instances/101/status/shutdown');
     expect(result.tareaId).toBeTruthy();
-    expect(result.upid).toMatch(/^UPID:/);
+    expect(typeof result.tareaId).toBe('string');
   });
 
   it('Paso 5: Notificación — ticket efímero de eventos y recepción de fin de tarea', { timeout: 25000 }, async () => {

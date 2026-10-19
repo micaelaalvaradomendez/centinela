@@ -1167,3 +1167,160 @@ Verificadas contra backend `dbf7075` / frontend `6db04d3`. El estado vigente es 
   1. Ocultar/deshabilitar la ruta y el botón hasta que exista el asistente real (Etapa 2), o
   2. Etiquetar la vista como "Próximamente" de forma explícita.
 - **Criterio de éxito:** ningún botón lleva a una pantalla sin funcionalidad sin avisar.
+
+---
+
+## Actualización del 19/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es el bloque de cada tarea.
+
+
+#### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, backend `8daaf87`): implementada y con test en verde.** Pasa `TestFIX81_OrdenMigracionesBaseLimpia` en `test/back/fixes_acceptance_test.go`. En `backend/internal/adapters/secondary/postgres/db.go`, `migrarAuditoriaParticionada(db)` se invoca antes de `migrarUnicidadEmail(db)`, permitiendo iniciar el backend desde una base de datos vacía sin errores de tabla inexistente.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-54` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llamaba `migrarUnicidadEmail(db)` antes de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecutaba `SELECT … FROM auditoria`, pero la tabla `auditoria` la creaba `migrarAuditoriaParticionada`. En una base nueva el arranque abortaba por relación inexistente.
+- **Qué debe hacer el equipo de backend:**
+  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` después de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
+  2. Verificar con una base vacía que el backend arranca y que la suite `test/back` corre completa sin parches.
+- **Criterio de éxito:**
+  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
+  - `test/back` deja de requerir el reordenamiento manual.
+
+
+#### `FRN-21` (`BRG-06-FRN`) / `FIX-95` - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde inventario (`RF-03`, `RF-11`)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instance-detail.test.tsx` (3/3 en verde). La ruta protegida `/instances/:vmid` está registrada en `AppRoutes.tsx`, y la tabla de inventario en `Instances.tsx` enlaza hacia el detalle de máquina.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-20A`, `FRN-17B`.
+- **Problema:** En `etapa1.md`, la nota 45 pospuso el enlace de los toasts al detalle de la instancia porque la vista no existía. Sin esta pantalla, la Etapa 2 no tiene contenedor donde montar los gráficos de métricas (`RF-05`) ni la edición de recursos (`RF-10`).
+- **Entregable:**
+  1. Ruta `/instances/:vmid` bajo `ProtectedLayout` con guard de sesión y permiso de acceso.
+  2. Componente de vista `InstanceDetailPage.tsx` con cabecera y pestañas "General", "Métricas" y "Configuración".
+  3. Vincular la tabla de inventario (`Instances.tsx`) y los toasts de notificación (`FRN-17B`) con enlace directo a `/instances/:vmid`.
+- **Criterio de éxito:** Al hacer clic en una fila o en un toast de tarea completada, la aplicación navega a `/instances/:vmid` mostrando los datos reales de la máquina y sus pestañas base listas.
+
+
+#### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instances-events.test.tsx` (2/2 en verde). Ante un evento `TASK_FINISHED`, la fila en transición se libera de bloqueos y se dispara el toast correspondiente (verde ante `COMPLETED`; rojo con detalle de error ante `FAILED`).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-16`, `FRN-17A` y `BAC-26`.
+- **Entregable:**
+  - Al recibir un `TASK_FINISHED` con el mismo `detalles.tareaId` que una fila en transición, quitar el bloqueo y el spinner.
+  - Actualizar el badge de estado (`Running` / `Stopped`).
+  - Mostrar un toast (`components/ui/toast.tsx`) verde o rojo según el resultado.
+  - Si la acción fue `delete`, quitar la fila.
+- **Criterio de éxito:** la interfaz actualiza el estado y libera los botones sin `F5`.
+
+
+### `FIX-86` - Completar la máquina de estados y el mapeo D2 de operaciones (`FIX-77` / `FRN-16`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instances-operation.test.tsx` (9/9 en verde). Se implementó el mapeo D2 de errores HTTP 403 traduciendo adecuadamente `INSTANCE_PROTECTED` e `INSTANCE_ACCESS_DENIED`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2 h
+- **Depende de:** `FIX-77` (en `terminado-1.md`), `FRN-16`, `BAC-29`.
+- **Problema técnico detallado:**
+  En `components/common/ConfirmUserAction.tsx` los errores 403 mostraban mensajes crudos o genéricos.
+- **Qué debe hacer el equipo de frontend:**
+  1. Mostrar el mensaje diferenciado de estos códigos utilizando `getErrorMessage(error)` para los errores 403 de instancia.
+  2. Ejecutar `npx vitest run instances-operation.test.tsx` hasta 9/9.
+- **Criterio de éxito:** `instances-operation.test.tsx` pasa 9 de 9.
+
+
+### `FIX-97` - Normalización de telemetría de inventario (escala porcentual 0-100 y glifo em-dash) (`FRN-20C`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa `test/front/instances-metrics.test.tsx` (3/3 en verde). `formatInstanceTelemetry.ts` formatea CPU en escala directa 0-100 sin multiplicaciones espurias y devuelve el glifo em-dash `'—'` (`U+2014`) ante valores nulos o máquinas detenidas.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-20C` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Multiplicación por 100 indebida en `formatCpuUsage` al recibir escala 0-100, intercepción fija con guion simple `'-'` en `Instances.tsx` y ausencia de glifo em-dash `'—'` ante valores nulos.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `formatInstanceTelemetry.ts`, adaptar `formatCpuUsage` para recibir valores en escala 0-100 y retornar `'—'` ante valores `null`/`undefined`.
+  2. Asegurar que `formatRamUsage` retorne `'—'` ante nulos.
+  3. En `Instances.tsx`, delegar en los formateadores directamente.
+- **Criterio de éxito:** `instances-metrics.test.tsx` pasa 3 de 3 en verde.
+
+
+### `FIX-79` - Exposición directa de controles para selector reactivo por tipo de recurso (`FRN-20B`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada parcialmente, con problemas pendientes.** El selector visible con botones accesibles ("Todas", "VM", "LXC") fue incorporado en el commit `623bc28`. No obstante, en `test/front/instances-ola2.test.tsx` fallan 2 pruebas: el filtrado en memoria por texto del buscador y la alternancia entre instancias "En ejecución" y "Detenidas". Corrección abierta en **`FIX-101`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-20B`.
+- **Problema técnico detallado:**
+  La suite `test/front/instances-ola2.test.tsx` requería controles visibles directos ("Todas", "VM", "LXC") en vez de un dropdown contextual oculto.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Instances.tsx`, exponer botones o pestañas accesibles para alternar tipo de recurso.
+  2. Mantener reactividad instantánea en memoria.
+- **Criterio de éxito:** la suite `instances-ola2.test.tsx` pasa al 100%.
+
+
+### `FIX-76` & `FIX-85` - Modales de energía y confirmación `Start` desacoplada para `ADMIN` (`FRN-15`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementadas parcialmente, con problemas pendientes.** La guarda de administrador (`isAdmin()`) y la confirmación modal de `Start` (`FIX-85`) pasan (5/6 en `test/front/instances-modals.test.tsx`). Sin embargo, falla la prueba de permisos de operador (`un OPERATOR ve acciones de energía solo donde tiene FULL_ACCESS y nunca ve Delete`) debido a un error tipográfico `arial-label` (en vez de `aria-label`) en `InstanceAction.tsx:222-266`. Corrección abierta en **`FIX-102`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-15`.
+- **Problema técnico detallado:**
+  En `InstanceAction.tsx`, la guarda `canOperate` bloqueaba a administradores ante `nivelAcceso === 'READ_ONLY'`, y `Start` no gestionaba adecuadamente la confirmación y cancelación.
+- **Qué debe hacer el equipo de frontend:**
+  1. Habilitar a `isAdmin()` para operar sin restricciones de `nivelAcceso`.
+  2. Manejar confirmación de `Start` en `ConfirmUserAction`.
+- **Criterio de éxito:** `instances-modals.test.tsx` pasa al 100%.
+
+
+#### `FRN-19C` & `FIX-83` - Tarjetas de conteo de VMs/LXC y refresco ante `TASK_FINISHED` (`RF-02`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementadas parcialmente, bloqueadas por regresión.** Se incorporó la suscripción a eventos SSE para actualizar conteos sin esperar al polling de 10 s. Sin embargo, el commit `54efc3d` introdujo una regresión crítica en `useNodeStatus.ts:146` (`TypeError: serie.map is not a function`), desmontando el componente `<Dashboard>` y rompiendo `dashboard-summary.test.tsx` y `dashboard-node.test.tsx`. Corrección abierta en **`FIX-103`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-22B`, `FRN-19B`, `FRN-17A`.
+- **Entregable:** tarjetas de resumen de VMs y LXC en Dashboard con actualización inmediata (< 2 s) ante `TASK_FINISHED`.
+- **Criterio de éxito:** tras encender o apagar una instancia, el conteo cambia en menos de 2 s sin `F5`.
+
+
+### `FIX-99` - Advertencia visible "Próximamente" en vista directa `/instances/new` (`FIX-89`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada parcialmente, con problema pendiente.** El commit `30894f4` añadió el banner de alerta en `createNewInstances.tsx`. No obstante, se condicionó con `{currentStep >= 3 && ...}`, por lo que al acceder a la URL `/instances/new` el banner no es visible en el paso inicial y `fixes-pending.test.tsx:118` sigue fallando. Corrección abierta en **`FIX-104`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-89` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al acceder directamente por URL a `/instances/new`, la página renderizaba el asistente sin advertir que está en desarrollo para la Etapa 2.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `createNewInstances.tsx`, incorporar una alerta destacada en la cabecera visible en todos los pasos.
+- **Criterio de éxito:** `fixes-pending.test.tsx` pasa el caso `FIX-89` en verde.

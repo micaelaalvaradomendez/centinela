@@ -134,7 +134,11 @@ func TestPuenteEtapa1(t *testing.T) {
 			t.Fatalf("stop sobre la 101: esperado 202, recibido %d: %#v", status, body)
 		}
 		// El stub da un UPID distinto por tarea, como Proxmox: se busca el de esta respuesta.
-		upid := strings.ReplaceAll(requiredString(t, body, "upid"), "'", "''")
+		tareaID := requiredString(t, body, "tareaId")
+		if _, expuesto := body["upid"]; expuesto {
+			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+		}
+		upid := strings.ReplaceAll(queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID)), "'", "''")
 		query := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE (instancia_id = '101' OR detalles::text LIKE '%%101%%') AND detalles::text LIKE '%%%s%%';", upid)
 		for attempt := 0; attempt < 30; attempt++ {
 			if queryDatabase(t, query) != "0" {

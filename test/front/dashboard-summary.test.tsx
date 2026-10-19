@@ -110,7 +110,8 @@ describe('FRN-19C - Tarjetas de conteo de instancias con auto-actualización', (
     expect(leadNumber(cardValue(/detenidas o pausadas/i))).toBe('1');
   });
 
-  it('vuelve a consultar /node/status al recibir TASK_FINISHED para actualizar el conteo sin F5', async () => {
+  // FRN-19C / FIX-83: Refrescar el conteo de instancias ante TASK_FINISHED
+  it('vuelve a consultar /node/status al recibir TASK_FINISHED para actualizar el conteo sin F5 (FIX-83)', async () => {
     const { fetchMock } = renderDashboard(() => Promise.resolve(json(status())));
     await waitFor(() => expect(latestSse, 'no se abrió la conexión de eventos').not.toBeNull());
     await waitFor(() => expect(nodeCalls(fetchMock).length).toBeGreaterThan(0));
