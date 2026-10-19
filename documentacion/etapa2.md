@@ -188,74 +188,11 @@ flowchart TD
 
 ### Bloque 4: Frontend - Gráficos de Telemetría en Detalle de Instancia (`RF-05`)
 
-#### `FRN-22` - Hook `useInstanceMetrics` y cliente WebSocket para telemetría en tiempo real
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-35`, `FRN-21` (página de detalle).
-- **Problema:** El cliente frontend debe gestionar la conexión WebSocket de métricas de forma resiliente, solicitando el ticket de autenticación previo y manejando caídas de red sin fugar memoria ni sockets huérfanos.
-- **Entregable:**
-  1. Servicio de solicitud de ticket efímero `getWsTicket()`.
-  2. Hook personalizado `useInstanceMetrics(vmid)` que gestione conexión, estado (`conectando`, `conectado`, `reconectando`, `error`) y almacenamiento en búfer de los últimos $N$ puntos de telemetría.
-  3. Reintento con backoff exponencial ante desconexión accidental.
-  4. Cierre explícito del socket al desmontar el componente o cambiar de pestaña.
-  5. **Contrato de telemetría unificado (escala y nulos):**
-     - La CPU transmitida en vivo por WebSocket (`MetricasEnVivoDTO.cpu`) y en el histórico RRDdata (`PuntoMetricaDTO.cpuPercent`) viaja **en escala porcentual directa ($0$ a $100$)**, no como fracción $0..1$. El hook debe almacenar la telemetría en dicha escala sin multiplicar por 100.
-     - Cuando la instancia esté apagada (`stopped`), el backend envía `cpu: null` y `mem: null`. El hook debe manejar valores nulos de forma segura (sin invocar `.toFixed()` directamente sobre `null`) e indicar en el estado del búfer la inactividad temporal.
-- **Criterio de éxito:** El hook entrega series de datos actualizadas cada 2 s sin fugas de memoria en pruebas de componente con Vitest y maneja instancias apagadas (`null`) sin excepciones de tipo en consola.
-
-#### `FRN-23` - Componentes de gráficos interactivos de rendimiento y selector de rango temporal
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 2.5 h
-- **Depende de:** `FRN-22`, `BAC-36`.
-- **Problema:** La pestaña "Métricas" de `InstanceDetailPage.tsx` carece de componentes visuales para interpretar el consumo de recursos de la máquina.
-- **Entregable:**
-  1. Incorporación de componentes de gráficos interactivos (utilizando Recharts o Chart.js):
-     - Gráfico de CPU (%) en escala directa $0-100\%$ (compatible con `PuntoMetricaDTO.cpuPercent` y WebSocket).
-     - Gráfico de Memoria RAM (Usada vs Total).
-     - Gráfico de Tráfico de Red (KB/s In/Out).
-     - Gráfico de I/O de Disco (KB/s Read/Write).
-  2. Selector de rango temporal: "En vivo" (WebSocket), "Últimas 2 horas" y "Últimas 24 horas" (REST `BAC-36`).
-  3. Formateo legible de unidades (bytes a MB/GB, bps a KB/s).
-  4. Tooltips explicativos y estados de carga (skeletons) mientras se obtienen los primeros datos.
-  5. **Tolerancia a valores nulos:** cuando la máquina esté detenida (`cpu: null`, `mem: null`), los gráficos deben pintar discontinuidades temporales o mostrar el estado "Instancia detenida" sin romper el ciclo de vida del componente con errores `NaN` o `TypeError`.
-- **Criterio de éxito:** Al abrir la pestaña "Métricas", se visualiza la serie histórica y los gráficos continúan actualizándose dinámicamente con los eventos en vivo, tolerando paradas de la máquina sin fallos visuales.
 
 ---
 
 ### Bloque 5: Frontend - Asistente de Creación de Instancias (Wizard de 4 Pasos) (`RF-07`)
 
-#### `FRN-24` - Wizard de creación: Paso 1 (Tipo de instancia) y Paso 2 (Recursos y Cuotas en Vivo)
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.5 h
-- **Depende de:** `BAC-33` (cuotas del host), `FIX-60` (botón en `/instances`).
-- **Problema:** La creación debe ser simple e intuitiva, guiando al usuario para que no sobreasigne recursos por error.
-- **Entregable:**
-  1. Componente modal/asistente multipaso `CreateInstanceWizard.tsx`.
-  2. **Paso 1 (Tipo):** Selector con tarjetas visuales entre Máquina Virtual (QEMU) y Contenedor (LXC), con descripciones claras.
-  3. **Paso 2 (Recursos):** Sliders y controles numéricos para vCPU, RAM (MB/GB) y Disco (GB).
-  4. Medidor de cuota reactivo: barra de capacidad del host que muestra el impacto del recurso seleccionado en tiempo real, cambiando a color de advertencia si supera el 80% del remanente y deshabilitando el avance si supera el 100%.
-- **Criterio de éxito:** El usuario no puede avanzar al Paso 3 si la configuración solicitada excede la memoria o disco disponibles en el nodo.
-
-#### `FRN-25` - Wizard de creación: Paso 3 (Almacenamiento, Template/ISO y Red) y Paso 4 (Resumen)
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-24`, `BAC-31` (endpoints de storage y templates).
-- **Problema:** El usuario necesita seleccionar de forma amigable los storages reales y las imágenes disponibles sin lidiar con comandos complejos de consola.
-- **Entregable:**
-  1. **Paso 3 (Storage, Imagen y Red):**
-     - Desplegable de Storages disponibles (`GET /api/node/storages`).
-     - Selector de Plantillas LXC o ISOs según el tipo seleccionado en el Paso 1 (`GET /api/node/templates`).
-     - Configuración de red: switch "DHCP (Automático)" o "IP Fija" (con inputs validados para IP/máscara y puerta de enlace).
-  2. **Paso 4 (Resumen):** Ficha consolidada con todos los parámetros técnicos elegidos y advertencia de confirmación.
-- **Criterio de éxito:** El wizard valida que todos los campos requeridos estén completos antes de habilitar el botón final "Crear Instancia".
 
 #### `FRN-26` - Envío de creación, manejo de errores de cuota (`409`) y seguimiento en la UI
 
