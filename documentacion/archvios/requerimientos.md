@@ -1,465 +1,360 @@
 # Requerimientos de El Centinela
 
+> **Alcance del documento:** Especificación técnica y funcional completa de la plataforma **El Centinela**, alineada con la arquitectura hexagonal implementada en la **Fase Base** y la **Etapa 1**, las definiciones de las **Etapas 2 y 3**, las Decisiones de Diseño Cerradas (`D1`–`D6`) y las remediaciones de las auditorías de seguridad e infraestructura (`FIX-105` a `FIX-119`).
+>
+> **Criterio de clasificación de las remediaciones de seguridad (`FIX-105` a `FIX-119`):**
+> - **En los Requerimientos Funcionales (`RF`):** se especifican aquellos controles que **definen o alteran un flujo de negocio, una regla de validación de dominio o la interacción del usuario** (por ejemplo: doble canal con contraseña + 2FA para cambiar el email en `RF-01`, límites de reintentos y bloqueo de fuerza bruta en `RF-01`/`RF-13`, segregación de métricas del host según el rol en `RF-02`, purga transaccional de permisos huérfanos al borrar una VM en `RF-04`/`RF-09`, validación de existencia real y protección de VMIDs al asignar permisos en `RF-09`).
+> - **En los Requerimientos No Funcionales (`RNF`):** se especifican las **propiedades transversales de arquitectura, criptografía, ocultamiento de topología y saneamiento** que protegen a toda la plataforma sin alterar la lógica funcional del usuario (por ejemplo: enmascaramiento de `UPID` tras `tareaId`, ofuscación reversible de `VMID` contra IDOR, alias lógicos para nodos y storages, sanitización de trazas Perl/Linux de Proxmox y prohibición de credenciales por defecto en producción).
+
+---
+
 ## Requerimientos funcionales
 
-### RF-01. Autenticación y control de acceso
+### RF-01. Autenticación, sesiones seguras, gestión de cuenta propia y control de acceso
 
-El sistema debe permitir el registro y el inicio de sesión mediante usuario o correo electrónico y contraseña. Después de validar las credenciales, debe exigir autenticación de doble factor (2FA) mediante contraseñas temporales basadas en tiempo (TOTP).
+El sistema debe gestionar el inicio de sesión mediante correo electrónico (normalizado a minúsculas) y contraseña, sin permitir el auto-registro público: las cuentas son aprovisionadas exclusivamente por un administrador (`RF-09`). Después de validar las credenciales primarias, debe exigir obligatoriamente autenticación de doble factor (2FA) mediante contraseñas temporales basadas en tiempo (TOTP, RFC 6238, 6 dígitos, ventana de 30 segundos).
 
-Si el usuario no tiene configurado el 2FA, el sistema debe mostrar la pantalla de vinculación inicial mediante código QR y permitir también la carga manual del secreto. Si ya está vinculado, debe solicitar un código TOTP de seis dígitos. Debe existir un mecanismo para solicitar la regeneración o revinculación del 2FA en caso de pérdida de acceso a la aplicación autenticadora.
-
-El control de acceso debe estar basado en roles, con al menos los roles de administrador y operador. El sistema debe generar y validar tokens JWT para gestionar sesiones seguras.
-
-**Frontend**
-
-- Diseñar y maquetar los formularios de registro e inicio de sesión, con validación de campos.
-- Implementar el almacenamiento seguro del JWT y el gestor de estado global de la sesión.
-- Restringir las vistas según el rol incluido en el JWT.
-- Agregar el encabezado de autorización a las peticiones HTTP.
-- Diseñar y renderizar la pantalla o modal de vinculación inicial del 2FA mediante código QR.
-- Diseñar la vista para ingresar el código TOTP de seis dígitos y solicitar su regeneración o revinculación.
-
-**Backend**
-
-- Crear los endpoints de autenticación y verificación del 2FA.
-- Proteger el almacenamiento de contraseñas y secretos TOTP.
-- Diseñar la firma y verificación de los JWT, incluyendo el identificador de usuario, el rol, el estado de verificación del 2FA y el tiempo de expiración.
-- Validar los permisos según el rol solicitado.
-- Generar secretos TOTP y códigos QR.
-- Validar los códigos ingresados y gestionar la revinculación o generación de nuevas claves 2FA.
-
-**Infraestructura**
-
-- Desplegar y mantener la persistencia de usuarios y credenciales.
-- Configurar de forma segura las claves utilizadas para firmar los JWT.
-- Garantizar conexiones HTTPS/TLS entre el cliente y el servidor.
-
-### RF-02. Dashboard de estado del nodo
-
-Al iniciar el sistema, debe mostrar una vista con el estado de salud y el consumo de recursos del nodo físico o clúster de Proxmox VE. Debe incluir:
-
-- CPU total, porcentaje de uso y cantidad de núcleos.
-- Memoria RAM utilizada, porcentaje y capacidad total.
-- Almacenamiento utilizado, porcentaje y capacidad total.
-- Tiempo de actividad del nodo.
-- Cantidad de instancias VM y LXC, agrupadas por estado: en ejecución, detenidas u otros estados disponibles.
-
-Este requisito permite conocer la salud del hipervisor y determinar si el servidor está sobrecargado o dispone de recursos.
+El flujo de autenticación y gestión de credenciales debe cumplir las siguientes reglas de negocio:
+1. **Fase de pre-autenticación (`POST /api/auth/login`):** Al validar correo, estado activo (`activo = true`, `eliminado_en IS NULL`) y contraseña (`bcrypt`), el sistema emite únicamente un token temporal (`jwtTemporal` con claim `type: "pre-2fa"`, `jti` en Redis y TTL de 5 minutos) e informa si el usuario ya tiene vinculado su 2FA (`totpVinculado`) y si debe cambiar su contraseña temporal (`cambioContrasenaRequerido`).
+2. **Fase de segundo factor (`GET /api/auth/2fa/qr` y `POST /api/auth/2fa/verify`):**
+   - Si el usuario **no** tiene vinculado el 2FA (`totpVinculado == false`), el sistema genera el secreto TOTP, lo cifra con **AES-256-GCM** y presenta el código QR junto con el secreto manual.
+   - Si el usuario **ya** tiene vinculado el 2FA (`totpVinculado == true`), el sistema solicita el código TOTP de 6 dígitos y **bloquea cualquier intento de volver a consultar o regenerar el código QR** (`409 TWO_FACTOR_ALREADY_ENABLED`). La revinculación por pérdida de dispositivo solo puede ejecutarla un administrador (`RF-09`).
+   - Al verificar el código TOTP, el sistema debe aplicar protección **anti-replay** registrando la ventana temporal consumida (`ultimo_totp_periodo`) para impedir que un mismo código de 6 dígitos se reutilice dentro de los mismos 30 segundos.
+3. **Protección contra fuerza bruta en Login y 2FA (`FIX-112`):**
+   - En `POST /api/auth/login`: permitir un máximo de **5 intentos fallidos** por par `(IP, Email)` dentro de una ventana de **15 minutos**; al sexto intento, bloquear con **`429 Too Many Requests`** y cabecera `Retry-After: 900`.
+   - En `POST /api/auth/2fa/verify`: permitir un máximo de **3 intentos fallidos** por `jtiTemporal`. Al tercer fallo consecutivo, revocar y eliminar de inmediato la sesión pre-auth en Redis (`auth:pre2fa:<jti>`), respondiendo **`401 TOKEN_REVOKED`** y obligando al usuario a reiniciar el login desde el primer paso.
+4. **Política de longitud y complejidad de contraseñas conforme a NIST SP 800-63B (`FIX-115A` / `FIX-115B`):**
+   - Toda contraseña (temporal, nueva o restablecida) debe tener entre **8 y 128 caracteres** (eliminando el límite restrictivo previo de 12 caracteres para permitir el uso de *passphrases* y gestores de contraseñas como Bitwarden, 1Password o KeePass), e incluir al menos 1 letra mayúscula, 1 número y 1 carácter especial (`!@#$%^&*-_=+`).
+5. **Cambio obligatorio o voluntario de contraseña y revocación de sesiones (`PUT /api/account/password` — `FIX-114`):**
+   - Mientras `cambio_contrasena == true`, el middleware `RequireAuth` debe bloquear el acceso a cualquier recurso del sistema (`403 PASSWORD_CHANGE_REQUIRED`) excepto a `PUT /api/account/password` y `POST /api/auth/logout`.
+   - Al ejecutarse un cambio de contraseña (obligatorio o voluntario), el backend debe verificar la contraseña actual, prohibir que la nueva sea idéntica a la anterior y **revocar obligatoriamente todas las demás sesiones activas del usuario** en `sesiones_activas` y Redis (emitiendo `MensajeSesionesRevocadas` por SSE/WebSocket para expulsar inmediatamente a cualquier intruso con tokens previos), auditando `sesiones_revocadas: true`.
+6. **Blindaje contra secuestro de cuenta (*Account Takeover*) en cambio de correo propio (`PUT /api/account/profile` — `FIX-111A` / `FIX-111B`):**
+   - Si el usuario solicita modificar su `emailUsuario`, el sistema debe exigir obligatoriamente su **`contrasenaActual`** y un **código `codigo2fa` TOTP válido**.
+   - El correo **no debe mutar inmediatamente** en la tabla `usuarios`: el backend debe generar un token criptográfico de 32 bytes en Redis (`auth:email_change:<token>`, TTL 15 minutos), enviar el enlace/código de verificación a la nueva dirección, enviar una alerta de seguridad al correo anterior y registrar en `auditoria` tanto la solicitud (`UPDATE_PROFILE_EMAIL_REQUESTED`) como la confirmación (`UPDATE_PROFILE_EMAIL_CONFIRMED`).
 
 **Frontend**
 
-- Diseñar e integrar tarjetas de resumen y medidores para el consumo del host.
-- Actualizar los valores sin recargar la página mediante el mecanismo de tiempo real definido por el equipo (polling, WebSockets o una combinación de ambos).
-- Implementar un indicador visual del estado del hipervisor, por ejemplo, normal, degradado o inaccesible.
+- Maquetar las vistas de inicio de sesión, vinculación inicial de 2FA mediante QR/clave manual, verificación de código TOTP de 6 dígitos y cambio obligatorio de contraseña temporal.
+- Admitir contraseñas de **8 a 128 caracteres** (`maxLength={128}`) en todos los formularios y validadores (`validatePasswordComplexity.ts` — `FIX-115B`).
+- En la edición de perfil propio (`FIX-111B`), interceptar cualquier cambio en el campo de correo electrónico y abrir un modal de seguridad que exija ingresar `contrasenaActual` y `codigo2fa` (TOTP), informando luego que se envió un correo de confirmación al nuevo destino.
+- Mantener el `accessToken` JWT en memoria y utilizar la cookie `centinela_refresh` (`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/auth`) para la renovación silenciosa (`POST /api/auth/refresh`).
 
 **Backend**
 
-- Consultar periódicamente el estado de Proxmox VE.
-- Procesar, normalizar y distribuir la información hacia el frontend.
+- Implementar `/api/auth/login`, `/api/auth/2fa/qr`, `/api/auth/2fa/verify`, `/api/auth/refresh`, `/api/auth/logout`, `/api/account/profile` y `/api/account/password`.
+- Aplicar el middleware `RateLimiter` en Redis (*Sliding Window* / *Token Bucket*) sobre `/api/auth/login` y `/api/auth/2fa/verify` (`FIX-112`).
+- Rotar *in-place* los identificadores `jti_access` y `jti_refresh` sobre la misma fila `sid` en `sesiones_activas` durante `/api/auth/refresh`.
+- Revocar las sesiones activas en `CambiarContrasena` (`FIX-114`) y exigir re-autenticación + doble canal + auditoría en `ActualizarPerfil` (`FIX-111A`).
 
 **Infraestructura**
 
-- Garantizar que el token de API de Proxmox VE tenga permisos de lectura sobre el estado del nodo.
-- Configurar una caché con el último estado conocido para responder rápidamente durante períodos de alta concurrencia.
+- Persistir usuarios y sesiones activas en PostgreSQL y mantener el estado efímero (`pre2fa`, `sesion:<sid>`, tokens de cambio de email y contadores de rate limit) en Redis.
+- Prohibir semillas con credenciales fijas (`Admin123!`) en producción (`FIX-118`, detallado en `RNF-01`).
 
-### RF-03. Inventario de instancias
+---
 
-El sistema debe presentar una lista de todas las instancias gestionadas por Proxmox VE. Cada instancia debe mostrar su ID, nombre, tipo (VM o LXC), estado, dirección IP y un resumen del uso de CPU y RAM. La lista debe permitir buscar y filtrar por nombre, estado y tipo.
+### RF-02. Dashboard de estado del nodo y segregación por rol
+
+Al ingresar al sistema, debe presentarse una vista general con el estado de salud y el consumo de recursos del nodo físico de Proxmox VE, evaluado mediante el **Semáforo de Salud (`D3`)**:
+- **`Saludable` (Verde):** uso de CPU, RAM y almacenamiento inferior al `70%`.
+- **`Advertencia` (Amarillo):** al menos un recurso se ubica en `>= 70%` (o en zona crítica `>= 85% / 90%`).
+- **`Inaccesible` (Rojo):** pérdida de conectividad o timeout (`502` / `504`) al consultar la API de Proxmox VE.
+
+**Regla de segregación de información según el rol (`FIX-117A` / `FIX-117B`):**
+- **Para el rol `ADMIN`:** `GET /api/node/status` y `GET /api/node/history` entregan la telemetría global completa del servidor anfitrión: CPU total y núcleos, memoria RAM usada/total y capacidad asignable (`allocatable`, descontando el **15% de reserva de seguridad** para el host), almacenamiento físico de los discos del hipervisor, `uptime` y `instancesSummary` global de todo el clúster (`running`, `stopped`, `paused`, `total`).
+- **Para el rol `OPERATOR`:** para evitar la fuga de información de infraestructura física y de cargas de trabajo de otras áreas (CWE-200), el backend debe **omitir el almacenamiento físico global del nodo y el `instancesSummary` global del clúster**, entregando únicamente el conteo y resumen acotado a las instancias que el operador tiene asignadas en `permisos_instancia`.
 
 **Frontend**
 
-- Diseñar una vista clara que combine máquinas virtuales y contenedores LXC.
-- Implementar un buscador dinámico y filtros por tipo y estado.
-- Diseñar etiquetas visuales para los estados.
-- Sincronizar el inventario con los eventos de cambio de estado recibidos del backend.
+- Diseñar tarjetas de resumen, medidores porcentuales y el indicador visual del semáforo de salud (`Saludable`, `Advertencia`, `Inaccesible`).
+- Adaptar el Dashboard según el rol (`FIX-117B`) y manejar de forma defensiva valores `null`/`undefined` o respuestas no-array en los contadores y series (`FIX-100`, `FIX-103`) para que la vista de un `OPERATOR` renderice limpiamente su resumen acotado sin arrojar `TypeError`.
 
 **Backend**
 
-- Desarrollar el endpoint de consulta de instancias.
-- Filtrar las instancias según la matriz de acceso del usuario.
-- Normalizar las propiedades de las VMs y los LXC en una respuesta JSON común.
+- Exponer `GET /api/node/status` y `GET /api/node/history` con caché corta en Redis (5 a 10 segundos).
+- Enmascarar el nombre técnico del nodo físico mediante un alias lógico seguro (`FIX-109`, ej. `"nodo-principal"`) y segregar el payload de respuesta inspeccionando el rol en el contexto (`ContextKeyRol` — `FIX-117A`).
 
 **Infraestructura**
 
-- Verificar que el token de API tenga permisos para consultar las direcciones IP de cada VM o LXC.
+- Garantizar que el token de API de Proxmox VE posea el privilegio `Sys.Audit` sobre el nodo.
 
-### RF-04. Control del ciclo de vida de instancias
+---
 
-El sistema debe permitir iniciar, apagar ordenadamente, forzar el apagado y reiniciar instancias. Cada acción debe solicitar confirmación explícita. El estado de la instancia debe actualizarse en tiempo real mientras la operación progresa.
+### RF-03. Inventario de instancias con identificadores ofuscados
 
-El backend debe manejar el UPID devuelto por Proxmox VE, monitorear la tarea en segundo plano y notificar al frontend cuando finalice. El frontend debe bloquear acciones duplicadas mientras la tarea esté en progreso.
+El sistema debe presentar un listado unificado de todas las máquinas virtuales (`QEMU` normalizado a `"vm"`) y contenedores (`LXC` normalizado a `"lxc"`) gestionados en Proxmox VE a los que el usuario tenga acceso (`GET /api/instances` y `GET /api/instances/:instanceRef`).
+
+Cada elemento del inventario debe incluir: identificador público ofuscado (`id` / `instanceRef`, ej. `"inst_k8Pq2v"` según `FIX-107` / `FIX-108` para evitar exponer el `VMID` secuencial entero), nombre (`name`), tipo (`vm` o `lxc`), estado (`running`, `stopped`, `paused`), dirección IPv4 privada en vivo (`ip`), uso y tope de CPU (`cpuUsage`, `maxCpu`), uso y tope de RAM (`ramUsage`, `maxRam`), uso y tope de disco (`diskUsage`, `maxDisk`), tiempo de actividad (`uptime`), el nivel de permiso efectivo del usuario (`nivelAcceso`: `"FULL_ACCESS"` o `"READ_ONLY"`) y, si existe una operación asíncrona en ejecución sobre la máquina, el objeto `activeTask` (`tareaId`, `tipoAccion`, `estado`).
 
 **Frontend**
 
-- Diseñar botones de control rápido con modales de confirmación.
-- Mostrar el estado «operación en progreso» y bloquear los controles de la instancia durante la tarea.
-- Escuchar el resultado asociado al UPID, volver a habilitar los controles e informar si la operación tuvo éxito o falló.
+- Soportar identificadores de instancia como cadenas alfanuméricas opacas (`id: string | number` — `FIX-108`) tanto en la tabla como en las rutas (`/instances/:id`) y servicios, sin forzar conversiones numéricas destructivas.
+- Implementar filtrado reactivo en memoria (`FIX-101`) combinando búsqueda por texto (nombre o identificador), selector de tipo (`Todas`, `VM`, `LXC`) y estado (`En ejecución`, `Detenidas`, `Pausadas`) manteniendo los contadores sincronizados.
+- Habilitar o deshabilitar acciones según `nivelAcceso` (`FULL_ACCESS` vs `READ_ONLY`) con atributos de accesibilidad `aria-label` canónicos (`FIX-102`), y bloquear la fila cuando `activeTask != null`.
 
 **Backend**
 
-- Crear el endpoint para enviar órdenes de energía a las instancias.
-- Capturar el UPID devuelto por Proxmox VE.
-- Implementar un monitor en segundo plano para consultar el estado de la tarea.
-- Notificar la finalización y registrar la operación en la auditoría.
+- Desarrollar `GET /api/instances` y `GET /api/instances/:instanceRef`, traduciendo internamente el token público ofuscado al `vmid` numérico de Proxmox VE (`OfuscarVMID` / `DesofuscarVMID` — `FIX-107`).
+- Aplicar el filtrado RBAC estricto en la capa de dominio (`ADMIN` ve todas con `FULL_ACCESS`; `OPERATOR` ve únicamente las asignadas en `permisos_instancia`).
+- Resolver la dirección IPv4 privada en vivo de forma concurrente y acotada (`BAC-23B`) **únicamente después de filtrar por RBAC** y solo para instancias en estado `"running"`.
+- Cruzar con `tareas_asincronas` para adjuntar `activeTask` (exponiendo `tareaId` y nunca el `UPID` crudo — `FIX-105`).
 
 **Infraestructura**
 
-- Asignar al token de API los permisos de gestión de energía necesarios.
-- Configurar colas o un bus de mensajes para procesar los UPID en segundo plano sin bloquear la API.
+- Configurar la variable secreta `INSTANCE_ID_SALT` para la ofuscación reversible de identificadores de instancia (`FIX-107`).
+
+---
+
+### RF-04. Control del ciclo de vida de instancias, seguimiento por `tareaId` y purga de permisos
+
+El sistema debe permitir ejecutar acciones de energía sobre una instancia: iniciar (`start`), apagar ordenadamente mediante señal ACPI (`shutdown`), forzar el corte inmediato de energía (`stop`) y reiniciar (`reboot`), además de permitir la eliminación definitiva de una instancia detenida (`delete`, exclusivo para `ADMIN`).
+
+Toda solicitud sobre una instancia debe atravesar una **cadena de guardas en orden estricto** antes de contactar a Proxmox VE:
+1. **Autorización RBAC (`RequireInstanceAccess`):** Para acciones de energía se exige rol `ADMIN` o `OPERATOR` con `FULL_ACCESS` sobre la instancia (`403 INSTANCE_ACCESS_DENIED` si es `READ_ONLY` o sin acceso). Para `DELETE /api/instances/:id` se exige exclusivamente rol `ADMIN`.
+2. **Protección de infraestructura crítica (`SEC-05` / `RejectProtectedInstance`):** Si la instancia pertenece a la lista de recursos del propio sistema (`PROXMOX_PROTECTED_VMIDS = 100, 101, 102, 103, 104, 105`), la petición se rechaza incondicionalmente con **`403 INSTANCE_PROTECTED`** para todos los roles (incluido `ADMIN`).
+3. **Bloqueo de concurrencia por instancia (`BAC-51` / `FIX-33` / `RequireInstanceIdle`):** Si la instancia ya tiene una tarea activa (`RUNNING`) en `tareas_asincronas` o un lock en Redis, se rechaza con **`409 INSTANCE_BUSY`**.
+4. **Validación previa de estado (`FIX-34`):** `start` exige `stopped`; `stop`, `shutdown` y `reboot` exigen `running`; `delete` exige `stopped`. Si no coincide, se rechaza con **`409 INSTANCE_INVALID_STATE`** (o `409 INSTANCE_NOT_STOPPED`).
+
+**Enmascaramiento de `UPID` y seguimiento por `tareaId` (`FIX-105` / `FIX-106`):**
+Al despachar la orden a Proxmox VE, el backend captura el `UPID`, lo guarda en la columna privada `tareas_asincronas.upid_proxmox` y responde inmediatamente **`202 Accepted`** entregando **únicamente el UUID opaco `{ "tareaId": "<uuid>" }`** (jamás el string `UPID:...`). El worker pool `SeguimientoTareas` monitorea el `UPID` internamente hasta por **3 minutos (`D4`)** y notifica el resultado final por SSE (`TASK_FINISHED` correlacionado por `tareaId`).
+
+**Purga transaccional de permisos huérfanos al eliminar una instancia (`BAC-24C` / `FIX-113`):**
+Dado que Proxmox VE recicla los números de `VMID` libres al invocar `/cluster/nextid`, cuando una tarea de eliminación (`DELETE`) finaliza con éxito (`COMPLETED`), el backend debe **eliminar atómicamente en una transacción todas las filas de `permisos_instancia` asociadas a ese `vmid`** y registrar en `auditoria` la acción `INSTANCE_PERMISSIONS_PURGED` con la lista de usuarios afectados (evitando que una futura máquina creada con el mismo ID herede accesos de operadores anteriores). Si el borrado en Proxmox falla, los permisos no se alteran.
+
+**Frontend**
+
+- Consumir exclusivamente `response.tareaId` en `requestInstancePowerAction`, `deleteInstance` y `createInstance`, sin exigir la presencia del campo `upid` (`FIX-105`).
+- Solicitar confirmación explícita mediante modal antes de cada acción de energía y exigir en la eliminación (`FRN-16B`) que el administrador **escriba manualmente el nombre exacto de la instancia**.
+- Bloquear los controles de la instancia mientras `tareaId` esté en progreso y desbloquearlos al recibir `TASK_FINISHED` por SSE.
+
+**Backend**
+
+- Implementar `POST /api/instances/:id/status/:action` y `DELETE /api/instances/:id` respondiendo `202 Accepted` con `{ tareaId }`.
+- Ejecutar en `seguimiento_tareas.go` la purga transaccional de `permisos_instancia` y el registro `INSTANCE_PERMISSIONS_PURGED` al completarse una eliminación (`FIX-113`), emitiendo `TASK_FINISHED` para que los operadores conectados desmonten la fila eliminada.
+- Reanudar al arranque del backend el seguimiento de cualquier tarea que haya quedado en `RUNNING` (`BAC-25C`).
+
+**Infraestructura**
+
+- Otorgar al token de API de Proxmox VE el privilegio `VM.PowerMgmt` y `VM.Allocate`, excluyendo las ACL sobre los VMIDs protegidos `100..105`.
+
+---
 
 ### RF-05. Monitor de métricas por instancia
 
-El sistema debe mostrar gráficos dinámicos con las métricas de consumo de cada instancia en tiempo real. Debe incluir CPU, RAM, tráfico de red y uso de disco, además de un histórico reciente.
-
-Este requisito es diferente del RF-02: permite identificar qué instancia consume más recursos y detectar picos de uso.
+El sistema debe mostrar gráficos dinámicos con la telemetría específica de cada instancia (porcentaje de CPU en escala directa $0-100\%$, memoria RAM utilizada y asignada, tráfico de red `netin`/`netout` y lectura/escritura de disco `diskread`/`diskwrite`) combinando:
+1. **Flujo en tiempo real (WebSocket cada 2 segundos):** autenticado mediante ticket efímero de un solo uso (`POST /api/auth/ws-ticket`, TTL 30s en Redis).
+2. **Histórico reciente (REST sobre RRDdata):** consulta de series temporales (`GET /api/instances/:id/metrics?timeframe=2h|24h`, con caché de 30s en Redis).
 
 **Frontend**
 
-- Diseñar vistas de detalle por instancia con gráficos de líneas.
-- Procesar flujos de datos en tiempo real sin degradar el consumo de memoria del navegador.
-- Ofrecer selectores para consultar el histórico corto, por ejemplo, las últimas dos o 24 horas.
+- Solicitar el ticket efímero (`getWsTicket()`) y conectar el hook `useInstanceMetrics` (`FRN-22`) almacenando los puntos en una ventana deslizante en memoria, con reconexión por *exponential backoff* y cierre limpio al desmontar la vista.
+- Manejar de forma **tolerante a nulos (`null-safe`)** los paquetes donde la instancia esté apagada (`status: "stopped"`, `cpu: null`, `mem: null`), pintando el estado «Instancia detenida» sin invocar métodos numéricos sobre `null` (`FRN-22`, `FRN-23`).
 
 **Backend**
 
-- Leer los datos de rendimiento desde la API de Proxmox VE.
-- Transmitir las métricas en vivo por instancia.
-- Mantener una caché de histórico corto para responder consultas de tendencias.
+- Exponer `POST /api/auth/ws-ticket`, `GET /api/ws/instances/:id/metrics?ticket=<uuid>` (consumo atómico `GETDEL`) y `GET /api/instances/:id/metrics?timeframe=2h|24h` (`BAC-34`, `BAC-35`, `BAC-36`).
+- Sanitizar todos los mensajes enviados por el WebSocket para que nunca filtren errores crudos de Perl/Linux ni identificadores `UPID` (`FIX-110`).
 
 **Infraestructura**
 
-- Verificar que Proxmox VE mantenga activos los servicios de recolección de métricas.
-- Monitorear el almacenamiento temporal para evitar un consumo excesivo de memoria o disco.
+- Configurar Nginx para soportar el *upgrade* de conexiones `WebSocket` (`Upgrade` y `Connection: upgrade`).
+
+---
 
 ### RF-06. Gestión de snapshots
 
-El sistema debe permitir administrar snapshots de las instancias. Debe permitir crear un snapshot con nombre y descripción, listar los snapshots de una instancia y revertir una instancia a un snapshot seleccionado. La reversión debe tratarse como una acción destructiva.
+El sistema debe permitir administrar puntos de restauración (*snapshots*) de una instancia sobre `/api/instances/:id/snapshots`:
+- **Listar snapshots (`GET`):** permitido para usuarios con acceso `READ_ONLY` o `FULL_ACCESS` (y `ADMIN`).
+- **Crear (`POST`), Revertir/Rollback (`POST .../:snapname/rollback`) y Eliminar (`DELETE .../:snapname`):** permitidos únicamente para `ADMIN` u `OPERATOR` con `FULL_ACCESS`, respetando `RejectProtectedInstance` (`100..105`) y `RequireInstanceIdle` (`409 INSTANCE_BUSY`).
 
 **Frontend**
 
-- Construir una vista o modal de gestión de snapshots dentro del detalle de la instancia.
-- Diseñar el formulario de creación con nombre y descripción.
-- Mostrar una tabla con el historial de puntos de restauración.
-- Implementar un flujo de confirmación estricto y una advertencia visual para la reversión.
+- Ocultar los botones de creación, reversión y borrado si el usuario solo posee permiso `READ_ONLY`.
+- Para la reversión (*rollback*), exigir en un **modal destructivo reforzado (`FRN-30`)** que el usuario **escriba manualmente el nombre exacto del snapshot** antes de habilitar el botón, mostrando el estado `ROLLING_BACK` y siguiendo la tarea mediante `tareaId` (`FIX-105`).
 
 **Backend**
 
-- Crear endpoints para listar, crear y solicitar la reversión de snapshots.
-- Gestionar la reversión como una tarea asíncrona, capturando el UPID y notificando su evolución.
-- Validar los permisos del usuario sobre la instancia antes de autorizar la reversión.
+- Validar con expresión regular estricta que `snapname` sea alfanumérico/guiones (máx. 40 caracteres) y sanitizar la descripción (`SEC-12` / `FIX-116`).
+- Gestionar la creación, reversión y borrado como tareas asíncronas devolviendo `202 Accepted` con `{ tareaId }`, auditando en dos tiempos (`PENDING` $\rightarrow$ `EXITO`/`FALLA`) y traduciendo la falta de soporte del storage a `422 SNAPSHOT_NOT_SUPPORTED`.
 
 **Infraestructura**
 
-- Otorgar al token de API los permisos necesarios para gestionar almacenamiento y snapshots.
-- Garantizar que los almacenamientos configurados en Proxmox VE tengan habilitado el soporte nativo de snapshots.
+- Otorgar al token de API de Proxmox VE los privilegios `VM.Snapshot` y `VM.Snapshot.Rollback`.
 
-### RF-07. Asistente de creación de instancias
+---
 
-El sistema debe proporcionar un asistente paso a paso para crear nuevas VMs o contenedores LXC. El wizard debe guiar al usuario en la selección de:
+### RF-07. Asistente de creación de instancias (Wizard) y sanitización de hardware
 
-- Tipo de instancia: VM o LXC.
-- Recursos: vCPUs, RAM y disco.
-- Imagen o plantilla base: ISO para VMs o template para LXC.
-- Configuración de red: dirección IP y puerta de enlace.
+El sistema debe proporcionar un asistente paso a paso (**exclusivo para el rol `ADMIN`**) para aprovisionar nuevas máquinas virtuales (`QEMU`) o contenedores (`LXC`) en 4 pasos (Tipo y Nombre, Recursos con medidor de cuota en vivo, Almacenamiento/Plantilla/Red y Resumen).
 
-El asistente debe ocultar la complejidad de la configuración nativa de Proxmox VE. Antes de crear la instancia, el backend debe validar que existan recursos suficientes de CPU, RAM y disco. Si varias solicitudes compiten por los mismos recursos, debe rechazarse la solicitud que llegue cuando estos ya no estén disponibles, evitando condiciones de carrera.
+Antes de crear la instancia en Proxmox VE, el backend debe aplicar tres controles obligatorios:
+1. **Sanitización estricta contra *Parameter Injection* (`SEC-10` / `FIX-116`):** La API de Proxmox interpreta parámetros como `net0` mediante listas clave-valor separadas por comas (`name=eth0,bridge=vmbr0,firewall=1`). Para impedir que un input como `vmbr0,rate=100,tag=20` inyecte directivas de hardware o VLANs no autorizadas (CWE-88), el backend debe validar:
+   - `Bridge`: expresión regular estricta de interfaz de red `^[a-zA-Z0-9_.-]+$` (prohibiendo comas, espacios o caracteres de control).
+   - `Nombre` (`hostname`): convención RFC 1123 `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`.
+   - `StorageID` y `TemplateID`: libres de comas y caracteres de control, resolviendo los aliases lógicos de almacenamiento (`FIX-109`) hacia el identificador real de Proxmox.
+2. **Bloqueo distribuido en Redis (`BAC-37`):** adquirir el lock `lock:instance:provisioning` (`SETNX`, TTL 30s) para serializar peticiones concurrentes.
+3. **Validación de cuota con reserva del 15% de RAM para el host (`BAC-37`):** verificar que $\text{RAM}_{\text{solicitada}} \le (\text{RAM}_{\text{total\_host}} \times 0.85) - \text{RAM}_{\text{asignada\_instancias}}$ y que exista espacio libre en el disco destino; en caso contrario, rechazar con **`409 RESOURCE_QUOTA_EXCEEDED`**.
 
 **Frontend**
 
-- Diseñar el wizard multipaso con navegación progresiva.
-- Mostrar indicadores dinámicos de las cuotas disponibles mientras se ajustan los recursos.
-- Bloquear el formulario durante el envío.
-- Procesar errores por cuotas insuficientes y mostrar un mensaje amigable ante un conflicto de recursos, por ejemplo, HTTP 409.
+- Diseñar el wizard de 4 pasos (`FRN-24`, `FRN-25`) con barras de capacidad reactivas que bloqueen el avance si la configuración supera el 100% del remanente asignable del host.
+- Consumir la respuesta `202 Accepted` validando `{ vmid, tareaId }` sin requerir el campo privado `upid` (`FIX-105`).
 
 **Backend**
 
-- Desarrollar el endpoint de aprovisionamiento.
-- Validar las cuotas y la disponibilidad de RAM y disco antes de llamar a Proxmox VE.
-- Aplicar un mecanismo de reserva o bloqueo transaccional para evitar condiciones de carrera.
-- Responder con un error específico, como HTTP 409, si los recursos se agotaron.
-- Enviar el comando a Proxmox VE, rastrear el UPID y asociar la instancia con el usuario cuando existan recursos suficientes.
+- Implementar `GET /api/node/storages` (enmascarando nombres técnicos de pools de almacenamiento con etiquetas/aliases seguros según `FIX-109`), `GET /api/node/templates` y `POST /api/instances` (`RequireRole("ADMIN")`).
+- Al finalizar con éxito el `UPID` de creación en `seguimiento_tareas.go` (`BAC-39`), registrar `CREATE_INSTANCE` (`EXITO`) en `auditoria` y emitir `TASK_FINISHED` por SSE.
 
 **Infraestructura**
 
-- Otorgar al token de API permisos para crear máquinas y asignar almacenamiento.
-- Mantener disponibles las plantillas LXC y las imágenes ISO base en los almacenamientos de Proxmox VE.
+- Otorgar al token de API de Proxmox VE los privilegios `VM.Allocate` y `Datastore.AllocateSpace`, manteniendo plantillas LXC e ISOs disponibles (`INF-10`).
 
-### RF-08. Registro de auditoría
+---
 
-El sistema debe registrar de forma inmutable todas las acciones realizadas a través de la plataforma. Cada registro debe incluir usuario, fecha y hora, acción, instancia afectada (ID y nombre) y resultado (éxito o fallo). Los registros deben poder consultarse, filtrarse por usuario, fecha, tipo de acción, resultado o instancia, y exportarse.
+### RF-08. Registro de auditoría inmutable y exportación
+
+El sistema debe registrar de forma **estrictamente inmutable (*append-only*)** todas las operaciones de autenticación, cambios de perfil/correo (`FIX-111A`), administración de usuarios/permisos, purga de permisos por borrado de VM (`INSTANCE_PERMISSIONS_PURGED` — `FIX-113`), cambios de configuración, acciones de ciclo de vida, snapshots y alertas.
+
+Por seguridad (`FIX-105`), los registros visibles y exportables de auditoría **no deben exponer la cadena cruda `UPID` de Proxmox VE**, correlacionando las operaciones asíncronas mediante el identificador `tareaId`.
 
 **Frontend**
 
-- Diseñar una tabla de auditoría exclusiva para administradores.
-- Implementar filtros por fecha, usuario, tipo de acción y resultado.
-- Diseñar paginación eficiente.
-- Integrar un botón de exportación que conserve los filtros aplicados.
+- Diseñar la vista de auditoría (`/audit`) exclusiva para `ADMIN`, con filtros por usuario, acción, instancia, resultado y rango de fechas, visor lateral (Drawer) para el campo JSONB `detalles` (`FRN-31`) y botones de descarga «Exportar CSV» y «Exportar JSON» (`FRN-32`).
 
 **Backend**
 
-- Diseñar la tabla de auditoría con los índices correspondientes.
-- Crear un servicio que registre cada operación de forma inalterable.
-- Exponer un endpoint con filtros, paginación y ordenamiento.
-- Crear un endpoint de exportación que genere el archivo según los filtros solicitados.
+- Exponer `GET /api/admin/audit` y `GET /api/admin/audit/export?formato=csv|json` en **modo streaming por cursor** (`BAC-45`), auditando cada descarga con la acción `EXPORTAR_AUDITORIA`.
 
 **Infraestructura**
 
-- Garantizar la persistencia segura y los respaldos periódicos de la base de datos.
-- Aislar la base de datos para evitar modificaciones externas directas.
+- Garantizar la inmutabilidad en PostgreSQL mediante `REVOKE UPDATE, DELETE, TRUNCATE ON auditoria` y el trigger `trg_auditoria_inmutable` (`INF-15` / `SEC-11`), junto con particionado trimestral preventivo (`auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1`) e índice compuesto `idx_auditoria_query` (`BAC-53`).
 
-### RF-09. Gestión de usuarios y permisos
+---
 
-Los administradores deben poder crear y eliminar usuarios, asignarles roles y definir las instancias a las que tendrá acceso cada operador. Al crear una cuenta, el sistema debe generar una contraseña temporal, enviarla al nuevo usuario y exigir su cambio durante el primer inicio de sesión.
+### RF-09. Gestión de usuarios, ciclo de vida de cuentas y validación estricta de permisos por instancia
+
+Los administradores (`ADMIN`) deben poder gestionar las cuentas de usuario del sistema y asignar a cada operador (`OPERATOR`) las instancias autorizadas con nivel `READ_ONLY` o `FULL_ACCESS`.
+
+El sistema debe aplicar las siguientes reglas y salvaguardas en la gestión de cuentas y permisos:
+1. **Alta con contraseña temporal y transaccionalidad SMTP (`D5`):** `POST /api/admin/users` genera una contraseña temporal aleatoria, la envía por correo y marca `cambio_contrasena = true`. Si falla el servidor SMTP, revierte la creación y devuelve `502 EMAIL_DELIVERY_FAILED`.
+2. **Suspensión reversible vs. Baja lógica irreversible (`FIX-54..56`):**
+   - `PUT /api/admin/users/:id` con `activo: false` suspende temporalmente al usuario y revoca sus sesiones activas (`USER_INACTIVE`).
+   - `DELETE /api/admin/users/:id` aplica baja lógica definitiva (`eliminado_en = NOW()`, `activo = false`), revoca sesiones, limpia sus permisos y libera su correo/username mediante un índice único parcial (`WHERE eliminado_en IS NULL`) sin borrar físicamente la fila para no romper la clave foránea histórica de `auditoria`.
+3. **Validación de existencia real y bloqueo de instancias protegidas al asignar permisos (`PUT /api/admin/users/:id/permissions` — `FIX-119`):**
+   - Antes de persistir en `permisos_instancia`, el backend debe consultar el catálogo actual de instancias en Proxmox VE y verificar que **cada `vmid` exista realmente**; si alguno no existe, rechazar con **`400 INVALID_REQUEST`**.
+   - Debe verificar que **ningún `vmid` pertenezca a las instancias protegidas del sistema (`PROXMOX_PROTECTED_VMIDS = 100..105`)**. Si se intenta asignar una máquina protegida a un operador, rechazar con **`403 PROTECTED_INSTANCE_CANNOT_BE_ASSIGNED` (`INSTANCE_PROTECTED`)** para impedir que un operador descubra o monitoree por WebSocket la infraestructura interna de El Centinela.
+4. **Auto-protección y reseteo administrativo:** un `ADMIN` no puede eliminarse, desactivarse ni quitarse el rol a sí mismo (`400 SELF_DELETE_NOT_ALLOWED`). Los endpoints `POST /api/admin/users/:id/password/reset` y `/2fa/reset` deben revocar en el acto todas las sesiones activas del usuario afectado.
 
 **Frontend**
 
-- Diseñar el panel de administración de usuarios y permisos.
-- Crear una interfaz para vincular operadores con sus instancias permitidas.
-- Maquetar las vistas de creación, edición de roles y eliminación con modales de confirmación.
+- Construir el panel de administración de usuarios (`/users`) y el selector de permisos por instancia (`READ_ONLY` / `FULL_ACCESS`), mostrando únicamente las instancias operables del inventario y excluyendo las protegidas.
 
 **Backend**
 
-- Desarrollar el CRUD de usuarios, accesible solo para administradores.
-- Generar una contraseña temporal segura y enviarla por correo junto con las instrucciones de acceso.
-- Marcar la contraseña como temporal y obligar a cambiarla durante el primer inicio de sesión.
-- Diseñar la tabla intermedia para la relación entre usuarios e instancias.
-- Implementar autorización por recurso para verificar el acceso de un operador a cada instancia.
-- Configurar el servicio SMTP o el proveedor de correo para entregar las credenciales iniciales.
+- Implementar `/api/admin/users`, `/api/admin/users/:id/permissions`, `/password/reset` y `/2fa/reset` con las validaciones de `FIX-119` y la purga automática al eliminar instancias (`FIX-113`).
 
 **Infraestructura**
 
-- Asegurar que la lógica de roles permanezca aislada dentro de la plataforma, sin modificar usuarios del sistema operativo ni de Proxmox VE.
+- Mantener la matriz de roles y permisos íntegramente en PostgreSQL (`usuarios`, `permisos_instancia`), aislada de los usuarios del sistema operativo Linux y de Proxmox VE.
 
-### RF-10. Edición de recursos de instancias
+---
 
-El sistema debe permitir a los usuarios autorizados modificar la cantidad de vCPUs y RAM asignadas a una instancia, en caliente o después de un reinicio según las capacidades de la instancia. El backend debe validar la disponibilidad de recursos antes de aplicar el cambio.
+### RF-10. Edición de recursos de instancias (Escalado vertical)
 
-**Frontend**
+El sistema debe permitir a los usuarios con rol `ADMIN` o permiso `FULL_ACCESS` sobre una instancia modificar la cantidad de núcleos virtuales (`cores`) y memoria `RAM (MB)` asignados (`PUT /api/instances/:id/config`).
 
-- Diseñar un modal o formulario de edición dentro del detalle de la instancia.
-- Proporcionar controles numéricos precargados con los valores actuales.
-- Mostrar advertencias si la modificación requiere reiniciar la instancia.
+El backend debe aplicar la **validación diferencial de cuota (`BAC-40`)**:
+- Si $\Delta\text{RAM} = \text{memoryMB}_{\text{nuevo}} - \text{memoryMB}_{\text{actual}} > 0$, validar que el incremento no supere la memoria libre asignable del nodo físico (respetando el 15% de reserva de RAM para el host); si la excede, rechazar con **`409 RESOURCE_QUOTA_EXCEEDED`**.
+- Si $\Delta\text{RAM} \le 0$ (reducción o cambio solo de vCPU), autorizar directamente.
+- Inspeccionar si la instancia está `running` y si soporta *hot-plug*, retornando `{ requiresReboot: true | false }` y registrando en `auditoria` (`CONFIG_INSTANCE` / `UPDATE_INSTANCE_CONFIG`) los valores anteriores y nuevos (`BAC-41`).
 
-**Backend**
+---
 
-- Crear el endpoint de reconfiguración de RAM y vCPUs.
-- Calcular la diferencia de recursos y verificar la disponibilidad de RAM y CPU en el nodo.
-- Rechazar el cambio si no hay recursos suficientes o enviar la orden a Proxmox VE si la validación es correcta.
+### RF-11. Notificaciones en tiempo real y alertas proactivas
 
-**Infraestructura**
+El sistema debe mantener un canal de eventos en tiempo real mediante **Server-Sent Events (SSE)** (`POST /api/events/ticket` $\rightarrow$ `GET /api/events?ticket=<uuid>`) y un motor de evaluación de umbrales (`EvaluadorUmbrales` cada 30s) con **histéresis de 2 ciclos consecutivos en Redis (`BAC-46`)** para evitar falsos positivos:
+- **Eventos de instancia (`recursoTipo: "VM" | "LXC"`):** `TASK_FINISHED`, `ALERT_TRIGGERED` y `ALERT_RESOLVED`, distribuidos a todos los `ADMIN` y únicamente a los `OPERATOR` con permiso `READ_ONLY` o `FULL_ACCESS` sobre esa instancia.
+- **Eventos globales del nodo (`recursoTipo: "HOST"` — `BAC-52`):** difundidos exclusivamente a usuarios con rol `ADMIN` y descartados silenciosamente para los `OPERATOR` (en coherencia con `FIX-117A`).
+- **Eventos de control de sesión (`event: cierre`):** `LOGOUT`, `SESSIONS_REVOKED` (incluyendo cambio de contraseña según `FIX-114`) y `USER_INACTIVE`.
 
-- Otorgar al token de API permisos de configuración de CPU y memoria.
-- Habilitar el soporte de hot-plug en las máquinas virtuales cuando se requiera ajustar recursos sin apagarlas.
+Por seguridad (`FIX-105`, `FIX-110`), ningún evento transmitido por SSE debe contener el campo `upid` crudo ni trazas de error internas del sistema de archivos de Proxmox VE.
 
-### RF-11. Notificaciones
+---
 
-El sistema debe emitir notificaciones en la interfaz sin recargar la pantalla y enviar alertas por correo ante situaciones de alta severidad. Debe notificar cambios de estado, creación de instancias, saturación de recursos y finalización de tareas, indicando si tuvieron éxito o fallaron.
+### RF-12. Gestión de organizaciones (Descartado del alcance del MVP)
 
-Cada notificación relacionada con una VM o LXC debe incluir un enlace hacia el detalle de la instancia y sus acciones disponibles.
+> **Decisión arquitectónica de alcance:** El requerimiento original de soporte multi-organización (`RF-12`) fue **descartado del alcance del MVP**. La plataforma opera bajo un modelo **mono-organización** gobernado por los roles `ADMIN` y `OPERATOR` y la tabla `permisos_instancia`.
 
-**Frontend**
+---
 
-- Implementar un contenedor persistente de notificaciones flotantes, por ejemplo, un componente toast.
-- Asociar el ID de la instancia afectada para habilitar la navegación.
-- Escuchar las alertas recibidas del backend y filtrarlas por instancia cuando corresponda.
-- Usar códigos de color para diferenciar los tipos de evento.
+### RF-13. Recuperación de contraseña mediante código OTP con bloqueo transaccional y Rate Limiting
 
-**Backend**
+El sistema debe permitir restablecer una contraseña olvidada mediante un código numérico temporal de un solo uso (OTP de **6 dígitos**, TTL 15 minutos) enviado por correo electrónico (`POST /api/auth/password/forgot` y `POST /api/auth/password/reset`), cumpliendo las reglas `D6` y el endurecimiento de seguridad **`FIX-112` y `FIX-115`**:
+- **Prevención de enumeración y Anti-Flooding SMTP (`FIX-112`):** `POST /api/auth/password/forgot` responde siempre `200 OK` con mensaje genérico, pero aplica un **Rate Limit estricto en Redis de máximo 3 solicitudes por dirección de correo y por IP cada 60 minutos** (`429 Too Many Requests`) para impedir *Mail Bombing* o agotamiento de cuotas del relay SMTP.
+- **Bloqueo pesimista contra condiciones de carrera en intentos fallidos (`FIX-112`):** En `POST /api/auth/password/reset`, la lectura, validación e incremento del contador de intentos fallidos (máximo **3 intentos** antes de quemar definitivamente el código OTP) debe ejecutarse dentro de una **transacción en PostgreSQL con bloqueo pesimista de fila (`SELECT ... FOR UPDATE`)**, impidiendo que peticiones paralelas simultáneas burlen el límite de 3 intentos.
+- **Longitud NIST SP 800-63B y revocación global:** la nueva contraseña admite entre **8 y 128 caracteres** (`FIX-115`), no puede coincidir con la actual y, al confirmarse, revoca todas las sesiones activas del usuario en PostgreSQL y Redis (`SESSIONS_REVOKED`).
 
-- Emitir eventos de cambio de estado asociados con la instancia afectada.
-- Evaluar la salud y el consumo de recursos del nodo o clúster para detectar saturación.
-- Emitir alertas con el resultado de las acciones solicitadas por el frontend.
-- Integrar un servicio SMTP o un proveedor externo con disponibilidad suficiente para enviar correos.
-
-**Infraestructura**
-
-- Asegurar que el bus interno de datos, como Kafka, transmita los eventos sin demoras ni pérdidas.
-
-### RF-12. Gestión de organizaciones
-
-El sistema debe soportar múltiples organizaciones operando de forma aislada.
-
-**Frontend**
-
-- Diseñar los formularios de creación de organizaciones y edición de sus datos, como el nombre.
-- Implementar la gestión de miembros, permitiendo que un administrador cree usuarios o envíe invitaciones.
-- Mostrar la organización asignada como un dato no modificable para los usuarios estándar.
-
-**Backend**
-
-- Crear organizaciones y asignar automáticamente el rol de administrador inicial al usuario creador.
-- Asociar nuevos usuarios a la organización del administrador que los creó o invitó.
-- Rechazar cualquier petición de usuarios estándar que intente modificar su organización.
-- Vincular en la base de datos las instancias, roles y registros de auditoría con una organización específica.
-- Validar en todos los endpoints que cada administrador solo consulte y gestione recursos de su propia organización.
-- Permitir la edición de los datos de la organización únicamente a sus administradores.
-
-**Infraestructura**
-
-- Garantizar el aislamiento lógico y de datos entre organizaciones.
-- Configurar respaldos y controles de acceso que preserven la separación de la información de cada organización.
-
-### RF-13. Recuperación de contraseña
-
-El sistema debe permitir restablecer una contraseña olvidada mediante un código temporal de verificación enviado al correo electrónico del usuario.
-
-**Frontend**
-
-- Diseñar el formulario para ingresar el correo y solicitar la recuperación.
-- Implementar la vista para ingresar el código temporal de seis dígitos.
-- Procesar visualmente el resultado de la solicitud y los errores del backend.
-
-**Backend**
-
-- Validar el formato del correo y buscar la cuenta asociada.
-- Generar una solicitud de recuperación y un código temporal de seis dígitos.
-- Asociar el código con la cuenta y la solicitud, estableciendo una fecha y hora de expiración.
-- Enviar el código al correo de la cuenta.
-- Invalidar los códigos anteriores al generar uno nuevo y rechazar códigos vencidos.
-- Devolver respuestas y errores estructurados para que el frontend gestione el flujo.
-
-**Infraestructura**
-
-- Configurar y proteger el servicio SMTP o un proveedor de correo externo.
-- Garantizar la persistencia temporal de los códigos y solicitudes en la base de datos o caché.
+---
 
 ## Requerimientos no funcionales
 
-### RNF-01. Seguridad
+### RNF-01. Seguridad, blindaje de infraestructura y aislamiento de metadatos (`FIX-105` a `FIX-119`)
 
-**Mínimo privilegio:** el backend no debe utilizar credenciales de administrador o root de Proxmox VE. Debe comunicarse mediante tokens de API con permisos limitados a las operaciones necesarias y con la separación de privilegios activada.
+Además del principio de mínimo privilegio en el token de Proxmox VE (`PVEAPIToken`), el hashing `bcrypt` (costo 12) y el cifrado **AES-256-GCM** para secretos TOTP, el sistema debe implementar una capa de **Air-Gap de Metadatos de Infraestructura** para que, aun si el cliente web fuera comprometido, un atacante no obtenga información útil para atacar el hipervisor subyacente:
 
-**Credenciales:** las contraseñas deben almacenarse mediante funciones de hashing seguras. Los secretos TOTP y los tokens de la API de Proxmox VE deben protegerse y nunca almacenarse en texto plano.
+1. **Enmascaramiento absoluto del `UPID` tras `tareaId` (`FIX-105` / `FIX-106` — CWE-200):**
+   El identificador `UPID` nativo de Proxmox (`UPID:<node>:<pid_hex>:<pstart_hex>:<starttime_hex>:<type>:<vmid>:<user>:`) revela el hostname interno del servidor, el PID del proceso en el kernel Linux, timestamps de arranque y el usuario del token PVE. El backend debe almacenarlo exclusivamente en la columna interna `tareas_asincronas.upid_proxmox` y exponer hacia el frontend y la auditoría visible únicamente un **UUIDv4 opaco (`tareaId`)**.
+2. **Ofuscación / Cifrado reversible de `VMID` contra IDOR y enumeración secuencial (`FIX-107` / `FIX-108` — CWE-639):**
+   Los identificadores enteros secuenciales de Proxmox (`100`, `101`, `110`) permiten enumerar cuántas máquinas existen e intentar ataques IDOR iterativos. La capa HTTP del backend debe cifrar/ofuscar bidireccionalmente los `VMID` mediante un algoritmo con sal criptográfica (`INSTANCE_ID_SALT`, ej. *Hashids/Sqids* o cifrado simétrico produciendo tokens opacos como `"inst_k8Pq2v"`), y no debe distinguir en sus respuestas de error entre un token malformado y un recurso inexistente (`404`) para evitar oráculos de validación.
+3. **Enmascaramiento de topología de Nodos y Pools de Almacenamiento (`FIX-109` — CWE-200):**
+   El backend no debe exponer en los JSON públicos los nombres reales de red de los hipervisores (`"proxmox"`, `"pve-01"`) ni los identificadores técnicos de los drivers/pools de disco (`"local-lvm"`, `"zfs-pool"`). Debe traducirlos mediante un mapa de aliases lógicos seguros (`"nodo-principal"`, `"Almacenamiento Local Rápido"`) y resolverlos internamente antes de invocar a Proxmox VE.
+4. **Saneamiento estricto de trazas de error y canales en tiempo real (`FIX-110` — CWE-209):**
+   Cuando la API de Proxmox VE devuelve errores internos (que suelen incluir rutas del sistema de archivos como `/usr/share/perl5/PVE/API2/Qemu.pm line 450`, nombres de módulos Perl o sockets UNIX), el backend debe registrar el error crudo únicamente en el log interno del servidor y devolver al cliente HTTP, SSE o WebSocket un mensaje canonizado y libre de rutas o metadatos del sistema operativo (`PROXMOX_ERROR`, `PROXMOX_UNAVAILABLE`, `PROXMOX_TIMEOUT`).
+5. **Prohibición de credenciales por defecto en despliegues productivos (`FIX-118` — CWE-798):**
+   Las migraciones e inicialización de base de datos (`db.go`) **nunca deben insertar usuarios con contraseñas hardcodeadas** (como `admin@elcentinela.com` / `Admin123!`) ni imprimir credenciales en texto plano en los logs cuando `APP_ENV=production`. En entornos de desarrollo se debe generar una clave aleatoria con `crypto.GenerarContrasenaTemp()`, y en producción exigir variables de entorno secretas (`INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`) o el uso del comando interactivo `cmd/seed`.
+6. **Blindaje de instancias críticas del sistema (`SEC-05` y `FIX-119`):**
+   Las instancias en `PROXMOX_PROTECTED_VMIDS` (`100..105`) están protegidas tanto frente a operaciones de ciclo de vida/configuración (`RejectProtectedInstance` para todos los roles) como frente a su asignación en `permisos_instancia` (`FIX-119`).
 
-**Frontend**
+### RNF-02. Rendimiento y concurrencia
 
-- Manipular únicamente el JWT de sesión emitido por la plataforma.
-- No almacenar contraseñas, secretos TOTP ni tokens maestros en texto plano.
-- Limpiar el estado de sesión y redirigir al inicio de sesión cuando expire la sesión.
+El sistema debe responder en menos de 2 segundos para consultas en caché/base de datos y en un máximo de 5 segundos para lecturas en vivo hacia Proxmox VE, soportando múltiples operadores concurrentes sin degradación.
 
-**Backend**
+- **Concurrencia acotada en Go:** worker pool fijo `UPID_WORKERS=8` para el seguimiento de tareas y goroutines acotadas con timeout corto para la resolución de IPs (`BAC-23B`).
+- **Particionado e indexación de base de datos (`BAC-53`):** particionado trimestral por rango en `auditoria` con *partition pruning* mediante `idx_auditoria_query` y exportación en streaming por cursor con memoria constante $O(1)$ (`BAC-45`).
 
-- Cifrar los secretos TOTP y el token de API de Proxmox VE mediante claves gestionadas de forma segura.
-- Utilizar hashing seguro para las contraseñas.
-- No exponer secretos TOTP, tokens ni claves maestras en las respuestas JSON.
+### RNF-03. Usabilidad y prevención de errores humanos
 
-**Infraestructura**
+- **Confirmaciones graduadas según el riesgo:** modales estándar para encendido/apagado limpio, advertencia destacada para corte de energía (`stop`) y **escritura manual obligatoria del nombre exacto** para eliminar una instancia (`FRN-16B`) o revertir un snapshot (`FRN-30`).
+- **Compatibilidad con gestores de contraseñas (`FIX-115`):** soporte de contraseñas e inputs de hasta 128 caracteres conforme a NIST SP 800-63B.
 
-- Crear un usuario de servicio exclusivo en Proxmox VE sin permisos de administración del host.
-- Generar un token de API con la separación de privilegios activada.
-- Asignar ACL específicas únicamente sobre los recursos que gestionará el sistema.
-- Garantizar conexiones HTTPS/TLS para proteger las credenciales y los códigos TOTP en tránsito.
+### RNF-04. Confiabilidad, resiliencia y exclusión mutua
 
-### RNF-02. Rendimiento
+- **Exclusión mutua operativa (`BAC-51` / `RequireInstanceIdle`):** impide ejecutar acciones solapadas sobre una misma instancia (`409 INSTANCE_BUSY`).
+- **Prevención de condiciones de carrera (`BAC-37` y `FIX-112`):** lock distribuido en Redis (`lock:instance:provisioning`) para aprovisionamiento y bloqueo pesimista `SELECT ... FOR UPDATE` en PostgreSQL para validación de códigos de recuperación.
+- **Recuperación tras reinicios (`BAC-25C`) y timeout de tareas (`D4`):** reanudación automática de tareas `RUNNING` al iniciar el backend y corte a los 3 minutos si un `UPID` queda colgado.
 
-El sistema debe manejar múltiples solicitudes y operaciones simultáneas sin degradación significativa. En condiciones normales, las respuestas deben producirse en un máximo de cinco segundos.
+### RNF-05. Mantenibilidad y arquitectura
 
-**Frontend**
+- **Arquitectura Hexagonal (Puertos y Adaptadores):** desacoplamiento estricto entre el núcleo de dominio (`internal/core`) y los adaptadores primarios (HTTP, SSE, WebSocket) y secundarios (PostgreSQL, Redis, Proxmox VE, SMTP, Crypto).
 
-- Optimizar el renderizado para evitar actualizaciones innecesarias ante eventos masivos.
-- Implementar paginación y carga diferida en tablas con gran volumen de datos.
+### RNF-06. Compatibilidad y seguridad de transporte
 
-**Backend**
-
-- Utilizar un marco de trabajo asíncrono y concurrente con bucle de eventos.
-- Separar la recolección de métricas de las peticiones REST.
-
-**Infraestructura**
-
-- Asegurar recursos suficientes de memoria y ancho de banda para cachés y colas.
-- Configurar el servidor web o proxy de entrada para gestionar conexiones concurrentes y persistentes.
-
-### RNF-03. Usabilidad
-
-La interfaz debe ser limpia, moderna e intuitiva, especialmente para desarrolladores. Los flujos del wizard deben ser guiados y las acciones críticas deben incluir confirmaciones explícitas y advertencias claras.
-
-**Frontend**
-
-- Construir una interfaz homogénea mediante una librería moderna de componentes.
-- Ocultar parámetros avanzados del kernel y configuraciones complejas de red.
-- Diseñar confirmaciones con advertencias visuales para acciones críticas o destructivas.
-
-**Backend**
-
-- Estandarizar los mensajes de error y traducir las excepciones técnicas de Proxmox VE a textos comprensibles.
-
-**Infraestructura**
-
-- Desplegar el sistema en un dominio o dirección accesible internamente por el equipo.
-
-### RNF-04. Confiabilidad
-
-El sistema debe manejar errores de la API de Proxmox VE, incluidos timeouts, tokens inválidos, recursos inexistentes y operaciones fallidas. Los mensajes deben explicar claramente qué ocurrió.
-
-Todas las operaciones que generen una tarea de Proxmox VE (UPID) deben ejecutarse de forma asíncrona. El backend debe iniciar la tarea, devolver inmediatamente un identificador, monitorear el proceso en segundo plano y notificar al frontend cuando finalice o falle. El frontend debe reflejar el estado «en progreso».
-
-**Frontend**
-
-- Bloquear acciones duplicadas sobre una misma instancia.
-- Mostrar indicadores de carga durante las tareas.
-- Mostrar notificaciones flotantes adaptativas con el resultado final.
-
-**Backend**
-
-- Capturar excepciones de las llamadas a la API de Proxmox VE y devolver respuestas estructuradas.
-- Implementar el motor de tareas en segundo plano, con reintentos y tiempos de espera al consultar UPID.
-- Mantener un estado degradado controlado durante caídas temporales de Proxmox VE.
-
-**Infraestructura**
-
-- Configurar políticas de reinicio automático para la base de datos, la caché y el backend.
-
-### RNF-05. Mantenibilidad
-
-El código debe estar documentado, especialmente la API del backend, para facilitar el mantenimiento y la incorporación de nuevas funcionalidades.
-
-**Frontend**
-
-- Estructurar el código con componentes reutilizables.
-- Centralizar los servicios de comunicación con la API y los WebSockets.
-
-**Backend**
-
-- Implementar una arquitectura clara y fácil de mantener.
-- Configurar la generación automática de documentación interactiva de la API.
-
-**Infraestructura**
-
-- Documentar los procedimientos de despliegue, los scripts de base de datos y los archivos de orquestación.
-
-### RNF-06. Compatibilidad
-
-La interfaz debe ser compatible con las versiones recientes de Google Chrome, Mozilla Firefox, Brave, Microsoft Edge y Safari.
-
-**Frontend**
-
-- Probar gráficos, estilos y WebSockets de forma uniforme en navegadores modernos.
-
-**Backend**
-
-- Configurar encabezados CORS para permitir peticiones únicamente desde orígenes autorizados.
-
-**Infraestructura**
-
-- Asegurar que el proxy inverso gestione HTTP, HTTPS y los encabezados necesarios para actualizar la conexión a WebSockets.
+- Compatibilidad con Chrome, Firefox, Brave, Edge y Safari recientes.
+- CORS restringido a `CORS_ALLOWED_ORIGIN`, cookies `HttpOnly` + `SameSite=Strict` y verificación de certificado TLS contra Proxmox VE (`PROXMOX_CA_CERT_PATH`).
 
 ### RNF-07. Escalabilidad
 
-El sistema debe soportar la gestión de múltiples nodos Proxmox VE y permitir el escalamiento horizontal sin modificar la lógica central.
+- Almacenamiento de sesiones, tickets efímeros (`GETDEL`), caché, rate limiters, estado de histéresis de alertas y locks distribuidos en **Redis**, permitiendo escalar el backend o gestionar múltiples nodos sin acoplar estado en memoria local.
 
-**Frontend**
-
-- Diseñar vistas preparadas para seleccionar o agrupar recursos por nodo sin rehacer los componentes.
-
-**Backend**
-
-- Desacoplar la identificación del nodo de la lógica de servicios para permitir el enrutamiento dinámico hacia múltiples endpoints de Proxmox VE.
-
-**Infraestructura**
-
-- Preparar la arquitectura de contenedores y servicios de backend para permitir réplicas cuando aumente la carga.
+---
 
 ## Funcionalidades excluidas
 
-### Consola remota web
+### 1. Consola remota interactiva web (SSH / VNC / xterm.js / noVNC)
+Excluida para mitigar el riesgo de ejecución de comandos arbitrarios en el sistema operativo huésped.
 
-La consola remota web, incluyendo terminal SSH/VNC, xterm.js y noVNC, queda fuera del alcance para mitigar el riesgo de configuraciones erróneas y evitar la ejecución de comandos arbitrarios en el sistema operativo. El acceso por consola directa queda reservado a los administradores de infraestructura mediante las herramientas nativas de Proxmox VE.
+### 2. Despliegue de aplicaciones internas (CI/CD dentro de las VMs/LXC)
+El alcance se limita al aprovisionamiento, hardware virtual, monitoreo y ciclo de vida de la infraestructura sobre Proxmox VE.
+
+### 3. Multi-tenancy de múltiples organizaciones (`RF-12`)
+Excluido del MVP en favor de un modelo mono-organización con aislamiento por roles (`ADMIN` / `OPERATOR`) y permisos por instancia (`FULL_ACCESS` / `READ_ONLY`).
