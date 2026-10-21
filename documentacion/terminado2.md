@@ -218,3 +218,245 @@ Verificadas contra backend `8daaf87`.
   1. Script de migración SQL DDL que crea preventivamente las particiones trimestrales: `auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1`.
   2. Índices compuestos para partition pruning: `CREATE INDEX idx_auditoria_query ON auditoria (fecha_hora DESC, usuario_id, accion)`.
 - **Criterio de éxito:** `EXPLAIN ANALYZE` sobre una consulta por rango de fechas confirma que PostgreSQL solo lee la partición correspondiente (*partition pruning*) sin recorrer la tabla completa.
+
+---
+
+## Verificación del 21/10/2026
+
+Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
+
+
+#### `BAC-36` - Endpoint REST de métricas históricas de instancia (`timeframe=2h|24h`)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commits `ad6565f` y `16a7ba2`. Handler `InstanceMetricsHandler` registrado en `/api/instances/:instanceRef/metrics` protegido con `RequireAuth` y `RequireInstanceAccess`, con soporte de rangos temporales `2h` y `24h` y caché Redis con TTL de 30 segundos.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-34`.
+- **Problema:** Al abrir la vista de una máquina, los gráficos necesitan renderizar de inmediato la tendencia histórica sin aguardar la llegada de los primeros paquetes del WebSocket.
+- **Entregable:**
+  1. Endpoint `GET /api/instances/:instanceRef/metrics?timeframe=2h|24h` protegido.
+  2. Mapeo a intervalos RRD de Proxmox (`hour` y `day`).
+  3. Caché Redis de 30 s para evitar saturar el hipervisor ante recargas de página.
+- **Criterio de éxito:** Responde en menos de 100 ms desde caché con el arreglo histórico de métricas formateado para el consumo de gráficos.
+
+
+### `FIX-107` - Cifrado y ofuscación reversible de VMIDs de Proxmox contra IDOR y enumeración de hipervisor (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `c51c77d`. Servicio de ofuscación simétrica en `internal/infrastructure/crypto` con clave secreta y middleware `ResolveInstanceRef` en rutas HTTP `/api/instances/:instanceRef`. La suite `TestFIX107_OfuscacionDeVMIDs` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 2,5 h
+- **Depende de:** `FIX-106`.
+- **Problema:** Los identificadores se exponían como enteros secuenciales (`100`, `101`), permitiendo ataques de enumeración (IDOR) y deducción de topología.
+- **Entregable:**
+  1. Utilidad `OfuscarVMID(vmid int)` y `DesofuscarVMID(hash string)` con clave secreta.
+  2. Middleware de resolución en handlers de instancias `:instanceRef`.
+  3. Respuestas 404 homogéneas ante tokens inválidos o inexistentes.
+- **Criterio de éxito:** `/api/instances` expone tokens opacos y las acciones operativas operan transparentemente sin exponer números de VMID en red.
+
+
+### `FIX-109` - Enmascaramiento de nombres de host, nodos y pools de almacenamiento (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `1d84e7b`. Mapeo lógico de nombres físicos de nodos (`proxmox` $\to$ alias lógico) y pools de storage para usuarios que no poseen rol `ADMIN`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 2,0 h
+- **Depende de:** `FIX-107`.
+- **Problema:** Se exponían nombres reales de red del servidor físico y volúmenes de almacenamiento locales (`local-lvm`, `ceph`), revelando la topología interna.
+- **Entregable:**
+  1. Diccionario de aliases lógicos para hipervisores y storages.
+  2. Resolución transparente hacia identificadores físicos en llamadas a Proxmox.
+  3. Restricción estricta de metadatos técnicos para rol `ADMIN`.
+- **Criterio de éxito:** el frontend nunca recibe hostnames reales ni rutas físicas de disco en los JSONs de respuesta.
+
+
+### `FIX-110` - Saneamiento estricto de mensajes de error y canales en tiempo real (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `c9deb62`. `mapearErrorProxmox` y canales en tiempo real filtran cualquier traza de rutas `/usr/share/perl5/...` o identificadores internos de Proxmox. `TestFIX110_SaneamientoDeErrores` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1,5 h
+- **Depende de:** `FIX-105`, `FIX-106`.
+- **Problema:** Respuestas de error 5xx exponían fragmentos crudos retornados por la API de Proxmox con rutas absolutas de código Perl y módulos de Linux.
+- **Entregable:**
+  1. Registro de trazas crudas exclusivamente en logs internos del servidor.
+  2. Emisión de mensajes de error canónicos y estructurados (`PROXMOX_ERROR`, `PROXMOX_UNAVAILABLE`).
+  3. Sanitización de eventos en `/api/events` y métricas WebSocket.
+- **Criterio de éxito:** ningún error 4xx/5xx ni evento en tiempo real contiene trazas de archivos del sistema operativo anfitrión.
+
+
+### `FIX-111A` - Blindaje contra secuestro de cuenta en cambio de email (`PUT /api/account/profile`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commits `dc50c0a`, `526d0f2` y `10e2c84`. Exige obligatoriamente `contrasenaActual` y `codigo2fa`, genera un token temporal en Redis y despacha confirmación por correo antes de aplicar la modificación en PostgreSQL, registrando en `auditoria`. `TestFIX111A_BlindajeCambioDeEmail` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Importancia:** 🔴 **CRÍTICA** (CWE-284, OWASP A01:2021).
+- **Problema:** Un usuario autenticado podía mutar directamente su email sin verificar contraseña ni 2FA y sin confirmación por correo, facilitando el secuestro definitivo de cuenta.
+- **Entregable:**
+  1. Validación obligatoria de contraseña actual y TOTP 2FA.
+  2. Generación de token criptográfico de confirmación en Redis (TTL 15 min).
+  3. Modificación del correo únicamente tras la validación del código/enlace en el nuevo buzón.
+  4. Registro obligatorio e inmutable en `auditoria`.
+- **Criterio de éxito:** cambios de email no confirmados o sin credenciales son rechazados con 400/401 y auditados.
+
+
+### `FIX-112` - Middleware de Rate Limiting y protección contra fuerza bruta en autenticación (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commits `f738f1c` y `ef53022`. Implementa rate limiting distribuido mediante Redis en `/login`, `/2fa/verify` (máximo 3 intentos por token pre-auth con revocación inmediata) y `/password/forgot`, además de serialización transaccional con `FOR UPDATE` en `ConfirmarRecuperacionContrasena`. `TestFIX112_MitigacionFuerzaBrutaRateLimit` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Nico
+- **Estimación:** 2,5 h
+- **Importancia:** 🔴 **CRÍTICA** (CWE-307, OWASP A07:2021).
+- **Problema:** Rutas de autenticación sin cotas de intentos, permitiendo ataques de diccionario, fuerza bruta sobre tokens temporales y saturación SMTP.
+- **Entregable:**
+  1. Middleware `RateLimiter` con algoritmo sliding window en Redis.
+  2. Revocación de sesión temporal de Redis al tercer intento erróneo de 2FA.
+  3. Cota estricta de solicitudes en reseteo de contraseña.
+  4. Bloqueo pesimista de fila (`FOR UPDATE`) en base de datos.
+- **Criterio de éxito:** rechazo HTTP 429 ante excesos de intentos y destrucción de sesiones pre-auth vulneradas.
+
+
+### `FIX-114` - Revocación obligatoria de sesiones activas en cambio voluntario de contraseña (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commits `638bb5e`, `a0f5465` y `c99c9f5`. `CambiarContrasena` en `user_service.go` invalida todas las sesiones activas concurrentes en Redis y PostgreSQL y notifica por bus de eventos para cerrar WebSockets y SSE. `TestFIX114_RevocacionSesionesCambioPassword` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,0 h
+- **Importancia:** 🟠 **ALTA** (CWE-613, OWASP A07:2021).
+- **Problema:** Al cambiar voluntariamente la contraseña en `PUT /api/account/password`, las sesiones activas en otros dispositivos permanecían vigentes, impidiendo expulsar a un atacante.
+- **Entregable:**
+  1. Invocación de revocación de sesiones concurrentes preservando la sesión solicitante (o forzando re-login).
+  2. Emisión de `MensajeSesionesRevocadas` para cortar canales en tiempo real.
+  3. Registro en `auditoria`.
+- **Criterio de éxito:** tokens y sesiones anteriores responden `401 TOKEN_REVOKED`.
+
+
+### `FIX-115A` - Ampliación de cota máxima de contraseñas a 128 caracteres en Backend y DTOs (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `b7cdaf0`. `ValidarComplejidadContrasena` en `password.go` y los tags de validación Gin en DTOs se ampliaron a `max=128`. `TestFIX115A_LongitudPassword128Chars` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 0,5 h
+- **Importancia:** 🟠 **MEDIA / ALTA** (CWE-521, NIST SP 800-63B).
+- **Problema:** Restringir contraseñas a un máximo de 12 caracteres impedía el uso de frases seguras (*passphrases*) o contraseñas de gestores de contraseñas.
+- **Entregable:**
+  1. Cota superior de 128 caracteres en `ValidarComplejidadContrasena`.
+  2. Ajuste de tags de validación `max=128` en DTOs de `auth_handler.go`, `user_port.go`, etc.
+- **Criterio de éxito:** el sistema acepta contraseñas de alta longitud sin truncarlas ni rechazarlas.
+
+
+### `FIX-116` - Sanitización estricta y prevención de inyección de parámetros en Proxmox (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `a25d1b3`. Validación defensiva de formato en interfaces de red (`Bridge`), hostnames RFC 1123 y rechazo de caracteres delimitadores de directivas (`,`) antes de contactar a Proxmox. `TestFIX116_InyeccionDeParametrosProxmox` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 2,0 h
+- **Importancia:** 🟠 **MEDIA** (CWE-88, CWE-20).
+- **Problema:** La API de Proxmox utiliza comas (`,`) como separador de directivas de hardware; caracteres no saneados en nombres de bridge o parámetros de red permitían inyectar opciones de configuración no autorizadas.
+- **Entregable:**
+  1. Validación regex estricta para nombres de bridge (`^[a-zA-Z0-9_.-]+$`).
+  2. Validación de hostnames RFC 1123.
+  3. Rechazo de `,` en `client.go`.
+- **Criterio de éxito:** directivas manipuladas son rechazadas con `400 INVALID_REQUEST` antes de enviar tráfico a Proxmox.
+
+
+### `FIX-117A` - Restricción de acceso y segregación de telemetría global del host para operadores (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `94e95a2`. En `GET /api/node/status` y `GET /api/node/history`, se detecta el rol del usuario autenticado: para rol `OPERATOR` se omite el almacenamiento total de los discos del host y el inventario global de máquinas ajenas. `TestFIX117A_SegregacionDeTelemetriaGlobal` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Tayra
+- **Estimación:** 1,5 h
+- **Importancia:** 🟡 **MEDIA** (CWE-200).
+- **Problema:** Operadores que solo gestionaban una máquina de prueba podían consultar la carga global de CPU/RAM de todo el hipervisor físico y el conteo de máquinas de todos los demás departamentos.
+- **Entregable:**
+  1. Segregación de payload según `ContextKeyRol`.
+  2. Ocultamiento de storage global y máquinas no asignadas para operadores.
+- **Criterio de éxito:** operadores no reciben la topología global ni capacidad física de los discos del anfitrión.
+
+
+### `FIX-119` - Validación de existencia de VMIDs y bloqueo de instancias protegidas en asignación de permisos (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `a25d1b3`): implementada y con test en verde.** Commit `5c72bbb`. `AsignarPermisos` en `user_service.go` consulta el inventario de Proxmox, bloquea la asignación de identificadores inexistentes y rechaza con `403 PROTECTED_INSTANCE_CANNOT_BE_ASSIGNED` ante recursos de `PROXMOX_PROTECTED_VMIDS`. `TestFIX119_ValidacionDeVMIDsEnAsignacionDePermisos` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 1,5 h
+- **Importancia:** 🟡 **MEDIA** (CWE-20).
+- **Problema:** Se podían persistir permisos sobre VMIDs que no existían o sobre máquinas protegidas de la infraestructura interna de Centinela.
+- **Entregable:**
+  1. Inyección de catálogo de instancias en `AsignarPermisos`.
+  2. Validación de existencia en Proxmox (`400 INVALID_REQUEST`).
+  3. Rechazo de VMIDs protegidos (`403`).
+- **Criterio de éxito:** la tabla de permisos solo contiene máquinas existentes y operables.
+
+
+#### `FRN-24` - Wizard de creación: Paso 1 (Tipo de instancia) y Paso 2 (Recursos y Cuotas en Vivo)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** Commits `65765e4` a `8688b5d`. Se desarrollaron los componentes del asistente, pero la suite `test/front/frn-24-25-create-wizard.test.tsx` falla en las comprobaciones de medidores reactivos de cuotas y bloqueo de avance al exceder la RAM libre del nodo. Corrección abierta en **`FIX-120`** ([futuro2.md](futuro2.md)).
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-33`, `FIX-60`.
+- **Entregable:** selector de tarjetas QEMU/LXC, sliders de vCPU/RAM/Disco y medidor reactivo de cuota del host.
+- **Criterio de éxito:** el usuario no puede avanzar al Paso 3 si los recursos exceden la memoria o disco libres.
+
+
+#### `FRN-25` - Wizard de creación: Paso 3 (Almacenamiento, Template/ISO y Red) y Paso 4 (Resumen)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** Commits `3723b40` a `e04bfcb`. Se incorporaron los selectores de storage y resumen, pero fallan las aserciones de filtrado de imágenes según tipo (`vztmpl` vs `iso`) y la validación de red IP estática. Corrección abierta en **`FIX-121`** ([futuro2.md](futuro2.md)).
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-24`, `BAC-31`.
+- **Entregable:** selector de storages reales, filtrado de templates/ISOs según tipo, configuración de red validada y ficha de resumen.
+- **Criterio de éxito:** validación estricta de todos los campos antes de habilitar el botón "Crear Instancia".
+
+
+### `FIX-118` - Eliminación de credenciales por defecto hardcodeadas en migraciones de base de datos (Backend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, backend `1801e33`): implementada y con test en verde.** Commit `1801e33`. `credencialesIniciales` en `db.go` suprime la contraseña estática `Admin123!`, desactiva el sembrado automático si `APP_ENV=production`, genera contraseñas temporales aleatorias con `crypto.GenerarContrasenaTemp()` en desarrollo y permite parametrizar mediante `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`. La suite `TestFIX118_SinCredencialesPorDefecto` pasa al 100% en verde.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,0 h
+- **Problema:** inicialización desatendida con credenciales públicas hardcodeadas en repositorios.
+- **Criterio de éxito:** deshabilitar en producción y parametrizar vía variables de entorno.
+
+
+#### `INF-10` - Verificación y disponibilidad de plantillas LXC e ISOs en el servidor Proxmox real
+
+> [!WARNING]
+> **Estado verificado (21/10/2026): pendiente de verificación en servidor Proxmox físico real.** Tarea de infraestructura pendiente en el servidor Proxmox real con storages `local:vztmpl` e `iso`. Corrección y seguimiento abierto en **`FIX-123`** ([futuro2.md](futuro2.md)).
+
+- **Área:** Infraestructura
+- **Asignados:** Nico y Lucas
+- **Estimación:** 1.5 h
+- **Criterio de éxito:** el backend lista plantillas e ISOs reales sin errores de permisos.

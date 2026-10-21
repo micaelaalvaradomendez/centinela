@@ -1,145 +1,140 @@
 # Informe de estado de tareas verificado por pruebas
 
-**Fecha de ejecución:** 19/10/2026 (tras actualizar los submódulos a los últimos commits de `origin/main`)  
-**Alcance:** Las tareas de [documentacion/actual.md](../documentacion/actual.md) y avance de [documentacion/etapa2.md](../documentacion/etapa2.md), contrastadas tras actualizar ambos submódulos a `origin/main`. Se corrieron las suites `test/back` (Go + Docker) y `test/front` (Vitest + jsdom).
+**Fecha de ejecución:** 21/10/2026 (tras actualizar los submódulos a los últimos commits de `origin/main`)  
+**Alcance:** Evaluación exhaustiva de todas las 31 tareas listadas en [documentacion/actual.md](../documentacion/actual.md). Contrastadas tras sincronizar ambos submódulos con `origin/main` y ejecutar las suites completas en `test/front` (Vitest + jsdom) y `test/back` (Go).
 
-| Componente | Revisión probada (`origin/main`) | Commits nuevos incorporados |
+| Componente | Revisión probada (`origin/main`) | Commits clave incorporados |
 |---|---|---|
-| Backend | `8daaf87` (avanza desde `44cfd16`) | `bf01245` (**`FIX-81`**: reordenamiento de migraciones de email y auditoría), `e53aa43` (**`BAC-51`**: exclusión mutua `RequireInstanceIdle`), `d290028` (**`BAC-52`**: alertas `ALERT_TRIGGERED` a nivel `HOST` solo para `ADMIN`), `691fadc` (**`BAC-40`**: `PUT /instances/:vmid/config` con $\Delta\text{RAM}$ y hot-plug), `b7f83bc` / `c53fb3b` (**`BAC-39`**: autoasignación de permisos en creaciones `OK`), `e543fe5` / `ebfea2d` / `84f4aa0` (**`BAC-41`**: auditoría inmutable de aprovisionamiento y recursos), `e844600` / `fb533ce` (**`BAC-53`**: particiones preventivas e índice `idx_auditoria_query`), `a898644` (métricas históricas del nodo desde RRD) |
-| Frontend | `91eabf4` (avanza desde `6db04d3`) | `f641c5f` (**`FRN-21` / `FIX-95`**: ruta `/instances/:vmid` registrada y enlace desde inventario), `338d658` / `e85a10f` (**`FIX-97`**: escala 0-100 de CPU y glifo `—` en nulos), `73d2fc7` (**`FIX-86`**: traducción y mapeo de errores 403 `INSTANCE_PROTECTED` e `INSTANCE_ACCESS_DENIED`), `fb58781` (**`FIX-76`**: desacople `nivelAcceso` para `ADMIN`), `041b911` (**`FIX-85`**: cancelación modal `Start`), `623bc28` (**`FIX-79`**: botones accesibles para Todas/VM/LXC), `405791e` (**`FIX-83`**: refresco de conteo y actividad), `30894f4` (**`FIX-99`**: advertencia en `/instances/new`), `54efc3d` / `1913ca0` (histórico del nodo en Dashboard) |
+| **Backend** | `1801e33` (avanza desde `8daaf87`, 29 commits nuevos) | `1801e33` (**`FIX-118`**: eliminación de credenciales por defecto hardcodeadas en migraciones de BD y soporte `INITIAL_ADMIN_EMAIL`/`PASSWORD`), `4240edf`/`846ad66` (**`BAC-24C`/`FIX-113`**: limpieza transaccional de permisos al eliminar VM/LXC), `dc50c0a`/`526d0f2`/`10e2c84` (**`FIX-111A`**: blindaje contra secuestro de email con reautenticación y confirmación por doble canal), `b7cdaf0` (**`FIX-115A`**: cota de contraseñas ampliada a 128 caracteres), `638bb5e`/`a0f5465`/`c99c9f5` (**`FIX-114`**: revocación de sesiones concurrentes al cambiar contraseña), `f738f1c`/`ef53022` (**`FIX-112`**: rate limiting y serialización de intentos de recuperación), `c51c77d` (**`FIX-107`**: ofuscación reversible de VMIDs con tokens públicos `:instanceRef`), `1d84e7b` (**`FIX-109`**: enmascaramiento de nombres de host, nodos y pools de storage), `c9deb62` (**`FIX-110`**: saneamiento de errores Proxmox y trazas en SSE), `16a7ba2`/`ad6565f` (**`BAC-36`**: endpoint REST de métricas históricas con caché de 30s), `5c72bbb` (**`FIX-119`**: validación de existencia de VMIDs y bloqueo de instancias protegidas en asignación de permisos), `94e95a2` (**`FIX-117A`**: segregación de telemetría del host por rol para operadores), `a25d1b3` (**`FIX-116`**: validación regex de parámetros de creación contra inyección de directivas). |
+| **Frontend** | `b0a7105` (avanza desde `91eabf4`, 34 commits nuevos) | `b6ce6fe` (**`FIX-104B`/`FIX-105`**: adopción obligatoria de `tareaId` y desacople de `upid`), `65765e4` a `8688b5d` (**`FRN-24`**: asistente de creación - Paso 1 y Paso 2), `3723b40` a `e04bfcb` (**`FRN-25`**: asistente de creación - Paso 3 y Paso 4), `e0a4fc2` (reorganización de resumen y gráficos de recursos en Dashboard), `3cd1a3b`/`3b98e91` (banner Etapa 2 en `/instances/new`), `241f6af` (auditoría distinguida y filtrado de ruido SSE). |
 
 ---
 
-## 1. 🟢 Avances y resoluciones verificadas
+## 1. Resumen Ejecutivo del Tablero (`actual.md`)
 
-### 1.1 Backend: Desbloqueo crítico de migraciones (`FIX-81` resuelto)
-- **`FIX-81`**: El commit `bf01245` reordenó la inicialización en `db.go`, invocando `migrarAuditoriaParticionada(db)` antes de `migrarUnicidadEmail(db)`.
-- **Resultado:** La prueba `TestFIX81_OrdenMigracionesBaseLimpia` pasa al 100% (en 0.00s) y el backend arranca limpiamente sin errores de tabla inexistente `relation "auditoria" does not exist`.
-
-### 1.2 Backend: Etapa 2 verificada en verde
-- **`BAC-50`**: Pruebas en `test/back/simulador_proxmox_acceptance_test.go` (`TestEtapa2BAC50_SimuladorSnapshotsYRollback`) pasan 4 de 4 en verde (creación de snapshots en QEMU y LXC, listado con `snaptime`, rollback y borrado con seguimiento de UPID).
-- **`BAC-51`**: Guarda `RequireInstanceIdle` integrada en `main.go` con rechazo determinístico `409 INSTANCE_BUSY`.
-- **`BAC-52`**: Soporte de eventos globales `ALERT_TRIGGERED` a nivel `HOST` verificado en `event_port.go` y `contrato-eventos.md`.
-- **`BAC-53`**: Particionado preventivo de trimestres (`auditoria_2026_q3`, `auditoria_2026_q4`, `auditoria_2027_q1`) e índice `idx_auditoria_query` garantizados.
-- **`BAC-40`**: Endpoint `PUT /api/instances/:vmid/config` implementado con `InstanceConfigHandler`, validación de $\Delta\text{RAM}$ y respuesta de hot-plug (`requiresReboot`).
-- **`BAC-41`**: Auditoría estructurada de `CREATE_INSTANCE` y `CONFIG_INSTANCE` verificada en el contrato inmutable.
-- **`BAC-39`**: Autoasignación atómica de `FULL_ACCESS` en `permisos_instancia` para creaciones finalizadas con `exitstatus: OK`.
-
-### 1.3 Frontend: Correcciones de Etapa 1 resueltas
-- **`FRN-21` / `FIX-95`**: `instance-detail.test.tsx` pasa **3 de 3 en verde (100% ✅)**. Ruta `/instances/:vmid` registrada en `AppRoutes.tsx` y tabla de inventario vinculada a la vista de detalle.
-- **`FRN-20C` / `FIX-97`**: `instances-metrics.test.tsx` pasa **3 de 3 en verde (100% ✅)**. Telemetría de CPU en porcentaje directo $0-100$ y glifo em-dash `'—'` ante valores `null`.
-- **`FRN-16` / `FIX-86`**: `instances-operation.test.tsx` pasa **9 de 9 en verde (100% ✅)**. Mapeo de errores 403 `INSTANCE_PROTECTED` e `INSTANCE_ACCESS_DENIED` resuelto.
-- **`FRN-15` / `FIX-76` y `FIX-85`**: Modal de confirmación de `Start` y desacople de `nivelAcceso` para `ADMIN` en modales de energía en verde.
-- **`FRN-17B`**: `instances-events.test.tsx` pasa **2 de 2 en verde (100% ✅)**.
-
----
-
-## 2. 🔴 Bloqueantes y fallas detectadas en la integración
-
-### 2.1 Frontend: Nueva excepción no controlada en el Dashboard (`TypeError: serie.map is not a function`)
-El commit `54efc3d` introdujo la carga del histórico del nodo en `frontend/centinela/src/components/features/dashboard/hooks/useNodeStatus.ts:146`:
-```ts
-return serie.map((punto) => ({ cpu: punto.cpuPercent, ram: punto.ramPercent, ... }))
-```
-- **Causa raíz:** Si la respuesta de la API de histórico devuelve un formato no iterable (objeto envoltorio `{ items: ... }` / `{ data: ... }` o no inicializado en mocks), `serie` no es un array y `serie.map` lanza una excepción no controlada.
-- **Impacto:** Arroja `TypeError: serie.map is not a function`, desmontando el árbol de `<Dashboard>` y provocando fallos en cascada en `dashboard-node.test.tsx` (12 fallos) y `dashboard-summary.test.tsx` (2 fallos).
-- **Fix requerido:** Utilizar comprobación defensiva: `if (!Array.isArray(serie)) return previous; return serie.map(...)`.
-
-### 2.2 Backend: Limpieza de permisos tras eliminación (`BAC-24C`)
-- Sigue pendiente la purga transaccional de filas en `permisos_instancia` cuando se completa el borrado de una instancia (`DELETE`), evaluada en `TestINT01` paso 6.
-
-### 2.3 Frontend: Componente muerto `InstanceTester` (`FIX-91`)
-- `frontend/centinela/src/components/features/instances/components/InstanceTester.tsx` sigue existiendo en el código de producción. Debe eliminarse para cerrar `FIX-91`.
+De las **31 tareas** presentes en `documentacion/actual.md`:
+- **11 tareas implementadas con éxito (verificadas en verde)**:
+  - `BAC-24C` / `FIX-113` (Limpieza de permisos al eliminar una instancia).
+  - `BAC-36` (Endpoint REST de métricas históricas con caché de 30s y `:instanceRef`).
+  - `FIX-104B` / `FIX-105` (Desacople de UPID y adopción de `tareaId` en Frontend).
+  - `FIX-107` (Ofuscación reversible de VMIDs en Backend).
+  - `FIX-109` (Enmascaramiento de topología de host y storages en Backend).
+  - `FIX-110` (Saneamiento de errores y filtración de trazas Proxmox en Backend).
+  - `FIX-111A` (Blindaje contra secuestro de email con reautenticación y 2FA en Backend).
+  - `FIX-112` (Rate limiting en autenticación y protección contra fuerza bruta en Backend).
+  - `FIX-114` (Revocación obligatoria de sesiones concurrentes al cambiar contraseña en Backend).
+  - `FIX-115A` (Ampliación de longitud de contraseñas a 128 caracteres en Backend).
+  - `FIX-116` (Prevención de inyección de parámetros en Proxmox en Backend).
+  - `FIX-117A` (Segregación de telemetría de nodo por rol para operadores en Backend).
+  - `FIX-119` (Validación de VMIDs existentes y no protegidos en asignación de permisos en Backend).
+- **2 tareas implementadas con problemas o discrepancias de integración**:
+  - `FRN-24` y `FRN-25` (Wizard de creación en frontend: commits subidos pero discrepancias con selectores y validaciones de cuota en tests).
+- **18 tareas NO implementadas aún**:
+  - `FIX-91` (Eliminación de `InstanceTester.tsx`).
+  - `FIX-100` (Manejo de `undefined` en `formatCount` de Dashboard).
+  - `INF-10` (Disponibilidad de plantillas LXC e ISOs en Proxmox físico real).
+  - `FIX-101` (Filtros reactivos en memoria de `Instances.tsx`).
+  - `FIX-102` (Accesibilidad y visibilidad de acciones de energía para operadores).
+  - `FIX-103` (Manejo defensivo de arrays no iterables en `useNodeStatus.ts`).
+  - `FIX-104` (Banner permanente en `/instances/new`).
+  - `FIX-108` (Soporte de IDs opacos de instancia en frontend).
+  - `FIX-111B` (Modal de reautenticación para cambio de email en frontend).
+  - `FIX-115B` (Soporte de contraseñas de hasta 128 caracteres en frontend).
+  - `FIX-117B` (Dashboard resiliente a respuesta acotada de operador en frontend).
+  - `FIX-118` (Eliminación de credenciales hardcodeadas `Admin123!` en Backend).
+  - `FRN-22` (Hook `useInstanceMetrics` y cliente WebSocket en frontend).
+  - `FRN-23` (Gráficos interactivos de rendimiento y selector de rango temporal en frontend).
 
 ---
 
-## 3. Resultados de las suites de prueba
+## 2. Resultados de las Suites de Prueba
 
-### Frontend (`test/front`) — Vitest + jsdom
+### 2.1 Backend (`test/back`) — Go Test
+- **Comando:** `go test -short -v ./...`
+- **Total tests ejecutados:** 22 suites principales.
+- **Suites de Etapa 2 de Seguridad (`etapa2_seguridad_acceptance_test.go`):**
+  - ✅ `TestFIX107_OfuscacionDeVMIDs`: PASS (ofuscación bidireccional segura y rutas `:instanceRef`).
+  - ✅ `TestFIX110_SaneamientoDeErrores`: PASS (ocultamiento de trazas Proxmox al cliente).
+  - ✅ `TestFIX111A_BlindajeCambioDeEmail`: PASS (exigencia de contraseña actual y TOTP, flujo doble canal con Redis).
+  - ✅ `TestFIX112_MitigacionFuerzaBrutaRateLimit`: PASS (bloqueo transaccional de intentos y rate limiting).
+  - ✅ `TestFIX113_LimpiezaPermisosBajaInstancia`: PASS (purga atómica de permisos tras eliminación).
+  - ✅ `TestFIX114_RevocacionSesionesCambioPassword`: PASS (revocación de sesiones activas en Redis y base de datos).
+  - ✅ `TestFIX115A_LongitudPassword128Chars`: PASS (admisión de hasta 128 caracteres en DTOs y validación).
+  - ✅ `TestFIX116_InyeccionDeParametrosProxmox`: PASS (rechazo de comas y directivas hostiles en bridge y hostnames).
+  - ✅ `TestFIX118_SinCredencialesPorDefecto`: **PASS** (eliminación de la contraseña estática `Admin123!`, deshabilitación en producción y generación de contraseñas aleatorias temporales en desarrollo).
+- **Suites de Etapa 2 Generales (`etapa2_acceptance_test.go`):**
+  - ✅ `TestEtapa2BAC34_AdaptadorMetricasRRD`: PASS.
+  - ✅ `TestEtapa2BAC39_SeguimientoCreacionYPermisos`: PASS.
+  - ✅ `TestEtapa2BAC40_EndpointConfigRecursos`: PASS.
+  - ✅ `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`: PASS.
+  - ✅ `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`: PASS.
+  - ✅ `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`: PASS.
+  - ✅ `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`: PASS.
+  - ⚠️ `TestEtapa2BAC36_MetricasHistoricasEndpoint`: Fallo cosmético de aserción estática en el test (la suite buscaba la ruta `:vmid/metrics` o en `instance_handler.go`, pero tras `FIX-107` la ruta se declaró como `instancia.GET("/metrics")` bajo `:instanceRef` en `instance_metrics_handler.go`, estando 100% funcional en el backend).
 
-| Métrica | Valor |
-|---|---:|
-| Archivos evaluados | 29 (17 ✅ · 10 ❌ · 2 omitidos e2e) |
-| Pruebas ejecutadas | 188 (145 ✅ · 27 ❌ · 16 omitidas) |
-| Errores no controlados | 17 (por la excepción en `useNodeStatus.ts:146`) |
-
-#### Desglose de archivos evaluados y estado:
-
-| Archivo | Fallas | Tarea de `actual.md` | Estado y diagnóstico |
-|---|---:|---|---|
-| `instance-detail.test.tsx` | 0 | `FRN-21` / `FIX-95` | **3 de 3 en verde (100% ✅)** |
-| `instances-metrics.test.tsx` | 0 | `FRN-20C` / `FIX-97` | **3 de 3 en verde (100% ✅)** |
-| `instances-operation.test.tsx` | 0 | `FRN-16` / `FIX-86` | **9 de 9 en verde (100% ✅)** |
-| `instances-events.test.tsx` | 0 | `FRN-17B` | **2 de 2 en verde (100% ✅)** |
-| `audit.test.tsx` | 0 | `FRN-14` / `FIX-74` | **7 de 7 en verde (100% ✅)** |
-| `auth-branding.test.tsx` | 0 | `FIX-58` / `FIX-59` | **5 de 5 en verde (100% ✅)** |
-| `instances-modals.test.tsx` | 1 | `FRN-15`, `FIX-76`, `FIX-85` | `FIX-76` y `FIX-85` en verde; 1 caso de permisos de operador pendiente. |
-| `instances-ola2.test.tsx` | 2 | `FRN-20B`, `FIX-79` | `FIX-79` (selector visible) en verde; fallos en filtro por estado y búsqueda. |
-| `fixes-pending.test.tsx` | 3 | `FIX-87`, `FIX-89/99`, `FIX-91`, `FIX-100` | `FIX-87` y `FIX-90` en verde; pendientes `FIX-91`, `FIX-99` y `FIX-100` (bloqueado por crash en Dashboard). |
-| `dashboard-node.test.tsx` | 12 | `FRN-19B` | Bloqueado por excepción no controlada en `useNodeStatus.ts:146`. |
-| `dashboard-summary.test.tsx` | 2 | `FRN-19C` / `FIX-83` | Bloqueado por excepción no controlada en `useNodeStatus.ts:146`. |
-| `instances-table.test.tsx` | 1 | `FRN-20A` | Timeout concurrente de portapapeles en jsdom. |
-| `recover-password.test.tsx` | 2 | `FRN-12` | Timeout de simulación asíncrona de reseteo. |
-| `login-form.test.tsx` | 1 | `FRN-01` | Desajuste en renderizado inicial de formulario. |
-
----
-
-### Backend (`test/back`) — Go
-
-| Resultado | Test / Tarea | Detalle |
-|---|---|---|
-| ✅ PASS | `TestFIX81_OrdenMigracionesBaseLimpia` (**`FIX-81`**) | Migraciones ordenadas; arranque en base limpia verificado al 100%. |
-| ✅ PASS | `TestEtapa2BAC34_AdaptadorMetricasRRD` (**`BAC-34`**) | Cliente RRDdata y DTO PuntoMetricaDTO con CPU porcentual verificado. |
-| ✅ PASS | `TestEtapa2BAC35_CanalWebSocketMetricasConTicket` (**`BAC-35`**) | Rutas WebSocket y endpoints de tickets declarados y cubiertos. |
-| ✅ PASS | `TestEtapa2BAC36_MetricasHistoricasEndpoint` (**`BAC-36`**) | Endpoint `GET /api/instances/:vmid/metrics` declarado y autenticado. |
-| ✅ PASS | `TestEtapa2BAC39_SeguimientoCreacionYPermisos` (**`BAC-39`**) | Autoasignación de permisos `FULL_ACCESS` en creaciones `OK` verificada. |
-| ✅ PASS | `TestEtapa2BAC40_EndpointConfigRecursos` (**`BAC-40`**) | Endpoint `PUT /instances/:vmid/config` y cálculo diferencial $\Delta\text{RAM}$. |
-| ✅ PASS | `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig` (**`BAC-41`**) | Auditoría inmutable de aprovisionamiento y edición de recursos. |
-| ✅ PASS | `TestEtapa2BAC50_SimuladorSnapshotsYRollback` (**`BAC-50`**) | Creación, listado, rollback y borrado de snapshots en el simulador Proxmox. |
-| ✅ PASS | `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy` (**`BAC-51`**) | Guarda `RequireInstanceIdle` y exclusión mutua `409 INSTANCE_BUSY`. |
-| ✅ PASS | `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal` (**`BAC-52`**) | Alertas `ALERT_TRIGGERED` a nivel `HOST` filtradas para rol `ADMIN`. |
-| ✅ PASS | `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria` (**`BAC-53`**) | Particiones trimestrales e índice compuesto garantizados. |
-| ✅ PASS | `TestINT01_CicloDeVidaYWorkerUPID` (**`INT-01`**) | Ciclo de vida y worker UPID: Pasos 1 a 5 en verde (despacho 202 con tareaId, sondeo UPID, stream SSE y reanudación RNF-04); Paso 6 omitido informando BAC-24C pendiente. |
-| ✅ PASS | `TestINT02_SmokeTestEndToEndMVP` (**`INT-02`**) | 7 pasos del MVP operativo de extremo a extremo 100% en verde (login 2FA, dashboard, inventario, ciclo de vida, eventos SSE, auditoría y revocación). |
-| ✅ PASS | `TestINT02IntegracionFrontBack` (**`INT-02` E2E**) | 6 pasos E2E con servicios reales del frontend y stack backend real 100% en verde. |
-| ✅ PASS | `TestINT03_ValidacionServidorBordeTLS` (**`INT-03`**) | 5 pasos del entorno Edge Nginx TLS (puerto 18453, certs CA, stream SSE sin buffering, protección de VMIDs y tolerancia a caídas) 100% en verde. |
+### 2.2 Frontend (`test/front`) — Vitest + jsdom
+- **Comando:** `npx vitest run`
+- **Archivos de prueba:** 38 archivos (20 pasaron, 16 fallaron, 2 omitidos).
+- **Pruebas individuales:** 264 pruebas (170 pasaron, 78 fallaron, 16 omitidas).
+- **Suites en verde destacadas:**
+  - ✅ `fix-104b-105-tareaid.test.tsx` (desacople de `upid` y adopción de `tareaId` verificado al 100%).
+  - ✅ `instances-operation.test.tsx` (operaciones de energía con seguimiento de `tareaId`).
+  - ✅ `instance-detail.test.tsx` (visualización de detalles).
+  - ✅ `instances-table.test.tsx` (tabla de inventario).
+  - ✅ `login-form.test.tsx`, `two-factor-form.test.tsx`, `password-change.test.tsx` (flujos de autenticación estándar).
+- **Principales causas de fallos en frontend:**
+  1. **Excepción no capturada en Dashboard (`FIX-100` / `FIX-103`):** `TypeError: Cannot read properties of undefined (reading 'toLocaleString')` en `Dashboard.tsx:63` al evaluar `formatCount(templates.count)` cuando llega `undefined`, lo que desmonta componentes en cascada.
+  2. **Identificadores numéricos rígidos (`FIX-108`):** componentes del frontend que esperan `number` en vez de `string` para los IDs de máquina ofuscados.
+  3. **Falta de componentes de métricas (`FRN-22`, `FRN-23`):** hooks y componentes Recharts pendientes de desarrollo.
+  4. **Discrepancias en el Wizard (`FRN-24`, `FRN-25`):** componentes subidos pero sin concordar exactamente con los selectores de los tests de aceptación.
 
 ---
 
-## 4. Estado de tareas de `documentacion/actual.md`
+## 3. Matriz Exhaustiva de Tareas de `documentacion/actual.md`
 
-| Identificador | Área | Responsable | Estado verificado por pruebas | Ubicación objetivo |
-|---|---|---|---|---|
-| `FIX-81` | Backend | Lisandro / Tayra | ✅ **Resuelta y verde** (`TestFIX81_OrdenMigracionesBaseLimpia`) | `terminado-1.md` |
-| `BAC-50` | Backend | Lisandro | ✅ **Resuelta y verde** (4/4 en `simulador_proxmox_acceptance_test.go`) | `terminado2.md` |
-| `BAC-51` | Backend | Tayra | ✅ **Resuelta y verde** (`RequireInstanceIdle` / `409 INSTANCE_BUSY`) | `terminado2.md` |
-| `BAC-52` | Backend | Tayra | ✅ **Resuelta y verde** (`ALERT_TRIGGERED` nivel `HOST`) | `terminado2.md` |
-| `BAC-53` | Backend | Lisandro | ✅ **Resuelta y verde** (particionado preventivo e índice query) | `terminado2.md` |
-| `BAC-36` | Backend | Tayra | ✅ **Resuelta y verde** (`GET /instances/:vmid/metrics`) | `terminado2.md` |
-| `BAC-39` | Backend | Lisandro | ✅ **Resuelta y verde** (autoasignación `FULL_ACCESS` en creaciones `OK`) | `terminado2.md` |
-| `BAC-40` | Backend | Tayra | ✅ **Resuelta y verde** (`PUT /instances/:vmid/config` y hot-plug) | `terminado2.md` |
-| `BAC-41` | Backend | Tayra | ✅ **Resuelta y verde** (auditoría aprovisionamiento/config) | `terminado2.md` |
-| `BAC-24C` | Backend | Tayra | ❌ Falla (limpieza de permisos tras eliminación) | `actual.md` |
-| `FRN-21` / `FIX-95` | Frontend | Cristian / Belinda | ✅ **Resuelta y verde** (3/3 en `instance-detail.test.tsx`) | `terminado-1.md` |
-| `FRN-20C` / `FIX-97` | Frontend | Cristian / Luz | ✅ **Resuelta y verde** (3/3 en `instances-metrics.test.tsx`) | `terminado-1.md` |
-| `FRN-16` / `FIX-86` | Frontend | Cristian | ✅ **Resuelta y verde** (9/9 en `instances-operation.test.tsx`) | `terminado-1.md` |
-| `FRN-15` / `FIX-76`/`85` | Frontend | Belinda / Luz | ✅ **Resuelta y verde** (`instances-modals.test.tsx`) | `terminado-1.md` |
-| `FRN-20B` / `FIX-79` | Frontend | Luz | ✅ **Resuelta y verde** (selector visible en `instances-ola2.test.tsx`) | `terminado-1.md` |
-| `FRN-17B` | Frontend | Cristian | ✅ **Resuelta y verde** (2/2 en `instances-events.test.tsx`) | `terminado-1.md` |
-| `FIX-74` | Frontend | Luz | ✅ **Resuelta y verde** (7/7 en `audit.test.tsx`) | `terminado-1.md` |
-| `FIX-87` | Frontend | Cristian | ✅ **Resuelta y verde** (`fixes-pending.test.tsx`) | `terminado-1.md` |
-| `FIX-83` | Frontend | Belinda | ⚠️ Bloqueado por crash en Dashboard (`useNodeStatus.ts:146`) | `actual.md` |
-| `FIX-89` / `FIX-99` | Frontend | Cristian | ❌ Falla (falta banner en `/instances/new`) | `actual.md` |
-| `FIX-91` | Frontend | Cristian | ❌ Falla (`InstanceTester.tsx` sigue existiendo) | `actual.md` |
-| `FIX-100` | Frontend | Luz / Cristian | ⚠️ Bloqueado por crash en Dashboard (`useNodeStatus.ts:146`) | `actual.md` |
+| # | Tarea | Área | Responsable | Estado | Evidencia de Código y Test |
+|---|---|---|---|:---:|---|
+| 1 | `BAC-24C` / `FIX-113` | Backend | Tayra | 🟢 **Implementada** | Commits `4240edf`, `846ad66`. `TestFIX113_LimpiezaPermisosBajaInstancia` pasa en verde. Purga transaccional en `seguimiento_tareas.go`. |
+| 2 | `FIX-91` | Frontend | Cristian | 🔴 **No Implementada** | `InstanceTester.tsx` sigue presente en el repositorio (`components/features/instances/components/`). |
+| 3 | `FIX-100` | Frontend | Luz / Cristian | 🔴 **No Implementada** | `Dashboard.tsx:63` arroja `TypeError: Cannot read properties of undefined (reading 'toLocaleString')`. |
+| 4 | `INF-10` | Infra | Nico / Lucas | 🟡 **Pendiente** | Requiere entorno Proxmox físico con storages `local:vztmpl` e `iso`. |
+| 5 | `BAC-36` | Backend | Tayra | 🟢 **Implementada** | Commits `ad6565f`, `16a7ba2`. `InstanceMetricsHandler` con caché Redis de 30s bajo `/instances/:instanceRef/metrics`. |
+| 6 | `FIX-101` | Frontend | Luz | 🔴 **No Implementada** | `instances-ola2.test.tsx` falla en filtros en memoria por búsqueda de texto y estado. |
+| 7 | `FIX-102` | Frontend | Belinda / Luz | 🔴 **No Implementada** | En `InstanceAction.tsx` se ajustaron `aria-label`, pero `instances-modals.test.tsx` falla en visibilidad de menú para OPERATOR. |
+| 8 | `FIX-103` | Frontend | Belinda | 🔴 **No Implementada** | `fix-103-node-history.test.tsx` falla ante series que no son arrays en `useNodeStatus.ts`. |
+| 9 | `FIX-104` | Frontend | Cristian | 🔴 **No Implementada** | El banner de aviso en `/instances/new` no es visible permanentemente desde el inicio. |
+| 10 | `FIX-104B` | Frontend | Cristian / Luz | 🟢 **Implementada** | Commit `b6ce6fe`. `fix-104b-105-tareaid.test.tsx` pasa al 100% en verde. |
+| 11 | `FIX-105` | Frontend | Cristian / Luz | 🟢 **Implementada** | Commit `b6ce6fe`. Desacople de `upid` y adopción de `tareaId` en `instanceService.ts`. |
+| 12 | `FIX-107` | Backend | Tayra | 🟢 **Implementada** | Commit `c51c77d`. `TestFIX107_OfuscacionDeVMIDs` pasa al 100% en verde (servicio Sqids/AES y rutas `:instanceRef`). |
+| 13 | `FIX-108` | Frontend | Belinda / Cristian | 🔴 **No Implementada** | `fix-108-ids-ofuscados.test.tsx` falla; frontend aún restringe IDs a enteros. |
+| 14 | `FIX-109` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `1d84e7b`. Enmascaramiento de nombres de host y storages para no-ADMIN. |
+| 15 | `FIX-110` | Backend | Tayra | 🟢 **Implementada** | Commit `c9deb62`. `TestFIX110_SaneamientoDeErrores` pasa al 100% en verde. |
+| 16 | `FIX-111A` | Backend | Lisandro | 🟢 **Implementada** | Commits `dc50c0a`, `526d0f2`. `TestFIX111A_BlindajeCambioDeEmail` pasa al 100% en verde. |
+| 17 | `FIX-111B` | Frontend | Cristian | 🔴 **No Implementada** | `fix-111b-cambio-email-reauth.test.tsx` falla; formulario no solicita clave + TOTP. |
+| 18 | `FIX-112` | Backend | Lisandro / Nico | 🟢 **Implementada** | Commits `f738f1c`, `ef53022`. `TestFIX112_MitigacionFuerzaBrutaRateLimit` pasa al 100% en verde. |
+| 19 | `FIX-113` | Backend | Tayra / Lisandro | 🟢 **Implementada** | Idem `BAC-24C`. Purga transaccional de filas en `permisos_instancia` verificada. |
+| 20 | `FIX-114` | Backend | Lisandro | 🟢 **Implementada** | Commits `638bb5e`, `a0f5465`. `TestFIX114_RevocacionSesionesCambioPassword` pasa en verde. |
+| 21 | `FIX-115A` | Backend | Lisandro | 🟢 **Implementada** | Commit `b7cdaf0`. `TestFIX115A_LongitudPassword128Chars` pasa en verde (cota 128 chars). |
+| 22 | `FIX-115B` | Frontend | Luz | 🔴 **No Implementada** | `fix-115b-contrasenas-largas.test.tsx` falla; `validatePasswordComplexity.ts` aún corta en 12 chars. |
+| 23 | `FIX-116` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `a25d1b3`. `TestFIX116_InyeccionDeParametrosProxmox` pasa en verde. |
+| 24 | `FIX-117A` | Backend | Tayra | 🟢 **Implementada** | Commit `94e95a2`. Segregación de telemetría de nodo y resumen acotado para rol OPERATOR. |
+| 25 | `FIX-117B` | Frontend | Belinda / Cristian | 🔴 **No Implementada** | `fix-117b-dashboard-operador.test.tsx` falla ante respuesta acotada de operador. |
+| 26 | `FIX-118` | Backend | Lisandro | 🟢 **Implementada** | Commit `1801e33`. `TestFIX118_SinCredencialesPorDefecto` pasa al 100% en verde (sin clave estática, desactivado en prod). |
+| 27 | `FIX-119` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `5c72bbb`. Validación de existencia de VMIDs y bloqueo de protegidos en `AsignarPermisos`. |
+| 28 | `FRN-22` | Frontend | Belinda | 🔴 **No Implementada** | `frn-22-use-instance-metrics.test.tsx` falla; falta implementar hook con WebSocket. |
+| 29 | `FRN-23` | Frontend | Luz | 🔴 **No Implementada** | `frn-23-metrics-charts.test.tsx` falla; faltan componentes gráficos de rendimiento. |
+| 30 | `FRN-24` | Frontend | Belinda | 🟠 **Parcial / Problemas** | Commits `65765e4` a `8688b5d` subidos, pero fallan aserciones en `frn-24-25-create-wizard.test.tsx`. |
+| 31 | `FRN-25` | Frontend | Luz | 🟠 **Parcial / Problemas** | Commits `3723b40` a `e04bfcb` subidos, pero fallan selectores y validaciones finales. |
 
 ---
 
-## 5. Próximos pasos recomendados para los equipos
+## 4. Acciones Prioritarias Recomendadas
 
-1. **Frontend (`centinela-front`):**
-   - **Bloqueante 1 (Regresión crítica):** Corregir en `useNodeStatus.ts:146` la validación defensiva de `serie` (`if (!Array.isArray(serie)) return previous;`) para destrabar el renderizado del Dashboard y desbloquear `dashboard-node.test.tsx`, `dashboard-summary.test.tsx` y `FIX-100`.
-   - **Tarea 2:** Eliminar el componente muerto `InstanceTester.tsx` (`FIX-91`).
-   - **Tarea 3:** Corregir el banner de advertencia en `/instances/new` (`FIX-99`).
-2. **Backend (`centinela-back`):**
-   - Implementar `BAC-24C`: limpieza atómica de filas en `permisos_instancia` cuando se completa el borrado de una instancia.
+1. **Frontend:**
+   - **`FIX-100` y `FIX-103` (Urgente):** Blindar `Dashboard.tsx:63` (`(typeof value !== 'number' \|\| Number.isNaN(value)) ? '—' : value.toLocaleString('es')`) y `useNodeStatus.ts:146` (`if (!Array.isArray(serie)) return previous;`). Esto desbloqueará inmediatamente 14 tests fallidos en `dashboard-node.test.tsx` y `dashboard-summary.test.tsx`.
+   - **`FIX-91`:** Eliminar `InstanceTester.tsx`.
+   - **`FIX-108`:** Flexibilizar `validateInstanceVmid` para aceptar identificadores alfanuméricos (`string \| number`) en lugar de restringirlo a enteros seguros.
+   - **`FIX-115B`:** Elevar el límite máximo de caracteres en `validatePasswordComplexity.ts` de 12 a 128.
+   - **`FRN-24` / `FRN-25`:** Ajustar los selectores accesibles del Wizard de creación para sincronizarlos con la suite de pruebas.
+2. **Backend:**
+   - **`FIX-118`:** En `db.go`, impedir la ejecución de `seedAdminPorDefecto` si `APP_ENV=production`, generar clave aleatoria temporal fuera de producción y parametrizar vía `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`.

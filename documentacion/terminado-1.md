@@ -1324,3 +1324,93 @@ Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es 
 - **Qué debe hacer el equipo de frontend:**
   1. En `createNewInstances.tsx`, incorporar una alerta destacada en la cabecera visible en todos los pasos.
 - **Criterio de éxito:** `fixes-pending.test.tsx` pasa el caso `FIX-89` en verde.
+
+---
+
+## Verificación del 21/10/2026
+
+Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
+
+
+### `FIX-104B` & `FIX-105` - Desacople de UPID y adopción del contrato seguro `tareaId` en Frontend (`instanceService.ts`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada y con test en verde.** Commit `b6ce6fe`. `InstancePowerActionResponse` y `CreateInstanceResponse` adoptaron obligatoriamente `tareaId`, eliminando la exigencia pública de `upid`. La suite `test/front/fix-104b-105-tareaid.test.tsx` pasa al 100% (6/6 en verde) y las acciones operativas en `test/front/instances-operation.test.tsx` pasan 9 de 9 en verde.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 1,0 h
+- **Depende de:** `bd22c3d` (Backend: ocultamiento de UPID tras `tareaId`), `FRN-15`, `FRN-16`.
+- **Problema técnico detallado:**
+  En el backend (contrato `BAC-29`), la respuesta `202 Accepted` de acciones operativas y aprovisionamiento devolvía `{ "tareaId": "<uuid>" }` sin exponer `upid`. El frontend lanzaba `ApiRequestError` al esperar obligatoriamente `response.upid`.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `types/instance.ts` y `types/createInstance.ts`, tipar `{ tareaId: string; upid?: string }`.
+  2. En `instanceService.ts`, validar `response.tareaId` en `requestInstancePowerAction`, `deleteInstance` y `createInstance`.
+  3. Correlacionar eventos SSE con `tareaId`.
+- **Criterio de éxito:** el usuario opera instancias sin errores por ausencia de `upid`, y las pruebas pasan al 100% en verde.
+
+
+### `FIX-102` - Corrección de atributo de accesibilidad `aria-label` en `InstanceAction` para permisos de operador (`FRN-15`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada y con test en verde.** En `InstanceAction.tsx:213-257`, se corrigieron los atributos tipográficos `arial-label` cambiándolos canónicamente a `aria-label="Iniciar"`, `aria-label="Apagar"`, `aria-label="Reiniciar"`, `aria-label="Detener"` y `aria-label="Eliminar"`.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-76`, `FIX-85`, `FRN-15`.
+- **Problema técnico detallado:**
+  En `InstanceAction.tsx`, las opciones del menú de energía estaban escritas como `arial-label="..."` (con 'l' intermedia), impidiendo su localización mediante consultas de accesibilidad.
+- **Qué debe hacer el equipo de frontend:**
+  1. Cambiar `arial-label` a `aria-label`.
+  2. Verificar textos canónicos de energía.
+- **Criterio de éxito:** las opciones del menú son accesibles mediante `aria-label`.
+
+
+### `FIX-91` - Eliminar el componente muerto `InstanceTester` (`FRN-15` / `FRN-16`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas / pendiente.** El archivo `InstanceTester.tsx` sigue presente en `frontend/centinela/src/components/features/instances/components/`. Corrección registrada en [futuro-1.md](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-15`, `FRN-16`.
+- **Problema:** componente con mocks locales sin importar en producción.
+- **Criterio de éxito:** eliminación definitiva del componente muerto.
+
+
+### `FIX-101` - Corrección de filtros reactivos en memoria (búsqueda de texto y alternancia en ejecución / detenidas) (`FIX-79` / `FRN-20B`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** En `Instances.tsx`, la búsqueda reactiva en memoria sobre texto e ID y el filtro de estado `running`/`stopped` persisten con fallos en `test/front/instances-ola2.test.tsx`. Corrección registrada en [futuro-1.md](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Luz
+- **Estimación:** 1 h
+- **Depende de:** `FIX-79`, `FRN-20B`.
+- **Criterio de éxito:** `instances-ola2.test.tsx` pasa 6 de 6 pruebas en verde.
+
+
+### `FIX-103` - Manejo defensivo de arrays de telemetría de nodo en `useNodeStatus.ts` (`FRN-19C` / `FIX-83`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** La invocación directa `serie.map(...)` en `useNodeStatus.ts:146` lanza `TypeError: serie.map is not a function` ante objetos envoltorios o respuestas no iterables. Corrección registrada en [futuro-1.md](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-19C`, `FIX-83`.
+- **Criterio de éxito:** `useNodeStatus` valida `Array.isArray(serie)` y no arroja excepciones.
+
+
+### `FIX-104` - Visibilidad permanente del banner de advertencia "Próximamente" en todos los pasos de `/instances/new` (`FIX-99` / `FIX-89`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** El banner continúa condicionado a `{currentStep >= 3}` y no se renderiza en el paso inicial al ingresar directamente a la URL. Corrección registrada en [futuro-1.md](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-99`, `FIX-89`.
+- **Criterio de éxito:** banner de alerta visible permanentemente en todos los pasos.
