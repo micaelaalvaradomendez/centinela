@@ -102,8 +102,14 @@ describe('FIX-87 - Quitar los datos hardcodeados de la ficha de usuario', () => 
   });
 });
 
-describe('FIX-89 / FIX-99 - Advertencia visible "Próximamente" en vista directa /instances/new', () => {
-  it('el asistente estático debe advertir explícitamente que es próximamente o estar deshabilitado', () => {
+describe('FIX-89 / FIX-99 - /instances/new ya no es un asistente estático', () => {
+  it('renderiza el wizard real integrado con el backend (tipo, nombre y pasos)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/node/templates')) return Promise.resolve(jsonResponse([]));
+      if (String(url).includes('/node/storages')) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({}));
+    }));
+
     render(
       withProtectedProviders(
         <MemoryRouter initialEntries={['/instances/new']}>
@@ -112,13 +118,17 @@ describe('FIX-89 / FIX-99 - Advertencia visible "Próximamente" en vista directa
       )
     );
 
-    // Si la pantalla de asistente estático se renderiza sin integración con el backend,
-    // debe advertir al usuario con un rótulo o aviso explícito ("próximamente", "en desarrollo", "no disponible").
-    const aviso = screen.queryByText(/pr[oó]ximamente|en desarrollo|no disponible|fase 2|etapa 2/i);
-    expect(
-      aviso,
-      'el asistente de /instances/new no advierte de forma explícita que está en desarrollo / próximamente',
-    ).not.toBeNull();
+    // El asistente dejó de ser un cascarón estático: expone el paso General con las
+    // tarjetas de tipo accionables, el nombre obligatorio y los cinco pasos del wizard.
+    expect(await screen.findByRole('button', { name: /m[aá]quina virtual/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /contenedor/i })).toBeVisible();
+    expect(screen.getByLabelText(/nombre de la instancia/i)).toBeVisible();
+    for (const paso of [/general/i, /recursos/i, /red/i, /sistema operativo/i, /resumen/i]) {
+      expect(screen.getAllByText(paso).length).toBeGreaterThan(0);
+    }
+
+    // Ya no se muestra el rótulo de "próximamente" propio del placeholder anterior.
+    expect(screen.queryByText(/pr[oó]ximamente|en desarrollo — |no disponible/i)).toBeNull();
   });
 });
 
@@ -146,6 +156,9 @@ describe('FIX-90 - Quitar los placeholders muertos del Dashboard', () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (String(url).includes('/node/status')) return Promise.resolve(jsonResponse(mockStatus));
       if (String(url).includes('/events/ticket')) return Promise.resolve(jsonResponse({ ticket: 'dummy' }));
+      // Contrato real: /node/templates e /instances responden arrays.
+      if (String(url).includes('/node/templates')) return Promise.resolve(jsonResponse([]));
+      if (String(url).includes('/instances')) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse({}));
     }));
 

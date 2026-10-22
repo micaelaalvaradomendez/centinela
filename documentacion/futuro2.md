@@ -43,34 +43,21 @@ Verificados contra frontend `b0a7105` y backend `a25d1b3`.
 
 ---
 
-### `FIX-120` - Corrección de controles de recursos y medidor reactivo de cuotas en Wizard (`FRN-24`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-24` (en `terminado2.md`).
-- **Problema técnico detallado:**
-  En los componentes de `createNewInstances` (`configureInstanceResources.tsx`), los sliders de vCPU, RAM y disco no sincronizan adecuadamente las restricciones con la capacidad libre del nodo ni bloquean el botón "Siguiente" hacia el Paso 3 cuando el valor solicitado excede el almacenamiento o la memoria disponible, provocando fallos en la suite `test/front/frn-24-25-create-wizard.test.tsx`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `configureInstanceResources.tsx`, vincular los límites y la barra reactiva de cuotas contra los valores de memoria libre y almacenamiento libre de `useCreationNodeStatus`.
-  2. Deshabilitar el avance al Paso 3 si la memoria o el disco exceden la capacidad disponible.
-  3. Asegurar que las tarjetas de Máquina Virtual (QEMU) y Contenedor (LXC) del Paso 1 expongan sus atributos y roles accesibles esperados.
-- **Criterio de éxito:** `test/front/frn-24-25-create-wizard.test.tsx` pasa las pruebas correspondientes a `FRN-24` al 100% en verde.
-
-
-### `FIX-121` - Corrección de selección de Storages, Templates/ISOs y ficha de Resumen en Wizard (`FRN-25`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-25` (en `terminado2.md`).
-- **Problema técnico detallado:**
-  En `selectInstanceOperatingSystem.tsx` y `reviewInstanceConfiguration.tsx`, el selector de plantillas e ISOs no filtra correctamente según el tipo de instancia (ISOs para VM vs plantillas LXC `vztmpl` para contenedores) con los selectores accesibles esperados, y el switch de red IP fija / DHCP no valida el conjunto completo de IP, máscara y gateway antes de habilitar el botón "Crear Instancia".
-- **Qué debe hacer el equipo de frontend:**
-  1. En `selectInstanceOperatingSystem.tsx`, filtrar estrictamente `content === 'vztmpl'` para LXC y `content === 'iso'` para VMs desde `GET /api/node/templates`.
-  2. En la configuración de red, validar formato CIDR y gateway válido ante IP estática.
-  3. En `reviewInstanceConfiguration.tsx`, habilitar el botón "Crear Instancia" únicamente con todos los parámetros validados.
-- **Criterio de éxito:** `test/front/frn-24-25-create-wizard.test.tsx` pasa las pruebas correspondientes a `FRN-25` al 100% en verde.
+> [!NOTE]
+> **Verificación del 22/10/2026 — retirados de este listado:** `FIX-120` y `FIX-121` no eran defectos del
+> submódulo `frontend`, sino expectativas desactualizadas de `test/front/frn-24-25-create-wizard.test.tsx`:
+> - El wizard implementado tiene **5 pasos** (`General`, `Recursos`, `Red`, `Sistema operativo`, `Resumen`)
+>   y exige nombre en el paso 1; la prueba asumía 4 pasos y no completaba el nombre, por lo que nunca
+>   llegaba al paso de recursos.
+> - Los mocks simulaban las respuestas **crudas de Proxmox** (`{ storage, avail, content }`,
+>   `{ volid, content }`), pero el contrato real de `GET /api/node/storages` y `GET /api/node/templates`
+>   responde `[{ name, type, freeBytes, totalBytes, contentTypes }]` y
+>   `[{ id, name, type: ISO|LXC_TEMPLATE, sizeBytes }]` respectivamente.
+>
+> La implementación ya cumple los criterios: medidores reactivos de cuota, bloqueo del avance al superar
+> el 100%, selección de storage, filtrado estricto ISO vs `vztmpl`, validación de red estática y habilitación
+> de "Crear Instancia" solo con confirmación. La prueba se reescribió sobre el contrato y el flujo reales
+> (11/11 en verde). `FIX-123` permanece por ser una tarea de infraestructura sobre Proxmox físico.
 
 
 ### `FIX-123` - Descarga y verificación de disponibilidad de plantillas LXC e ISOs en Proxmox físico (`INF-10`) (Infraestructura)

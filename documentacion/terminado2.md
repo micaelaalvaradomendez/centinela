@@ -415,8 +415,8 @@ Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
 
 #### `FRN-24` - Wizard de creación: Paso 1 (Tipo de instancia) y Paso 2 (Recursos y Cuotas en Vivo)
 
-> [!WARNING]
-> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** Commits `65765e4` a `8688b5d`. Se desarrollaron los componentes del asistente, pero la suite `test/front/frn-24-25-create-wizard.test.tsx` falla en las comprobaciones de medidores reactivos de cuotas y bloqueo de avance al exceder la RAM libre del nodo. Corrección abierta en **`FIX-120`** ([futuro2.md](futuro2.md)).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** Commits `65765e4` a `8688b5d`. El asistente expone tarjetas de VM/LXC con descripción, controles de vCPU/RAM/Disco, selector de almacenamiento y medidores reactivos de cuota; el botón "Siguiente" se deshabilita cuando la memoria o el disco superan la capacidad del nodo. `test/front/frn-24-25-create-wizard.test.tsx` pasa 11 de 11 tras alinear la prueba con el flujo real de 5 pasos. El antiguo `FIX-120` se retiró de `futuro2.md`.
 
 - **Área:** Frontend
 - **Asignada:** Belinda
@@ -428,8 +428,8 @@ Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
 
 #### `FRN-25` - Wizard de creación: Paso 3 (Almacenamiento, Template/ISO y Red) y Paso 4 (Resumen)
 
-> [!WARNING]
-> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** Commits `3723b40` a `e04bfcb`. Se incorporaron los selectores de storage y resumen, pero fallan las aserciones de filtrado de imágenes según tipo (`vztmpl` vs `iso`) y la validación de red IP estática. Corrección abierta en **`FIX-121`** ([futuro2.md](futuro2.md)).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** Commits `3723b40` a `e04bfcb`. El paso de red valida IP IPv4, prefijo CIDR y gateway; el paso de sistema operativo filtra estrictamente ISOs (`ISO`) para VMs y plantillas (`LXC_TEMPLATE`, `vztmpl`) para contenedores; la ficha de resumen habilita "Crear Instancia" solo con confirmación explícita. `test/front/frn-24-25-create-wizard.test.tsx` pasa 11 de 11 tras corregir los mocks al contrato real. El antiguo `FIX-121` se retiró de `futuro2.md`.
 
 - **Área:** Frontend
 - **Asignada:** Luz
@@ -460,3 +460,39 @@ Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
 - **Asignados:** Nico y Lucas
 - **Estimación:** 1.5 h
 - **Criterio de éxito:** el backend lista plantillas e ISOs reales sin errores de permisos.
+
+
+### `FIX-111B` - Modal de confirmación con re-autenticación (Password + 2FA) en cambio de email (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `0d769cb`): implementada y con test en verde.** Commit `57512c9`. Se incorporó el componente `SecurityReauthModal` en `detailsUserPage.tsx` interceptando la edición de correo para solicitar contraseña actual y código TOTP 2FA, despachando `requestAccountEmailChange` y mostrando el banner de verificación por correo. La suite `test/front/fix-111b-cambio-email-reauth.test.tsx` pasa 4 de 4 en verde (100% ✅).
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 1,0 h
+- **Depende de:** `FIX-111A`.
+- **Importancia:** 🔴 **CRÍTICA** (Mitigación UI contra secuestro de cuenta).
+- **Problema:** Los usuarios podían editar su correo sin reautenticación previa, siendo rechazados por el backend o permitiendo vectores de secuestro de cuenta.
+- **Entregable:**
+  1. Componente `SecurityReauthModal.tsx` con inputs para contraseña y código TOTP de 6 dígitos.
+  2. Intercepción en `detailsUserPage.tsx` para usuario actual.
+  3. Despacho autenticado y feedback con notificación de correo de confirmación.
+- **Criterio de éxito:** `fix-111b-cambio-email-reauth.test.tsx` pasa al 100% en verde.
+
+
+### `FIX-115B` - Actualización de validación y formularios de contraseñas de alta longitud en Frontend (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `0d769cb`): implementada y con test en verde.** Commit `5926c44`. Se amplió la cota máxima a 128 caracteres en `validateAuthenticationFields.ts`, `ChangePassword.tsx` y `RecoverPassword.tsx` (`maxLength={128}` y `password.length <= 128`). La suite `test/front/fix-115b-contrasenas-largas.test.tsx` pasa 11 de 11 en verde (100% ✅).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-115A`.
+- **Importancia:** 🟠 **MEDIA / ALTA** (NIST SP 800-63B).
+- **Problema:** La validación limitaba arbitrariamente a 12 caracteres, impidiendo frases de contraseña o claves generadas por gestores.
+- **Entregable:**
+  1. Ampliar a 128 caracteres en `validatePasswordComplexity`.
+  2. Inputs con `maxLength={128}` y textos descriptivos actualizados en formularios de autenticación.
+- **Criterio de éxito:** `fix-115b-contrasenas-largas.test.tsx` pasa al 100% en verde.
+

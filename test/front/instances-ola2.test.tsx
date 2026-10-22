@@ -90,21 +90,32 @@ describe('FRN-20B - Filtros reactivos por tipo, estado y buscador dinámico', ()
     expect(await screen.findByText('servidor-web')).toBeVisible();
   });
 
-  it('permite filtrar por estado (En ejecución vs Detenidas)', async () => {
+  it('permite filtrar por estado (Encendidas vs Detenidas)', async () => {
     const user = userEvent.setup();
-    renderInstancesPage();
+    const firstView = renderInstancesPage();
 
     await screen.findByText('servidor-web');
 
-    // Cambiar a la pestaña "En ejecución"
-    const runningTab = screen.queryByRole('tab', { name: /ejecuci[oó]n/i }) || screen.queryByText(/ejecuci[oó]n/i);
-    expect(runningTab, 'falta el selector de filtro por estado (En ejecución)').not.toBeNull();
-    if (runningTab) {
-      await user.click(runningTab);
-      expect(await screen.findByText('servidor-web')).toBeVisible();
-      expect(screen.getByText('redis-cache')).toBeVisible();
-      expect(screen.queryByText('base-datos')).toBeNull();
-    }
+    // El filtro de estado vive en el menú "Filtros" (InstanceSearchFilters), no en las
+    // pestañas de tipo: allí se ofrecen "Encendidas", "Detenidas" y "Todas las instancias".
+    await user.click(screen.getByRole('button', { name: /filtros/i }));
+    await user.click(await screen.findByRole('menuitemradio', { name: /encendidas/i }));
+
+    expect(await screen.findByText('servidor-web')).toBeVisible();
+    expect(screen.getByText('redis-cache')).toBeVisible();
+    expect(screen.queryByText('base-datos')).toBeNull();
+
+    // Se vuelve a montar el inventario para abrir el menú desde el estado inicial.
+    firstView.unmount();
+    renderInstancesPage();
+    await screen.findByText('servidor-web');
+
+    await user.click(screen.getByRole('button', { name: /filtros/i }));
+    await user.click(await screen.findByRole('menuitemradio', { name: /detenidas/i }));
+
+    expect(await screen.findByText('base-datos')).toBeVisible();
+    expect(screen.queryByText('servidor-web')).toBeNull();
+    expect(screen.queryByText('redis-cache')).toBeNull();
   });
 
   // FRN-20B / FIX-79: Exposición directa de controles para selector reactivo por tipo de recurso (Todas, VM, LXC)

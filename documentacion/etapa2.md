@@ -194,52 +194,12 @@ flowchart TD
 ### Bloque 5: Frontend - Asistente de Creación de Instancias (Wizard de 4 Pasos) (`RF-07`)
 
 
-#### `FRN-26` - Envío de creación, manejo de errores de cuota (`409`) y seguimiento en la UI
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-25`, `BAC-38`.
-- **Problema:** Durante el envío, la interfaz debe bloquearse para evitar dobles clics, manejar amigablemente los rechazos por cuota insuficiente y reflejar el progreso de la creación en la tabla de inventario.
-- **Entregable:**
-  1. Despacho HTTP `POST /api/instances` con estado de carga en el botón de confirmación.
-  2. Manejo de error `409 RESOURCE_QUOTA_EXCEEDED`: banner en rojo dentro del modal indicando el motivo exacto sin perder los datos cargados en los pasos anteriores.
-  3. Ante `202 Accepted`: cierre del modal, inserción de la nueva fila en `/instances` en estado *"Creando..."* con spinner activo.
-  4. Escucha del evento `TASK_FINISHED` de creación vía `useEventsContext()` para actualizar la fila a *"Stopped"*, emitir Toast de éxito y habilitar sus controles.
-- **Criterio de éxito:** Flujo completo de alta probado sin recargar la pantalla (`F5`), pasando de creación a inventario activo de forma fluida.
 
 ---
 
 ### Bloque 6: Frontend - Modal de Edición de Recursos (`RF-10`)
 
-#### `FRN-27` - Modal de reconfiguración de vCPU y RAM con advertencia de reinicio / hot-plug
 
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-40`, `FRN-21`.
-- **Problema:** Los operadores autorizados necesitan ajustar la capacidad de sus máquinas con controles seguros que indiquen claramente si la acción requiere reinicio.
-- **Entregable:**
-  1. Modal `EditInstanceConfigModal.tsx` accesible desde la barra de acciones o pestaña "Configuración" de `/instances/:vmid`.
-  2. Controles precargados con los valores actuales de vCPU y RAM.
-  3. Visualización del cálculo diferencial ($\Delta\text{RAM}$) y comparación contra el espacio disponible en el host.
-  4. Mensaje informativo: *"Si la instancia está encendida y no admite hot-plug, los cambios se harán efectivos tras reiniciar el sistema operativo huésped."*
-- **Criterio de éxito:** El modal bloquea valores que excedan la memoria libre del host y calcula correctamente el delta antes de confirmar.
-
-#### `FRN-28` - Integración de edición en la página de Detalle de Instancia y refresco reactivo
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-27`.
-- **Problema:** Tras confirmar una edición, la interfaz debe reflejar los nuevos límites sin requerir una recarga manual del navegador.
-- **Entregable:**
-  1. Conexión del modal con `PUT /api/instances/:vmid/config`.
-  2. Toasts informativos:
-     - Verde: *"Recursos actualizados exitosamente en caliente."*
-     - Amarillo: *"Configuración guardada. La máquina requiere reinicio para aplicar los nuevos recursos."*
-  3. Actualización inmediata de los valores de CPU/RAM en la cabecera del detalle y en la tabla de `/instances`.
-- **Criterio de éxito:** La modificación de recursos se refleja instantáneamente en la interfaz y emite el feedback correspondiente al estado de hot-plug.
 
 ---
 
@@ -304,30 +264,6 @@ flowchart TD
 > 6. La tabla `auditoria` debe contar preventivamente con particiones trimestrales creadas e índices compuestos para soportar el partition pruning y streaming masivo de la Etapa 3.
 
 
-#### `FRN-36` (`BRG-10-FRN`) - Modularización de `InstanceDetailPage` para Pestaña de Snapshots y Estados Transitorios
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-21`, `FRN-28`.
-- **Problema:** La página de detalle actual tiene pestañas fijas y no propaga el estado de bloqueo a la cabecera cuando una máquina está en transición asíncrona.
-- **Entregable:**
-  1. Reestructuración de `InstanceDetailPage.tsx` con soporte para pestañas modulares (dejando listo el slot para "Snapshots").
-  2. Soporte en el badge de estado para etiquetas transitorias: `SNAPSHOTTING` (azul), `ROLLING_BACK` (amarillo/naranja).
-  3. Deshabilitación reactiva de la botonera de acciones rápidas de la cabecera cuando `instance.activeTask != null`.
-- **Criterio de éxito:** Si la máquina reporta `activeTask`, los botones de la cabecera se bloquean con spinner y la pestaña de Snapshots cuenta con su contenedor maquetado.
-
-
-#### `INF-13` (`BRG-11-INF`) - Verificación y Validación de Storage Compatible con Snapshots en Proxmox Real
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 1.5 h
-- **Depende de:** `INF-10`.
-- **Problema:** Si el Proxmox físico (`100.81.49.19`) utiliza discos `raw` sobre LVM estándar, la API de snapshots fallará en la validación final (`INT-09`).
-- **Entregable:**
-  1. Verificación del almacenamiento configurado en Proxmox (`local-lvm` con thin-pool, `zfs` o `qcow2`).
-  2. Si el storage por defecto no soporta snapshots, configurar un pool LVM-thin o storage de directorio para las instancias de prueba del Centinela.
-  3. Documentar en `documentacion/api-proxmox.md` los storages aptos para snapshots.
-- **Criterio de éxito:** Ejecución manual de `qm snapshot <vmid> test` por CLI en el Proxmox real completa exitosamente sin errores de formato de disco.
 
 ---
 

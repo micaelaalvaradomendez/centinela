@@ -48,6 +48,8 @@ services:
       EMAIL_PROVIDER: mock
       # BAC-25B: timeout configurable para seguimiento de UPID (default 3m)
       UPID_TIMEOUT: ${UPID_TIMEOUT:-3m}
+      # FIX-107: sal para derivar la clave de ofuscación de VMIDs (>=32 chars)
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
     image: centinela-back-tests-backend:local
     # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
     # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
@@ -94,6 +96,7 @@ services:
       REDIS_PASSWORD: redis-test
       ALLOWED_ORIGINS: http://front.centinela.test
       EMAIL_PROVIDER: smtp
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SMTP_USER: centinela
@@ -140,6 +143,7 @@ services:
       REDIS_PASSWORD: redis-test
       ALLOWED_ORIGINS: http://front.centinela.test
       EMAIL_PROVIDER: mock
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
     ports:
       - "127.0.0.1:${BACKEND_TEST_SLOW_API_PORT:-18082}:8080"
     depends_on:

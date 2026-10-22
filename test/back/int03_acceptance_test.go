@@ -28,6 +28,9 @@ func TestINT03_ValidacionServidorBordeTLS(t *testing.T) {
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
 	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
 
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+	ref103 := instanceRefByVMID(t, adminToken, 103)
+
 	// Configurar cliente HTTPS contra el servicio edge (Nginx TLS)
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(readFile(t, "edge-tls/ca.crt")) {
@@ -115,16 +118,16 @@ func TestINT03_ValidacionServidorBordeTLS(t *testing.T) {
 
 	t.Run("Paso 3: Protección estricta de VMIDs de infraestructura contra acciones destructivas", func(t *testing.T) {
 		// El VMID 103 está configurado en PROXMOX_PROTECTED_VMIDS.
-		// Intentos de stop, shutdown o delete deben ser rechazados con 403 INSTANCE_PROTECTED.
+		// Intentos de stop, shutdown o delete deben ser rechazados con 403 INSTANCE_PROTECTED (con ref pública FIX-107).
 		for _, action := range []string{"stop", "status/shutdown", "status/reboot"} {
-			path := fmt.Sprintf("/instances/103/%s", action)
+			path := fmt.Sprintf("/instances/%s/%s", ref103, action)
 			status, body := edgeRequest(http.MethodPost, path, adminToken, nil)
 			if status != http.StatusForbidden || body["errorCode"] != "INSTANCE_PROTECTED" {
 				t.Errorf("Paso 3: acción destructiva %s sobre VMID protegido 103: esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", action, status, body)
 			}
 		}
 
-		statusDel, bodyDel := edgeRequest(http.MethodDelete, "/instances/103", adminToken, nil)
+		statusDel, bodyDel := edgeRequest(http.MethodDelete, "/instances/"+ref103, adminToken, nil)
 		if statusDel != http.StatusNotFound && statusDel != http.StatusMethodNotAllowed {
 			if statusDel != http.StatusForbidden || bodyDel["errorCode"] != "INSTANCE_PROTECTED" {
 				t.Errorf("Paso 3: DELETE sobre VMID protegido 103: esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", statusDel, bodyDel)
@@ -134,9 +137,9 @@ func TestINT03_ValidacionServidorBordeTLS(t *testing.T) {
 
 	t.Run("Paso 4: Operación asíncrona sobre instancia permitida y auditoría a través del borde", func(t *testing.T) {
 		// La 101 está encendida en el stub: la operación asíncrona válida es el apagado ordenado.
-		status, body := edgeRequest(http.MethodPost, "/instances/101/status/shutdown", adminToken, nil)
+		status, body := edgeRequest(http.MethodPost, "/instances/"+ref101+"/status/shutdown", adminToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("Paso 4: POST /instances/101/status/shutdown vía Edge esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("Paso 4: POST /instances/%s/status/shutdown vía Edge esperado 202, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		if tareaID == "" {

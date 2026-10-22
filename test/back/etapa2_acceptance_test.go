@@ -90,16 +90,18 @@ func TestEtapa2BAC35_CanalWebSocketMetricasConTicket(t *testing.T) {
 		}
 	}
 
-	// 2. Conexión WebSocket /api/ws/instances/:vmid/metrics sin ticket o con ticket inválido:
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
+	// 2. Conexión WebSocket /api/ws/instances/:instanceRef/metrics sin ticket o con ticket inválido:
 	// Debe ser rechazada con 401 antes del handshake
-	statusSinTicket, _ := requestValue(t, http.MethodGet, "/ws/instances/101/metrics", "", nil)
+	statusSinTicket, _ := requestValue(t, http.MethodGet, "/ws/instances/"+ref101+"/metrics", "", nil)
 	if statusSinTicket != http.StatusUnauthorized {
-		t.Errorf("BAC-35: GET /api/ws/instances/101/metrics sin ticket debe responder 401 Unauthorized, recibido %d", statusSinTicket)
+		t.Errorf("BAC-35: GET /api/ws/instances/%s/metrics sin ticket debe responder 401 Unauthorized, recibido %d", ref101, statusSinTicket)
 	}
 
-	statusTicketInvalido, _ := requestValue(t, http.MethodGet, "/ws/instances/101/metrics?ticket=invalido-12345", "", nil)
+	statusTicketInvalido, _ := requestValue(t, http.MethodGet, "/ws/instances/"+ref101+"/metrics?ticket=invalido-12345", "", nil)
 	if statusTicketInvalido != http.StatusUnauthorized {
-		t.Errorf("BAC-35: GET /api/ws/instances/101/metrics con ticket inválido debe responder 401 Unauthorized, recibido %d", statusTicketInvalido)
+		t.Errorf("BAC-35: GET /api/ws/instances/%s/metrics con ticket inválido debe responder 401 Unauthorized, recibido %d", ref101, statusTicketInvalido)
 	}
 
 	// 3. Verificación estática del handler WebSocket en el código fuente:
@@ -107,7 +109,7 @@ func TestEtapa2BAC35_CanalWebSocketMetricasConTicket(t *testing.T) {
 	instanceHandlerCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/instance_handler.go")))
 	authHandlerCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/auth_handler.go")))
 
-	hasWSRoute := strings.Contains(routerCode, "/ws/instances/:vmid/metrics") || strings.Contains(instanceHandlerCode, "/ws/instances/:vmid/metrics")
+	hasWSRoute := strings.Contains(routerCode, "/ws/instances/:vmid/metrics") || strings.Contains(routerCode, "/ws/instances/:instanceRef/metrics") || strings.Contains(instanceHandlerCode, "/ws/instances/:vmid/metrics")
 	hasTicketEndpoint := strings.Contains(routerCode, "/auth/ws-ticket") || strings.Contains(authHandlerCode, "EmitirTicketWS") || strings.Contains(authHandlerCode, "ws-ticket")
 
 	if !hasWSRoute {
@@ -201,6 +203,7 @@ func TestEtapa2BAC36_MetricasHistoricasEndpoint(t *testing.T) {
 	instanceHandlerCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/instance_handler.go")))
 
 	hasMetricsRoute := strings.Contains(mainCode, "/instances/:vmid/metrics") || strings.Contains(mainCode, "/instances/:id/metrics") ||
+		strings.Contains(mainCode, "/instances/:instanceRef/metrics") || strings.Contains(mainCode, "/metrics") ||
 		strings.Contains(instanceHandlerCode, "/instances/:vmid/metrics") || strings.Contains(instanceHandlerCode, "ObtenerMetricas")
 	if !hasMetricsRoute {
 		t.Errorf("BAC-36: la ruta GET /api/instances/:vmid/metrics no está declarada en cmd/api/main.go ni en instance_handler.go")
@@ -214,24 +217,26 @@ func TestEtapa2BAC36_MetricasHistoricasEndpoint(t *testing.T) {
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
 	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
 
-	unauthStatus, _ := requestValue(t, http.MethodGet, "/instances/101/metrics", "", nil)
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
+	unauthStatus, _ := requestValue(t, http.MethodGet, "/instances/"+ref101+"/metrics", "", nil)
 	if unauthStatus != http.StatusUnauthorized {
-		t.Errorf("BAC-36: GET /api/instances/101/metrics sin autenticar debe responder 401 Unauthorized, recibido %d", unauthStatus)
+		t.Errorf("BAC-36: GET /api/instances/%s/metrics sin autenticar debe responder 401 Unauthorized, recibido %d", ref101, unauthStatus)
 	}
 
-	status2h, body2h := requestValue(t, http.MethodGet, "/instances/101/metrics?timeframe=2h", adminToken, nil)
+	status2h, body2h := requestValue(t, http.MethodGet, "/instances/"+ref101+"/metrics?timeframe=2h", adminToken, nil)
 	if status2h != http.StatusOK {
-		t.Errorf("BAC-36: GET /api/instances/101/metrics?timeframe=2h con ADMIN: esperado 200 OK, recibido %d: %#v", status2h, body2h)
+		t.Errorf("BAC-36: GET /api/instances/%s/metrics?timeframe=2h con ADMIN: esperado 200 OK, recibido %d: %#v", ref101, status2h, body2h)
 	}
 
-	status24h, body24h := requestValue(t, http.MethodGet, "/instances/101/metrics?timeframe=24h", adminToken, nil)
+	status24h, body24h := requestValue(t, http.MethodGet, "/instances/"+ref101+"/metrics?timeframe=24h", adminToken, nil)
 	if status24h != http.StatusOK {
-		t.Errorf("BAC-36: GET /api/instances/101/metrics?timeframe=24h con ADMIN: esperado 200 OK, recibido %d: %#v", status24h, body24h)
+		t.Errorf("BAC-36: GET /api/instances/%s/metrics?timeframe=24h con ADMIN: esperado 200 OK, recibido %d: %#v", ref101, status24h, body24h)
 	}
 
-	statusInv, _ := requestValue(t, http.MethodGet, "/instances/101/metrics?timeframe=invalido", adminToken, nil)
+	statusInv, _ := requestValue(t, http.MethodGet, "/instances/"+ref101+"/metrics?timeframe=invalido", adminToken, nil)
 	if statusInv != http.StatusBadRequest {
-		t.Errorf("BAC-36: GET /api/instances/101/metrics con timeframe inválido debe responder 400 Bad Request, recibido %d", statusInv)
+		t.Errorf("BAC-36: GET /api/instances/%s/metrics con timeframe inválido debe responder 400 Bad Request, recibido %d", ref101, statusInv)
 	}
 }
 
@@ -292,14 +297,16 @@ func TestEtapa2BAC40_EndpointConfigRecursos(t *testing.T) {
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
 	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
 
-	unauthStatus, _ := requestValue(t, http.MethodPut, "/instances/101/config", "", map[string]any{"cores": 2})
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
+	unauthStatus, _ := requestValue(t, http.MethodPut, "/instances/"+ref101+"/config", "", map[string]any{"cores": 2})
 	if unauthStatus != http.StatusUnauthorized {
-		t.Errorf("BAC-40: PUT /api/instances/101/config sin autenticar debe responder 401 Unauthorized, recibido %d", unauthStatus)
+		t.Errorf("BAC-40: PUT /api/instances/%s/config sin autenticar debe responder 401 Unauthorized, recibido %d", ref101, unauthStatus)
 	}
 
-	status, body := requestJSON(t, http.MethodPut, "/instances/101/config", adminToken, map[string]any{"cores": 2, "ramMb": 2048})
+	status, body := requestJSON(t, http.MethodPut, "/instances/"+ref101+"/config", adminToken, map[string]any{"cores": 2, "ramMb": 2048})
 	if status != http.StatusOK && status != http.StatusAccepted {
-		t.Errorf("BAC-40: PUT /api/instances/101/config con ADMIN: esperado 200 OK o 202 Accepted, recibido %d: %#v", status, body)
+		t.Errorf("BAC-40: PUT /api/instances/%s/config con ADMIN: esperado 200 OK o 202 Accepted, recibido %d: %#v", ref101, status, body)
 	} else {
 		if _, ok := body["requiresReboot"]; !ok {
 			t.Errorf("BAC-40: respuesta no incluye el campo 'requiresReboot': %#v", body)

@@ -3,15 +3,19 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Estado del tablero (21/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de implementación** de la Etapa 1 y Etapa 2. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md).
+> **Estado del tablero (22/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de implementación** de la Etapa 1 y Etapa 2. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md).
 >
-> **Pasados a `terminado-1.md` el 21/10/2026 (Etapa 1):**
-> - `FIX-104B` / `FIX-105` y `FIX-102` (resueltos y con tests en verde).
-> - `FIX-91`, `FIX-101`, `FIX-103`, `FIX-104` (implementados con problemas / correcciones registradas en `futuro-1.md`).
+> **Pasados a `terminado-1.md` (Etapa 1):**
+> - `FIX-104B` / `FIX-105` y `FIX-102` (resueltos y con tests en verde el 21/10/2026).
+> - `FIX-100` (resuelto y con tests en verde el 22/10/2026: guarda en `formatCount` y `formatShare`).
+> - `FIX-91` (pendiente de implementación: eliminar el código muerto `InstanceTester.tsx`; sigue en `futuro-1.md`).
+> - `FIX-101`, `FIX-103` y `FIX-104` (cerrados el 22/10/2026: expectativas desactualizadas de `test/front`, no defectos del submódulo; pruebas en verde).
 >
-> **Pasados a `terminado2.md` el 21/10/2026 (Etapa 2):**
-> - `BAC-36`, `FIX-107`, `FIX-109`, `FIX-110`, `FIX-111A`, `FIX-112`, `FIX-114`, `FIX-115A`, `FIX-116`, `FIX-117A`, `FIX-118`, `FIX-119` (resueltos y con tests en verde).
-> - `FRN-24`, `FRN-25`, `INF-10` (implementados con problemas / correcciones registradas en `futuro2.md` como `FIX-120`, `FIX-121` y `FIX-123`).
+> **Pasados a `terminado2.md` (Etapa 2):**
+> - `BAC-36`, `FIX-107`, `FIX-109`, `FIX-110`, `FIX-111A`, `FIX-112`, `FIX-114`, `FIX-115A`, `FIX-116`, `FIX-117A`, `FIX-118`, `FIX-119` (resueltos y con tests en verde el 21/10/2026).
+> - `FIX-111B` y `FIX-115B` (resueltos y con tests en verde el 22/10/2026: modal de reautenticación y claves hasta 128 chars).
+> - `FRN-24` y `FRN-25` (cerradas el 22/10/2026: implementación funcional y pruebas alineadas al contrato real).
+> - `INF-10` (pendiente de verificación en Proxmox físico; seguimiento en `FIX-123` dentro de `futuro2.md`).
 
 ---
 
@@ -30,37 +34,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
   - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
   - Si la tarea falla, no se toca nada.
 - **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
-
-
-### `FIX-100` - Manejo seguro de valores `undefined` en `formatCount` del Dashboard (regresión commit `57c739f` / `FRN-19B`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz / Cristian
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-19B` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  En el commit `57c739f` (`frontend/centinela/src/pages/Dashboard.tsx:58`), se introdujo la función utilitaria de formateo de contadores:
-  ```ts
-  const formatCount = (value: number | null) => value === null ? '—' : value.toLocaleString('es');
-  ```
-  Y en la línea 133 (tarjeta de Plantillas para Admin):
-  ```tsx
-  <p className="text-metrica">{formatCount(templates.loading ? null : templates.count)}</p>
-  ```
-  Cuando `templates.count` es `undefined` (estado inicial de carga, respuesta pendiente o sin inicializar en mocks de pruebas), el argumento `value` recibe `undefined`. Como la guarda evalúa estrictamente `value === null`, la condición es falsa y se ejecuta `undefined.toLocaleString('es')`, lanzando una excepción no controlada:
-  ```
-  TypeError: Cannot read properties of undefined (reading 'toLocaleString')
-  ```
-  Esto provoca el desmontaje completo de la vista `<Dashboard>` (`<body><div /></body>`), rompiendo en cascada 12 pruebas en `test/front/dashboard-node.test.tsx` y 2 pruebas en `test/front/dashboard-summary.test.tsx`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/pages/Dashboard.tsx:58`, adaptar `formatCount` y `formatShare` para emplear una guarda defensiva ante valores no numéricos (`undefined`, `null`, `NaN`):
-     ```ts
-     const formatCount = (value: number | null | undefined) => (typeof value !== 'number' || Number.isNaN(value)) ? '—' : value.toLocaleString('es');
-     const formatShare = (value: number | null | undefined) => (typeof value !== 'number' || !totalInstances) ? '—' : `${Math.round((value / totalInstances) * 100)}%`;
-     ```
-  2. Ejecutar `npx vitest run dashboard-node.test.tsx` en `test/front` y certificar 12 de 12 pruebas en verde.
-- **Criterio de éxito:**
-  El Dashboard tolera contadores numéricos indefinidos o nulos sin lanzar `TypeError` en consola, y la suite `test/front/dashboard-node.test.tsx` pasa al 100% (12/12 en verde).
 
 ---
 
@@ -94,46 +67,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Criterio de éxito:**
   - La tabla de instancias renderiza correctamente el listado proveniente del backend con IDs ofuscados.
   - Los botones de acción de ciclo de vida (iniciar, apagar, ver métricas) operan de manera transparente utilizando el identificador opaco en las URLs del navegador.
-
-
-### `FIX-111B` - Modal de confirmación con re-autenticación (Password + 2FA) en cambio de email (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1,0 h
-- **Depende de:** `FIX-111A`.
-- **Importancia:** 🔴 **CRÍTICA** (Mitigación UI contra secuestro de cuenta).
-- **Problema técnico detallado:**
-  Actualmente los componentes de visualización y edición del perfil de usuario permiten editar el input de email y enviar directamente el payload `PUT /api/account/profile` sin requerir credenciales de confirmación. Con la implementación del backend seguro en `FIX-111A`, cualquier intento de actualización de email sin los parámetros de re-autenticación es rechazado con error 400/401.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/components/features/users/components/informationOfUser.tsx` y `DetailsUserPage.tsx`:
-     - Al detectar una edición en el campo de correo electrónico, interceptar el guardado y desplegar un modal de confirmación de seguridad.
-     - El modal debe solicitar la contraseña actual del usuario y el código de seis dígitos de su aplicación autenticadora (TOTP 2FA).
-     - Despachar la solicitud `PUT /api/account/profile` adjuntando `contrasenaActual` y `codigo2fa`.
-     - Presentar al usuario un banner o notificación de feedback indicando que se ha enviado un correo de confirmación a la nueva dirección para activar el cambio.
-- **Criterio de éxito:**
-  - La interfaz gráfica no permite enviar el cambio de correo sin solicitar contraseña actual y código 2FA.
-  - El usuario recibe retroalimentación visual clara sobre el flujo de confirmación por doble canal.
-
-
-### `FIX-115B` - Actualización de validación y formularios de contraseñas de alta longitud en Frontend (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-115A`.
-- **Importancia:** 🟠 **MEDIA / ALTA** (Experiencia de usuario y seguridad NIST SP 800-63B).
-- **Problema técnico detallado:**
-  En el frontend, la función de utilidad `validatePasswordComplexity.ts` y las reglas de validación en formularios de cambio y reseteo restringen la entrada a un máximo de 12 caracteres, impidiendo al usuario pegar o escribir contraseñas robustas generadas por administradores de contraseñas.
-- **Qué se debe hacer:**
-  1. En `frontend/centinela/src/components/features/auth/utils/validatePasswordComplexity.ts`:
-     - Actualizar la regla de longitud máxima para admitir hasta 128 caracteres (`password.length <= 128`).
-  2. En los formularios de cambio y reseteo de contraseña (`ChangePassword.tsx`, `RecoverPassword.tsx`):
-     - Modificar los inputs para permitir hasta 128 caracteres (`maxLength={128}`).
-     - Actualizar los textos de ayuda y mensajes de validación eliminando la mención restrictiva de 12 caracteres.
-- **Criterio de éxito:**
-  - El frontend valida correctamente contraseñas largas de hasta 128 caracteres sin bloquear el botón de envío ni mostrar mensajes de error espurios.
-  - Los formularios permiten pegar credenciales generadas por administradores de contraseñas estándares.
 
 
 ### `FIX-117B` - Adaptación del Dashboard de operador ante segregación de métricas globales (Frontend)
@@ -189,3 +122,193 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
   4. Tooltips explicativos y estados de carga (skeletons) mientras se obtienen los primeros datos.
   5. **Tolerancia a valores nulos:** cuando la máquina esté detenida (`cpu: null`, `mem: null`), los gráficos deben pintar discontinuidades temporales o mostrar el estado "Instancia detenida" sin romper el ciclo de vida del componente con errores `NaN` o `TypeError`.
 - **Criterio de éxito:** Al abrir la pestaña "Métricas", se visualiza la serie histórica y los gráficos continúan actualizándose dinámicamente con los eventos en vivo, tolerando paradas de la máquina sin fallos visuales.
+
+
+---
+
+
+#### `FRN-26` - Envío de creación, manejo de errores de cuota (`409`) y seguimiento en la UI
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-25`, `BAC-38`.
+- **Problema:** Durante el envío, la interfaz debe bloquearse para evitar dobles clics, manejar amigablemente los rechazos por cuota insuficiente y reflejar el progreso de la creación en la tabla de inventario.
+- **Entregable:**
+  1. Despacho HTTP `POST /api/instances` con estado de carga en el botón de confirmación.
+  2. Manejo de error `409 RESOURCE_QUOTA_EXCEEDED`: banner en rojo dentro del modal indicando el motivo exacto sin perder los datos cargados en los pasos anteriores.
+  3. Ante `202 Accepted`: cierre del modal, inserción de la nueva fila en `/instances` en estado *"Creando..."* con spinner activo.
+  4. Escucha del evento `TASK_FINISHED` de creación vía `useEventsContext()` para actualizar la fila a *"Stopped"*, emitir Toast de éxito y habilitar sus controles.
+- **Criterio de éxito:** Flujo completo de alta probado sin recargar la pantalla (`F5`), pasando de creación a inventario activo de forma fluida.
+
+#### `FRN-27` - Modal de reconfiguración de vCPU y RAM con advertencia de reinicio / hot-plug
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-40`, `FRN-21`.
+- **Problema:** Los operadores autorizados necesitan ajustar la capacidad de sus máquinas con controles seguros que indiquen claramente si la acción requiere reinicio.
+- **Entregable:**
+  1. Modal `EditInstanceConfigModal.tsx` accesible desde la barra de acciones o pestaña "Configuración" de `/instances/:vmid`.
+  2. Controles precargados con los valores actuales de vCPU y RAM.
+  3. Visualización del cálculo diferencial ($\Delta\text{RAM}$) y comparación contra el espacio disponible en el host.
+  4. Mensaje informativo: *"Si la instancia está encendida y no admite hot-plug, los cambios se harán efectivos tras reiniciar el sistema operativo huésped."*
+- **Criterio de éxito:** El modal bloquea valores que excedan la memoria libre del host y calcula correctamente el delta antes de confirmar.
+
+#### `FRN-28` - Integración de edición en la página de Detalle de Instancia y refresco reactivo
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-27`.
+- **Problema:** Tras confirmar una edición, la interfaz debe reflejar los nuevos límites sin requerir una recarga manual del navegador.
+- **Entregable:**
+  1. Conexión del modal con `PUT /api/instances/:vmid/config`.
+  2. Toasts informativos:
+     - Verde: *"Recursos actualizados exitosamente en caliente."*
+     - Amarillo: *"Configuración guardada. La máquina requiere reinicio para aplicar los nuevos recursos."*
+  3. Actualización inmediata de los valores de CPU/RAM en la cabecera del detalle y en la tabla de `/instances`.
+- **Criterio de éxito:** La modificación de recursos se refleja instantáneamente en la interfaz y emite el feedback correspondiente al estado de hot-plug.
+
+
+#### `FRN-36` (`BRG-10-FRN`) - Modularización de `InstanceDetailPage` para Pestaña de Snapshots y Estados Transitorios
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-21`, `FRN-28`.
+- **Problema:** La página de detalle actual tiene pestañas fijas y no propaga el estado de bloqueo a la cabecera cuando una máquina está en transición asíncrona.
+- **Entregable:**
+  1. Reestructuración de `InstanceDetailPage.tsx` con soporte para pestañas modulares (dejando listo el slot para "Snapshots").
+  2. Soporte en el badge de estado para etiquetas transitorias: `SNAPSHOTTING` (azul), `ROLLING_BACK` (amarillo/naranja).
+  3. Deshabilitación reactiva de la botonera de acciones rápidas de la cabecera cuando `instance.activeTask != null`.
+- **Criterio de éxito:** Si la máquina reporta `activeTask`, los botones de la cabecera se bloquean con spinner y la pestaña de Snapshots cuenta con su contenedor maquetado.
+
+
+#### `INF-13` (`BRG-11-INF`) - Verificación y Validación de Storage Compatible con Snapshots en Proxmox Real
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-10`.
+- **Problema:** Si el Proxmox físico (`100.81.49.19`) utiliza discos `raw` sobre LVM estándar, la API de snapshots fallará en la validación final (`INT-09`).
+- **Entregable:**
+  1. Verificación del almacenamiento configurado en Proxmox (`local-lvm` con thin-pool, `zfs` o `qcow2`).
+  2. Si el storage por defecto no soporta snapshots, configurar un pool LVM-thin o storage de directorio para las instancias de prueba del Centinela.
+  3. Documentar en `documentacion/api-proxmox.md` los storages aptos para snapshots.
+- **Criterio de éxito:** Ejecución manual de `qm snapshot <vmid> test` por CLI en el Proxmox real completa exitosamente sin errores de formato de disco.
+
+---
+# ETAPA 3
+---
+
+
+#### `BAC-42` - Adaptador de Proxmox para Snapshots, endpoints de Creación y Listado
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-50` (`BRG-10-BAC`: simulador con soporte de snapshots).
+- **Problema:** Los usuarios autorizados necesitan registrar puntos de restauración para congelar el estado de sus máquinas antes de realizar operaciones de riesgo.
+- **Entregable:**
+  1. Métodos en el cliente Proxmox: `CrearSnapshot(ctx, node, tipo, vmid, snapname, descripcion)` y `ListarSnapshots(ctx, node, tipo, vmid)`.
+  2. Endpoint `GET /api/instances/:vmid/snapshots` con guard de acceso `RequireInstanceAccess`.
+  3. Endpoint `POST /api/instances/:vmid/snapshots` validando nombre alfanumérico (sin espacios ni caracteres especiales), captura de UPID e inserción en `tareas_asincronas` con respuesta `HTTP 202 Accepted { upid, tareaId, snapname }`.
+  4. Pruebas unitarias en `snapshot_service_test.go` contra el simulador.
+- **Criterio de éxito:** Un usuario con permisos crea y lista snapshots recibiendo la jerarquía temporal ordenada sin errores de serialización.
+
+#### `BAC-43` - Reversión (Rollback) y Eliminación de Snapshots con bloqueo de concurrencia
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-42`, `BAC-51` (`BRG-11-BAC`: guarda de concurrencia `409 INSTANCE_BUSY`).
+- **Problema:** La reversión o borrado de snapshots altera profundamente el almacenamiento del hipervisor. Si se ejecutan en simultáneo con órdenes de energía o creación, se corre riesgo de corrupción de datos.
+- **Entregable:**
+  1. Endpoint `POST /api/instances/:vmid/snapshots/:snapname/rollback` (requiere `ADMIN` o `FULL_ACCESS`).
+  2. Endpoint `DELETE /api/instances/:vmid/snapshots/:snapname` (requiere `ADMIN` o `FULL_ACCESS`).
+  3. Validación de estado: si la instancia tiene una tarea activa (`activeTask != nil`), rechazar inmediatamente con `HTTP 409 Conflict` (`INSTANCE_BUSY`).
+  4. Al despachar la reversión, marcar la máquina en estado transitorio `ROLLING_BACK` y emitir `TASK_FINISHED` al concluir el UPID.
+- **Criterio de éxito:** Intentos de revertir snapshots mientras otra tarea está en curso responden 409. Al completar el rollback, la máquina regresa al estado anterior y se liberan los bloqueos.
+
+
+#### `BAC-44` - Interceptor global y consultas complejas sobre auditoría particionada
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-41`, `BAC-53` (`BRG-13-BAC`: particionado preventivo e índices compuestos de auditoría).
+- **Problema:** La auditoría debe consolidar eventos de todas las etapas con filtros combinados eficientes (por usuario, rango de fechas, tipo de recurso, acción y severidad) aprovechando las particiones de PostgreSQL.
+- **Entregable:**
+  1. Extensión del interceptor de auditoría para registrar: `SNAPSHOT_CREATE`, `SNAPSHOT_ROLLBACK`, `SNAPSHOT_DELETE`, `ALERT_TRIGGERED` y `CONFIG_UPDATED`.
+  2. Endpoint `GET /api/admin/audit` con parámetros de consulta: `?desde=...&hasta=...&usuarioId=...&accion=...&recursoTipo=...&recursoId=...&page=1&limit=25`.
+  3. Optimización de consulta SQL utilizando exclusión de particiones (`partition pruning`) por `fecha_hora`.
+- **Criterio de éxito:** Consultas sobre millones de registros históricos responden en menos de 150 ms sin realizar escaneos completos de tablas.
+
+#### `BAC-45` - Streaming de exportación estructurada de auditoría a CSV y JSON
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-44`.
+- **Problema:** Exportar reportes de auditoría extensos cargando todos los registros en memoria del servidor puede provocar caídas por `Out of Memory` (OOM).
+- **Entregable:**
+  1. Endpoint `GET /api/admin/audit/export` accesible solo para usuarios con rol `ADMIN`.
+  2. Parámetro `format=csv|json`, respetando exactamente los mismos filtros aplicados en la vista.
+  3. Implementación de streaming HTTP: lectura en lotes con cursores de base de datos (`pgx` / `gorm.Rows`) y escritura inmediata en el stream de respuesta.
+  4. Cabeceras HTTP apropiadas: `Content-Disposition: attachment; filename="auditoria_centinela_YYYYMMDD.csv"`.
+- **Criterio de éxito:** Exportaciones de más de 50.000 filas se descargan fluidamente en el navegador sin picos de consumo de RAM en el contenedor backend.
+
+
+#### `INF-11` - Configuración de producción en Nginx: TLS 1.3, HSTS, CSP y WSS
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 2.0 h
+- **Depende de:** `INF-04`, `INF-09`.
+- **Problema:** El entorno de producción final requiere estándares estrictos de cifrado, mitigación de ataques web y estabilidad total en canales bidireccionales.
+- **Entregable:**
+  1. Configuración de Nginx en el servidor de producción con protocolos modernos (TLS 1.2 y TLS 1.3 exclusivamente).
+  2. Inyección de encabezados de seguridad:
+     - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+     - `X-Content-Type-Options: nosniff`
+     - `X-Frame-Options: DENY`
+     - `Content-Security-Policy` ajustada para WebSockets y fuentes locales.
+  3. Verificación de proxying sin caídas de sesión ni timeout en WebSockets `/api/ws/*` y eventos SSE `/api/events`.
+- **Criterio de éxito:** Análisis SSL Labs o verificación con curl reporta calificación A/A+ con todos los encabezados de seguridad presentes.
+
+#### `BAC-46` - Background worker evaluador de umbrales con histéresis y deduplicación
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-22` (telemetría de nodo) y `BAC-34` (telemetría de instancias).
+- **Problema:** La saturación prolongada de CPU, RAM o almacenamiento en el host o en las máquinas críticas puede degradar los servicios. Se requiere detección proactiva antes de que ocurra una caída.
+- **Entregable:**
+  1. Worker periódico de evaluación configurable (`ALERT_POLL_INTERVAL`, por defecto 30 s).
+  2. Verificación de umbrales críticos:
+     - Host: RAM $\ge 85\%$, CPU $\ge 90\%$, Almacenamiento $\ge 90\%$.
+     - Instancias: Memoria asignada saturada o estado inaccesible.
+  3. Algoritmo de histéresis en Redis: marcar alerta activa en clave con TTL; solo disparar evento si la condición persiste durante 2 ciclos consecutivos y resolverla cuando caiga por debajo del 80%.
+- **Criterio de éxito:** No se emiten alertas espurias por picos momentáneos de 1 segundo. Al sostenerse la saturación, se genera el estado de alarma de forma determinística.
+
+#### `FRN-29` - Pestaña "Snapshots" en Detalle de Instancia y formulario de nuevo snapshot
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-42`, `FRN-36` (`BRG-10-FRN`: detalle modularizado y estados transitorios).
+- **Problema:** La vista de detalle no cuenta con una interfaz visual para inspeccionar los puntos de restauración existentes ni disparar un nuevo guardado.
+- **Entregable:**
+  1. Pestaña "Snapshots" dentro de `InstanceDetailPage.tsx`.
+  2. Línea de tiempo o tabla interactiva de snapshots con nombre, descripción, fecha de creación y badge de estado.
+  3. Botón "Crear Snapshot" que despliegue un modal sencillo solicitando nombre (validado contra `/^[a-zA-Z0-9_\-]+$/`) y descripción opcional.
+  4. Feedback inmediato con spinner de carga durante la creación.
+- **Criterio de éxito:** El usuario visualiza la lista de snapshots y puede crear uno nuevo viendo la lista actualizada reactivamente.
+
+
+#### `FRN-31` - Vista administrativa de Auditoría con filtros reactivos completos
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-44`, `FIX-74`.
+- **Problema:** Los administradores necesitan auditar la actividad institucional de forma ágil, buscando incidentes o filtrando anomalías operativas.
+- **Entregable:**
+  1. Rediseño funcional de `Auditoria.tsx`:
+     - Rango de fechas con controles accesibles (`aria-label="Desde"` y `aria-label="Hasta"`).
+     - Desplegables con autocompletado para tipo de acción, usuario y tipo de recurso.
+     - Indicador visual de severidad (Badge verde = `SUCCESS`, rojo = `FAILED`, amarillo = `WARNING`).
+  2. Tabla paginada con controles de avance/retroceso y selector de elementos por página.
+  3. Modal para inspeccionar el payload JSON completo (`detalles`) de un evento seleccionado.
+- **Criterio de éxito:** Los cambios en los filtros actualizan reactivamente la tabla vía query parameters cumpliendo con todas las aserciones de accesibilidad.

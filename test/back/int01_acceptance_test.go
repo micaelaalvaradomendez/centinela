@@ -34,12 +34,16 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 	op2Session := loginWithTOTP(t, op2.Email, op2.Password, op2.Secret)
 	op2Token := op2Session.AccessToken
 
-	// Asignar op1: FULL_ACCESS en 101, READ_ONLY en 102
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+	ref102 := instanceRefByVMID(t, adminToken, 102)
+	ref103 := instanceRefByVMID(t, adminToken, 103)
+
+	// Asignar op1: FULL_ACCESS en 101, READ_ONLY en 102 (vmid con referencias ofuscadas FIX-107)
 	permEndpoint1 := "/admin/users/" + op1.ID + "/permissions"
 	if status, body := requestValue(t, http.MethodPut, permEndpoint1, adminToken, map[string]any{
 		"permisos": []map[string]any{
-			{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
-			{"vmid": 102, "nivelAcceso": "READ_ONLY"},
+			{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"},
+			{"vmid": ref102, "nivelAcceso": "READ_ONLY"},
 		},
 	}); status != http.StatusNoContent {
 		t.Fatalf("precondición INT-01: asignar permisos a op1 falló (%d): %#v", status, body)
@@ -50,9 +54,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		// el stub la reporta "running", así que la orden válida es el apagado ordenado (stop).
 		// (Con "start" el backend responde 409 INSTANCE_INVALID_STATE, que es el comportamiento correcto
 		//  de BAC-24A y no lo que esta prueba verifica.) Esperado 202 con upid y tareaId.
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("POST /instances/101/stop esperado 202 Accepted, recibido %d: %#v", status, body)
+			t.Fatalf("POST /instances/%s/stop esperado 202 Accepted, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		if tareaID == "" {
@@ -70,39 +74,39 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 6*time.Second)
 
 		// 1.2 VMID protegido (103 en PROXMOX_PROTECTED_VMIDS): acción destructiva rechazada con 403 INSTANCE_PROTECTED
-		statusProt, bodyProt := requestJSON(t, http.MethodPost, "/instances/103/stop", adminToken, nil)
+		statusProt, bodyProt := requestJSON(t, http.MethodPost, "/instances/"+ref103+"/stop", adminToken, nil)
 		if statusProt != http.StatusForbidden || bodyProt["errorCode"] != "INSTANCE_PROTECTED" {
-			t.Errorf("POST /instances/103/stop sobre VMID protegido: esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", statusProt, bodyProt)
+			t.Errorf("POST /instances/%s/stop sobre VMID protegido: esperado 403 INSTANCE_PROTECTED, recibido %d: %#v", ref103, statusProt, bodyProt)
 		}
 
 		// 1.3 Permiso insuficiente: op1 tiene solo READ_ONLY sobre 102 -> rechazo 403 INSTANCE_ACCESS_DENIED
-		statusDenied, bodyDenied := requestJSON(t, http.MethodPost, "/instances/102/start", op1Token, nil)
+		statusDenied, bodyDenied := requestJSON(t, http.MethodPost, "/instances/"+ref102+"/start", op1Token, nil)
 		if statusDenied != http.StatusForbidden || bodyDenied["errorCode"] != "INSTANCE_ACCESS_DENIED" {
-			t.Errorf("POST /instances/102/start con READ_ONLY: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", statusDenied, bodyDenied)
+			t.Errorf("POST /instances/%s/start con READ_ONLY: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", ref102, statusDenied, bodyDenied)
 		}
 
 		// 1.4 op2 no tiene ningún permiso sobre 101 -> rechazo 403 INSTANCE_ACCESS_DENIED
-		statusOp2, bodyOp2 := requestJSON(t, http.MethodPost, "/instances/101/start", op2Token, nil)
+		statusOp2, bodyOp2 := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/start", op2Token, nil)
 		if statusOp2 != http.StatusForbidden || bodyOp2["errorCode"] != "INSTANCE_ACCESS_DENIED" {
-			t.Errorf("POST /instances/101/start con op2 sin permisos: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", statusOp2, bodyOp2)
+			t.Errorf("POST /instances/%s/start con op2 sin permisos: esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", ref101, statusOp2, bodyOp2)
 		}
 
 		// 1.5 DELETE con operador (no ADMIN): rechazo 403
-		statusDelOp, _ := requestValue(t, http.MethodDelete, "/instances/101", op1Token, nil)
+		statusDelOp, _ := requestValue(t, http.MethodDelete, "/instances/"+ref101, op1Token, nil)
 		if statusDelOp != http.StatusForbidden {
-			t.Errorf("DELETE /instances/101 con OPERATOR: esperado 403, recibido %d", statusDelOp)
+			t.Errorf("DELETE /instances/%s con OPERATOR: esperado 403, recibido %d", ref101, statusDelOp)
 		}
 
 		// 1.6 Concurrencia y bloqueo INSTANCE_BUSY: cuando hay una tarea activa en curso
 		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-en-curso"); err == nil {
 			t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
-			stStart, bStart := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+			stStart, bStart := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/stop", op1Token, nil)
 			if stStart == http.StatusAccepted {
 				tid := requiredString(t, bStart, "tareaId")
 				// Segundo intento inmediato sobre la misma instancia debe responder 409 INSTANCE_BUSY.
 				// Se usa "shutdown" (también válido para una instancia encendida) para que el rechazo
 				// provenga de la tarea en curso y no de la validación de estado previo.
-				stBusy, bBusy := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", op1Token, nil)
+				stBusy, bBusy := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/shutdown", op1Token, nil)
 				if stBusy != http.StatusConflict || bBusy["errorCode"] != "INSTANCE_BUSY" {
 					t.Errorf("segunda acción sobre instancia ocupada: esperado 409 INSTANCE_BUSY, recibido %d: %#v", stBusy, bBusy)
 				}
@@ -115,9 +119,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 
 	t.Run("Paso 2: Sondeo del worker UPID hasta COMPLETED, timeout configurable y fallos PROXMOX_ERROR", func(t *testing.T) {
 		// 2.1 Tarea normal termina en COMPLETED y persiste exitstatus en metadatos o tabla
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/shutdown", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("POST /instances/101/status/shutdown: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("POST /instances/%s/status/shutdown: esperado 202, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 8*time.Second) {
@@ -127,7 +131,7 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		// 2.2 Fallo simulado en Proxmox: con /tmp/tareas-fallidas el stub devuelve exitstatus != OK
 		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-fallidas"); err == nil {
 			t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas") })
-			stFail, bFail := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+			stFail, bFail := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/stop", op1Token, nil)
 			if stFail == http.StatusAccepted {
 				tFailID := requiredString(t, bFail, "tareaId")
 				if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tFailID), "FAILED", 8*time.Second) {
@@ -168,9 +172,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		eventsOp1 := listenEvents(t, op1Token)
 		eventsOp2 := listenEvents(t, op2Token)
 
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("POST /instances/101/stop: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("POST /instances/%s/stop: esperado 202, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 
@@ -182,8 +186,8 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		if eventOp1["tipo"] != "TASK_FINISHED" {
 			t.Errorf("evento esperado tipo TASK_FINISHED, recibido %v", eventOp1["tipo"])
 		}
-		if fmt.Sprint(eventOp1["recursoId"]) != "101" {
-			t.Errorf("evento esperado recursoId '101', recibido %v", eventOp1["recursoId"])
+		if fmt.Sprint(eventOp1["recursoId"]) != ref101 {
+			t.Errorf("evento esperado recursoId %q (referencia opaca FIX-107), recibido %v", ref101, eventOp1["recursoId"])
 		}
 		detalles, _ := eventOp1["detalles"].(map[string]any)
 		if detalles["tareaId"] != tareaID {
@@ -206,9 +210,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 	})
 
 	t.Run("Paso 4: Auditoría dual correlacionada por upid y tareaId (RF-08 / BAC-27)", func(t *testing.T) {
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/reboot", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/reboot", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("reboot sobre 101: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("reboot sobre %s: esperado 202, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 		if _, expuesto := body["upid"]; expuesto {
@@ -238,9 +242,9 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 		}
 		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso") })
 
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/stop", op1Token, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/stop", op1Token, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("stop sobre 101: esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("stop sobre %s: esperado 202, recibido %d: %#v", ref101, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 
@@ -265,7 +269,7 @@ func TestINT01_CicloDeVidaYWorkerUPID(t *testing.T) {
 
 	t.Run("Paso 6: Limpieza transaccional de permisos_instancia tras eliminación DELETE (BAC-24C)", func(t *testing.T) {
 		// Si DELETE no está implementado aún en el backend de prueba, se verifica el contrato
-		statusDel, _ := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		statusDel, _ := requestJSON(t, http.MethodDelete, "/instances/"+ref102, adminToken, nil)
 		if statusDel == http.StatusNotFound || statusDel == http.StatusMethodNotAllowed {
 			t.Skip("DELETE /instances/:vmid no implementado aún en este commit")
 		}

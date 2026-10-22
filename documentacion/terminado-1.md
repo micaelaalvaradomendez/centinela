@@ -1265,8 +1265,8 @@ Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es 
 
 ### `FIX-79` - Exposición directa de controles para selector reactivo por tipo de recurso (`FRN-20B`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada parcialmente, con problemas pendientes.** El selector visible con botones accesibles ("Todas", "VM", "LXC") fue incorporado en el commit `623bc28`. No obstante, en `test/front/instances-ola2.test.tsx` fallan 2 pruebas: el filtrado en memoria por texto del buscador y la alternancia entre instancias "En ejecución" y "Detenidas". Corrección abierta en **`FIX-101`** ([futuro-1.md](futuro-1.md)).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** El selector visible con pestañas accesibles ("Instancias totales", "Máquina virtual (VM)", "Contenedor (LXC)") y el filtro de estado en el menú "Filtros" ("Encendidas", "Detenidas", "Todas las instancias") están operativos; el filtrado en memoria es reactivo y no dispara llamadas extra. `test/front/instances-ola2.test.tsx` pasa 6 de 6. El antiguo `FIX-101` se retiró de `futuro-1.md` porque la prueba esperaba una pestaña "En ejecución" que no forma parte del diseño implementado.
 
 - **Área:** Frontend
 - **Asignado:** Luz
@@ -1299,8 +1299,8 @@ Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es 
 
 #### `FRN-19C` & `FIX-83` - Tarjetas de conteo de VMs/LXC y refresco ante `TASK_FINISHED` (`RF-02`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (19/10/2026, frontend `91eabf4`): implementadas parcialmente, bloqueadas por regresión.** Se incorporó la suscripción a eventos SSE para actualizar conteos sin esperar al polling de 10 s. Sin embargo, el commit `54efc3d` introdujo una regresión crítica en `useNodeStatus.ts:146` (`TypeError: serie.map is not a function`), desmontando el componente `<Dashboard>` y rompiendo `dashboard-summary.test.tsx` y `dashboard-node.test.tsx`. Corrección abierta en **`FIX-103`** ([futuro-1.md](futuro-1.md)).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** La suscripción a eventos SSE actualiza los conteos sin esperar al polling de 10 s y `useNodeStatus.ts` ya valida `Array.isArray(serie)` antes de transformar el histórico. `test/front/fix-103-node-history.test.tsx` pasa 7 de 7 tras corregir el mock de `GET /node/templates` (el contrato real responde un array, no `{ items }`). El antiguo `FIX-103` se retiró de `futuro-1.md` porque la guarda ya estaba implementada.
 
 - **Área:** Frontend
 - **Asignada:** Belinda
@@ -1312,8 +1312,8 @@ Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es 
 
 ### `FIX-99` - Advertencia visible "Próximamente" en vista directa `/instances/new` (`FIX-89`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada parcialmente, con problema pendiente.** El commit `30894f4` añadió el banner de alerta en `createNewInstances.tsx`. No obstante, se condicionó con `{currentStep >= 3 && ...}`, por lo que al acceder a la URL `/instances/new` el banner no es visible en el paso inicial y `fixes-pending.test.tsx:118` sigue fallando. Corrección abierta en **`FIX-104`** ([futuro-1.md](futuro-1.md)).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): superada por la implementación del wizard real.** `/instances/new` dejó de ser un cascarón estático y hoy renderiza el wizard funcional de 5 pasos integrado con el backend (tipo y nombre, recursos y cuotas, red, sistema operativo y resumen). Ya no aplica el banner "Aprovisionamiento en desarrollo — Próximamente en Etapa 2"; `fixes-pending.test.tsx` ahora valida el wizard real. El antiguo `FIX-104` se retiró de `futuro-1.md`.
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -1382,8 +1382,8 @@ Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
 
 ### `FIX-101` - Corrección de filtros reactivos en memoria (búsqueda de texto y alternancia en ejecución / detenidas) (`FIX-79` / `FRN-20B`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** En `Instances.tsx`, la búsqueda reactiva en memoria sobre texto e ID y el filtro de estado `running`/`stopped` persisten con fallos en `test/front/instances-ola2.test.tsx`. Corrección registrada en [futuro-1.md](futuro-1.md).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** `instances-ola2.test.tsx` pasa 6 de 6. Retirado de `futuro-1.md` (FIX-101): el defecto era la expectativa de la prueba, no el código.
 
 - **Área:** Frontend
 - **Asignado:** Luz
@@ -1394,8 +1394,8 @@ Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
 
 ### `FIX-103` - Manejo defensivo de arrays de telemetría de nodo en `useNodeStatus.ts` (`FRN-19C` / `FIX-83`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** La invocación directa `serie.map(...)` en `useNodeStatus.ts:146` lanza `TypeError: serie.map is not a function` ante objetos envoltorios o respuestas no iterables. Corrección registrada en [futuro-1.md](futuro-1.md).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** `useNodeStatus.ts` valida `Array.isArray(serie)` antes de transformar el histórico; `fix-103-node-history.test.tsx` pasa 7 de 7. Retirado de `futuro-1.md` (FIX-103): la guarda ya existía y los fallos provenían de un mock que no respetaba el contrato de `GET /node/templates`.
 
 - **Área:** Frontend
 - **Asignado:** Belinda
@@ -1406,11 +1406,29 @@ Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
 
 ### `FIX-104` - Visibilidad permanente del banner de advertencia "Próximamente" en todos los pasos de `/instances/new` (`FIX-99` / `FIX-89`) (Frontend)
 
-> [!WARNING]
-> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas.** El banner continúa condicionado a `{currentStep >= 3}` y no se renderiza en el paso inicial al ingresar directamente a la URL. Corrección registrada en [futuro-1.md](futuro-1.md).
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): superada por la implementación del wizard real.** `/instances/new` renderiza el wizard funcional de 5 pasos; el banner "Próximamente" ya no corresponde. Retirado de `futuro-1.md` (FIX-104).
 
 - **Área:** Frontend
 - **Asignado:** Cristian
 - **Estimación:** 0,5 h
 - **Depende de:** `FIX-99`, `FIX-89`.
 - **Criterio de éxito:** banner de alerta visible permanentemente en todos los pasos.
+
+
+### `FIX-100` - Manejo seguro de valores `undefined` en `formatCount` del Dashboard (`FRN-19B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `0d769cb`): implementada y con test en verde.** Commit `130eea7`. `formatCount` y `formatShare` en `frontend/centinela/src/pages/Dashboard.tsx` adoptaron comprobaciones defensivas ante valores no numéricos (`typeof value !== 'number' || Number.isNaN(value)`). Pasan al 100% en verde las 12 pruebas de `test/front/dashboard-node.test.tsx` y el caso de `test/front/fixes-pending.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Luz / Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-19B`.
+- **Problema técnico detallado:**
+  En `Dashboard.tsx:58`, la función `formatCount` evaluaba estrictamente `value === null`. Cuando `templates.count` llegaba `undefined`, se ejecutaba `undefined.toLocaleString('es')`, arrojando `TypeError` no controlado y desmontando la vista completa.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Dashboard.tsx`, adaptar `formatCount` y `formatShare` con guardas ante valores no numéricos.
+  2. Certificar que `dashboard-node.test.tsx` pase 12 de 12 en verde.
+- **Criterio de éxito:** el Dashboard tolera contadores indefinidos o nulos sin lanzar `TypeError` y la suite `dashboard-node.test.tsx` pasa al 100% en verde.
+

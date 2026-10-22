@@ -37,7 +37,7 @@ Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los 
 | `instances-events.test.tsx` | **FRN-17B** (desbloqueo reactivo y toast adaptativo ante TASK_FINISHED) |
 | `dashboard-summary.test.tsx` | **FRN-19C**, **FIX-83** (tarjetas de resumen VMs/LXC y refresco por evento) |
 | `instance-detail.test.tsx` | **FRN-21**, **FIX-95** (vista Detalle de Instancia, registro en AppRoutes y enlace desde inventario) |
-| `fixes-pending.test.tsx` | **FIX-87**, **FIX-89 / FIX-99**, **FIX-90**, **FIX-91**, **FIX-100** (placeholders de usuario, banner /instances/new, limpieza dashboard, InstanceTester, manejo seguro undefined formatCount) |
+| `fixes-pending.test.tsx` | **FIX-87**, **FIX-89 / FIX-99** (wizard real de `/instances/new`, ya no cascarón estático), **FIX-90**, **FIX-91**, **FIX-100** (placeholders de usuario, limpieza dashboard, InstanceTester, manejo seguro undefined formatCount) |
 | `adversarial-security.test.ts` | **Seguridad adversarial** (prevención de XSS en errores, inyección de rutas en API client, resiliencia a JSON corrupto, prototype pollution) |
 | `int02-e2e.test.ts` | **INT-02** (Smoke test integral de 7 pasos con código real de frontend contra el backend real) |
 

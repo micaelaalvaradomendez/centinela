@@ -56,46 +56,18 @@ Verificados contra frontend `b0a7105` y backend `a25d1b3`.
 - **Criterio de éxito:** no queda código de producto con datos mock ni componentes sin importar.
 
 
-### `FIX-101` - Corrección de filtros reactivos en memoria (búsqueda de texto y alternancia en ejecución / detenidas) (`FIX-79` / `FRN-20B`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz
-- **Estimación:** 1 h
-- **Depende de:** `FIX-79`, `FRN-20B` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/pages/Instances.tsx`, la pipeline de filtrado en memoria (`useMemo` sobre `instances`) no actualiza reactivamente el listado visible al ingresar texto en el input de búsqueda ni conserva los contadores sincronizados al alternar entre estados "En ejecución" (`running`) y "Detenidas" (`stopped`).
-- **Qué debe hacer el equipo de frontend:**
-  1. En `Instances.tsx`, asegurar que el cambio en el `input` de búsqueda actualice el estado local de forma reactiva y filtre las filas en memoria sin llamadas extra al backend.
-  2. Ajustar el filtrado por estado (`running` / `stopped`).
-  3. Certificar que `test/front/instances-ola2.test.tsx` pase 6 de 6 pruebas en verde.
-- **Criterio de éxito:** `test/front/instances-ola2.test.tsx` pasa al 100% en verde.
-
-
-### `FIX-103` - Manejo defensivo de arrays de telemetría de nodo en `useNodeStatus.ts` (`TypeError: serie.map is not a function`) (`FRN-19C` / `FIX-83`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-19C`, `FIX-83` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/components/features/dashboard/hooks/useNodeStatus.ts:146`, se invoca directamente `serie.map(...)`. Cuando la API o los mocks devuelven un objeto envoltorio (`{ items }` o `{ data }`) o un valor no iterable, se produce la excepción `TypeError: serie.map is not a function`, desmontando el componente `<Dashboard>`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `useNodeStatus.ts:146`, validar `if (!Array.isArray(serie)) return previous || [];` antes de invocar `.map()`.
-  2. Certificar que `dashboard-summary.test.tsx` y `fix-103-node-history.test.tsx` pasen al 100% en verde.
-- **Criterio de éxito:** `useNodeStatus` no arroja excepciones ante respuestas no-array.
-
-
-### `FIX-104` - Visibilidad permanente del banner de advertencia "Próximamente" en todos los pasos de `/instances/new` (`FIX-99` / `FIX-89`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 0,5 h
-- **Depende de:** `FIX-99`, `FIX-89` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/pages/createNewInstances.tsx`, el banner con texto `"Aprovisionamiento en desarrollo — Próximamente en Etapa 2"` se condicionó con `{currentStep >= 3 && ...}`. Al ingresar a `/instances/new` en el paso inicial (`currentStep === 0` o `1`), el banner no se renderiza y `test/front/fixes-pending.test.tsx:118` falla.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `createNewInstances.tsx`, remover la condición `{currentStep >= 3 && ...}` para que el banner `role="alert"` sea visible permanentemente en la cabecera en todos los pasos.
-  2. Certificar que `fixes-pending.test.tsx` pase el caso `FIX-89` en verde.
-- **Criterio de éxito:** `fixes-pending.test.tsx` pasa el caso `FIX-89` en verde.
+> [!NOTE]
+> **Verificación del 22/10/2026 — retirados de este listado:** `FIX-101`, `FIX-103` y `FIX-104` no eran
+> defectos del submódulo `frontend`, sino expectativas desactualizadas de las pruebas de `test/front`:
+> - `FIX-101`: `Instances.tsx` ya filtra en memoria de forma reactiva; el test buscaba una pestaña
+>   "En ejecución" inexistente en lugar del filtro real (`Filtros` → `Encendidas` / `Detenidas`).
+> - `FIX-103`: `useNodeStatus.ts` ya valida `Array.isArray(serie)`; las pruebas fallaban por simular
+>   `GET /node/templates` con un objeto envoltorio cuando el contrato real responde un array.
+> - `FIX-104`: el asistente `/instances/new` dejó de ser un cascarón estático y hoy es el wizard
+>   funcional de 5 pasos; ya no corresponde exigir el banner "Próximamente". `fixes-pending.test.tsx`
+>   ahora valida el wizard real.
+>
+> Pruebas ajustadas y en verde: `instances-ola2.test.tsx` (6/6) y `fix-103-node-history.test.tsx` (7/7).
+> `FIX-91` permanece porque sí requiere una acción de implementación (eliminar `InstanceTester.tsx`).
 
 

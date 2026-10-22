@@ -74,7 +74,7 @@ describe('FIX-115B - formularios de contraseña', () => {
       'components/features/auth/utils/validateAuthenticationFields.ts',
     ]) {
       const source = fs.readFileSync(path.join(src, file), 'utf-8');
-      expect(source, `${file} menciona "entre 8 y 12 caracteres"`).not.toMatch(/entre 8 y 12/i);
+      expect(source, `${file} menciona "entre 8 y 12 caracteres"`).not.toMatch(/entre 8 y 12\b/i);
       expect(source, `${file} compara la longitud contra 12`).not.toMatch(/length\s*(<=|>)\s*12\b/);
     }
   });

@@ -47,6 +47,9 @@ function renderDashboardWithHistory(historyResponse: () => Response) {
     if (/\/node\/history(\?|$)/.test(String(url))) return Promise.resolve(historyResponse());
     if (/\/node\/status(\?|$)/.test(String(url))) return Promise.resolve(json(nodeStatus));
     if (String(url).includes('/events/ticket')) return Promise.resolve(json({ ticket: 'ticket-fix103' }));
+    // Contrato real: GET /api/node/templates responde un array (no un objeto envoltorio).
+    if (/\/node\/templates(\?|$)/.test(String(url))) return Promise.resolve(json([]));
+    if (/\/instances(\?|$)/.test(String(url))) return Promise.resolve(json([]));
     return Promise.resolve(json({}));
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -79,9 +82,9 @@ describe('FIX-103 - useNodeStatus tolera series de histórico que no son arrays'
     await waitFor(() => expect(historyCalls(fetchMock).length).toBeGreaterThan(0));
 
     // Las tarjetas del Dashboard siguen presentes: el árbol no se desmontó por la excepción.
-    expect(await screen.findByRole('heading', { name: /instancias totales/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /resumen de instancias/i })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.getByRole('heading', { name: /instancias totales/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /resumen de instancias/i })).toBeInTheDocument();
 
     window.removeEventListener('error', onError);
     expect(errors.map(String).join('\n')).not.toMatch(/serie\.map is not a function|is not iterable|Cannot read properties/);

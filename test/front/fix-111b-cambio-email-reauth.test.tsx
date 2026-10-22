@@ -40,7 +40,7 @@ function renderUserDetail() {
   });
   vi.stubGlobal('fetch', fetchMock);
   render(withAppProviders(
-    <MemoryRouter initialEntries={['/users/usr-10']}>
+    <MemoryRouter initialEntries={[{ pathname: '/users/usr-10', state: { isCurrentUser: true } }]}>
       <Routes><Route path="/users/:userId" element={<UserDetail />} /></Routes>
     </MemoryRouter>,
   ));

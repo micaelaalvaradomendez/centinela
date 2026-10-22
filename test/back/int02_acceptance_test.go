@@ -29,11 +29,13 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	operator := createActiveUser(t, adminToken, fmt.Sprintf("int02_op_%d", suffix), "OPERATOR")
 
-	// Precondición: Asignar al OPERATOR permiso FULL_ACCESS sobre la instancia 101
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
+	// Precondición: Asignar al OPERATOR permiso FULL_ACCESS sobre la instancia 101 (con ref ofuscada FIX-107)
 	permEndpoint := "/admin/users/" + operator.ID + "/permissions"
 	if status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{
 		"permisos": []map[string]any{
-			{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
+			{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"},
 		},
 	}); status != http.StatusNoContent {
 		t.Fatalf("precondición INT-02: asignación de permisos sobre 101 falló (%d): %#v", status, body)
@@ -71,11 +73,12 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 		if _, ok := nodeStatus["ram"]; !ok {
 			t.Errorf("Paso 2: /node/status debe incluir objeto 'ram'")
 		}
-		if _, ok := nodeStatus["storage"]; !ok {
-			t.Errorf("Paso 2: /node/status debe incluir objeto 'storage'")
+		// FIX-117A: el OPERATOR no recibe storage del host (es null por segregación de telemetría)
+		if nodeStatus["storage"] != nil {
+			t.Errorf("Paso 2: /node/status para OPERATOR debe tener storage en null (FIX-117A), recibido: %#v", nodeStatus["storage"])
 		}
 
-		// Validar resumen consolidado de instancias (instancesSummary)
+		// Validar resumen consolidado de instancias asignadas al operador
 		summary, ok := nodeStatus["instancesSummary"].(map[string]any)
 		if !ok {
 			t.Fatalf("Paso 2: /node/status debe incluir objeto 'instancesSummary'")
@@ -100,8 +103,8 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 		}
 
 		instancia := inventory[0].(map[string]any)
-		if fmt.Sprint(instancia["id"]) != "101" {
-			t.Errorf("Paso 3: ID de instancia esperado 101, recibido %v", instancia["id"])
+		if fmt.Sprint(instancia["id"]) != ref101 {
+			t.Errorf("Paso 3: ID de instancia esperado %s (referencia ofuscada FIX-107), recibido %v", ref101, instancia["id"])
 		}
 
 		// Comprobar presencia de campos del inventario
@@ -125,9 +128,9 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 
 		// El stub reporta la 101 como "running": la orden válida es el apagado ordenado (stop).
 		// Con "start" el backend responde 409 INSTANCE_INVALID_STATE (correcto, BAC-24A).
-		status, actionResp := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", operatorToken, nil)
+		status, actionResp := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/shutdown", operatorToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("Paso 4: POST /instances/101/status/shutdown esperado 202 Accepted, recibido %d: %#v", status, actionResp)
+			t.Fatalf("Paso 4: POST /instances/%s/status/shutdown esperado 202 Accepted, recibido %d: %#v", ref101, status, actionResp)
 		}
 
 		tareaID := requiredString(t, actionResp, "tareaId")
@@ -161,9 +164,9 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 	t.Run("Paso 5: Notificación en tiempo real TASK_FINISHED y desbloqueo de instancia", func(t *testing.T) {
 		events := listenEvents(t, operatorToken)
 
-		status, actionResp := requestJSON(t, http.MethodPost, "/instances/101/status/shutdown", operatorToken, nil)
+		status, actionResp := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/shutdown", operatorToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("Paso 5: POST /instances/101/status/shutdown esperado 202, recibido %d: %#v", status, actionResp)
+			t.Fatalf("Paso 5: POST /instances/%s/status/shutdown esperado 202, recibido %d: %#v", ref101, status, actionResp)
 		}
 		tareaID := requiredString(t, actionResp, "tareaId")
 
@@ -201,9 +204,9 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 
 	t.Run("Paso 7: Borrado y revocación — el ADMIN elimina instancia y OPERATOR pierde acceso automáticamente", func(t *testing.T) {
 		// Validar endpoint de eliminación
-		statusDel, _ := requestJSON(t, http.MethodDelete, "/instances/101", adminToken, nil)
+		statusDel, _ := requestJSON(t, http.MethodDelete, "/instances/"+ref101, adminToken, nil)
 		if statusDel == http.StatusNotFound || statusDel == http.StatusMethodNotAllowed {
-			t.Skip("Paso 7: DELETE /instances/:vmid pendiente de implementación (BAC-24B)")
+			t.Skip("Paso 7: DELETE /instances/:instanceRef pendiente de implementación (BAC-24B)")
 		}
 
 		if statusDel == http.StatusAccepted || statusDel == http.StatusNoContent {
@@ -215,8 +218,8 @@ func TestINT02_SmokeTestEndToEndMVP(t *testing.T) {
 			if status == http.StatusOK {
 				for _, item := range list {
 					inst := item.(map[string]any)
-					if fmt.Sprint(inst["id"]) == "101" {
-						t.Errorf("Paso 7: instancia 101 eliminada aún figura visible en el inventario del OPERATOR")
+					if fmt.Sprint(inst["id"]) == ref101 {
+						t.Errorf("Paso 7: instancia %s eliminada aún figura visible en el inventario del OPERATOR", ref101)
 					}
 				}
 			}
