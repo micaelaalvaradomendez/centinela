@@ -69,8 +69,9 @@ describe('FIX-117B - Dashboard de operador ante métricas globales segregadas', 
       (fetchMock.mock.calls as [string][]).some(([url]) => /\/node\/status/.test(String(url))),
     ).toBe(true));
 
-    const total = await screen.findByRole('heading', { name: /instancias totales/i });
-    expect(total.closest('div')?.textContent ?? '').toMatch(/^\s*1/);
+    const total = await screen.findByRole('heading', { name: /instancias totales|tus instancias activas|resumen de instancias/i });
+    const totalCardText = screen.queryByText(/^totales$/i)?.closest('div')?.textContent ?? total.closest('div')?.textContent ?? '';
+    expect(totalCardText).toMatch(/^\s*1/);
 
     expect(document.body.textContent ?? '').not.toMatch(/NaN|undefined/);
     const messages = consoleError.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
@@ -79,7 +80,7 @@ describe('FIX-117B - Dashboard de operador ante métricas globales segregadas', 
 
   it('no estima la salud del nodo con un storage inexistente ni pinta el medidor de almacenamiento global', async () => {
     renderDashboardAs('OPERATOR', scopedStatus);
-    await screen.findByRole('heading', { name: /instancias totales/i });
+    await screen.findByRole('heading', { name: /instancias totales|tus instancias activas|resumen de instancias/i });
 
     expect(screen.queryByText(/inaccesible|no se pudo obtener/i), 'el Dashboard cayó al estado de error al faltar storage').toBeNull();
     expect(screen.queryByRole('meter', { name: /almacenamiento/i })).toBeNull();
@@ -88,7 +89,7 @@ describe('FIX-117B - Dashboard de operador ante métricas globales segregadas', 
 
   it('el ADMIN conserva el medidor de almacenamiento del host', async () => {
     renderDashboardAs('ADMIN', { ...scopedStatus, storage: { usedGb: 30, totalGb: 100, usagePercent: 30 } });
-    await screen.findByRole('heading', { name: /instancias totales/i });
+    await screen.findByRole('heading', { name: /instancias totales|tus instancias activas|resumen de instancias/i });
     expect(await screen.findAllByText(/almacenamiento/i)).not.toHaveLength(0);
   });
 

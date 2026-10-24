@@ -101,9 +101,10 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
   let userId = '';
   let temporary = '';
   let secret = '';
-  // El backend limita la contraseña a 12 caracteres (maxLength del contrato CambiarContrasenaInput).
-  const password = 'Int02Pass12!';
+  // El backend acepta contraseñas de entre 8 y 128 caracteres con requisitos de complejidad (FIX-115A).
+  const password = 'Int02PasswordSegura2026!';
   let operatorToken = '';
+  let targetInstanceId = '';
 
   beforeAll(() => { globalThis.fetch = browserFetch as typeof fetch; });
   afterAll(() => { globalThis.fetch = realFetch; });
@@ -119,8 +120,14 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
     userId = created.id;
     temporary = mailed(email, 'clave provisoria es:');
 
-    // Asignar permiso FULL_ACCESS sobre 101
-    await assignUserInstances(userId, [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }]);
+    // Resolver la referencia ofuscada (FIX-107) de la instancia web-01 (VMID 101)
+    const allInstances = await apiClient.get<Array<Record<string, unknown>>>('/instances');
+    const web01 = allInstances.find((inst) => inst.name === 'web-01') ?? allInstances[0];
+    targetInstanceId = String(web01?.id ?? '');
+    expect(targetInstanceId).toMatch(/^inst_/);
+
+    // Asignar permiso FULL_ACCESS sobre la referencia ofuscada
+    await assignUserInstances(userId, [{ vmid: targetInstanceId, nivelAcceso: 'FULL_ACCESS' }]);
 
     // Enrolar 2FA
     clearBrowserSession();
@@ -150,22 +157,24 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
     const nodeStatus = await apiClient.get<Record<string, unknown>>('/node/status');
     expect(nodeStatus).toHaveProperty('cpu');
     expect(nodeStatus).toHaveProperty('ram');
-    expect(nodeStatus).toHaveProperty('storage');
+    // FIX-117A: para OPERATOR se omite storage global
+    expect(nodeStatus.storage).toBeUndefined();
     expect(nodeStatus).toHaveProperty('instancesSummary');
   });
 
-  it('Paso 3: Inventario — filtrado RBAC (solo ve 101 con nivelAcceso FULL_ACCESS)', { timeout: 15000 }, async () => {
+  it('Paso 3: Inventario — filtrado RBAC (solo ve su instancia asignada con ref ofuscada y nivelAcceso FULL_ACCESS)', { timeout: 15000 }, async () => {
     window.sessionStorage.setItem('centinela_access', operatorToken);
     const instances = await apiClient.get<Array<Record<string, unknown>>>('/instances');
     expect(instances.length).toBe(1);
-    expect(String(instances[0].id)).toBe('101');
+    expect(String(instances[0].id)).toBe(targetInstanceId);
+    expect(String(instances[0].id)).toMatch(/^inst_/);
     expect(instances[0].nivelAcceso).toBe('FULL_ACCESS');
   });
 
   it('Paso 4: Ciclo de vida — despacho asíncrono y retorno 202 con tareaId', { timeout: 20000 }, async () => {
     window.sessionStorage.setItem('centinela_access', operatorToken);
-    // La 101 está encendida: la orden válida es el apagado ordenado (con /start sería 409 INSTANCE_INVALID_STATE).
-    const result = await apiClient.post<{ tareaId: string; upid?: string }>('/instances/101/status/shutdown');
+    // La instancia está encendida: la orden válida es el apagado ordenado (con /start sería 409 INSTANCE_INVALID_STATE).
+    const result = await apiClient.post<{ tareaId: string; upid?: string }>(`/instances/${targetInstanceId}/status/shutdown`);
     expect(result.tareaId).toBeTruthy();
     expect(typeof result.tareaId).toBe('string');
   });

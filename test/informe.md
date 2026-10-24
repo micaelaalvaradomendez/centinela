@@ -1,140 +1,155 @@
-# Informe de estado de tareas verificado por pruebas
+# Informe de Estado de Tareas Verificado por Pruebas
 
-**Fecha de ejecución:** 21/10/2026 (tras actualizar los submódulos a los últimos commits de `origin/main`)  
-**Alcance:** Evaluación exhaustiva de todas las 31 tareas listadas en [documentacion/actual.md](../documentacion/actual.md). Contrastadas tras sincronizar ambos submódulos con `origin/main` y ejecutar las suites completas en `test/front` (Vitest + jsdom) y `test/back` (Go).
+**Fecha de ejecución:** 24/10/2026 (tras actualizar los submódulos a los últimos commits de `origin/main`)  
+**Alcance:** Evaluación integral de las **18 tareas activas** en [documentacion/actual.md](../documentacion/actual.md) (1 de Etapa 1, 9 de Etapa 2 y 8 de Etapa 3), además de la verificación de regresión de las **20 tareas** referenciadas en el encabezado de `actual.md`. Todas las pruebas fueron ejecutadas contra las suites completas en `test/front` (Vitest + jsdom) y `test/back` (Go).
 
-| Componente | Revisión probada (`origin/main`) | Commits clave incorporados |
+| Submódulo | Revisión probada (`origin/main`) | Últimos commits incorporados |
 |---|---|---|
-| **Backend** | `1801e33` (avanza desde `8daaf87`, 29 commits nuevos) | `1801e33` (**`FIX-118`**: eliminación de credenciales por defecto hardcodeadas en migraciones de BD y soporte `INITIAL_ADMIN_EMAIL`/`PASSWORD`), `4240edf`/`846ad66` (**`BAC-24C`/`FIX-113`**: limpieza transaccional de permisos al eliminar VM/LXC), `dc50c0a`/`526d0f2`/`10e2c84` (**`FIX-111A`**: blindaje contra secuestro de email con reautenticación y confirmación por doble canal), `b7cdaf0` (**`FIX-115A`**: cota de contraseñas ampliada a 128 caracteres), `638bb5e`/`a0f5465`/`c99c9f5` (**`FIX-114`**: revocación de sesiones concurrentes al cambiar contraseña), `f738f1c`/`ef53022` (**`FIX-112`**: rate limiting y serialización de intentos de recuperación), `c51c77d` (**`FIX-107`**: ofuscación reversible de VMIDs con tokens públicos `:instanceRef`), `1d84e7b` (**`FIX-109`**: enmascaramiento de nombres de host, nodos y pools de storage), `c9deb62` (**`FIX-110`**: saneamiento de errores Proxmox y trazas en SSE), `16a7ba2`/`ad6565f` (**`BAC-36`**: endpoint REST de métricas históricas con caché de 30s), `5c72bbb` (**`FIX-119`**: validación de existencia de VMIDs y bloqueo de instancias protegidas en asignación de permisos), `94e95a2` (**`FIX-117A`**: segregación de telemetría del host por rol para operadores), `a25d1b3` (**`FIX-116`**: validación regex de parámetros de creación contra inyección de directivas). |
-| **Frontend** | `b0a7105` (avanza desde `91eabf4`, 34 commits nuevos) | `b6ce6fe` (**`FIX-104B`/`FIX-105`**: adopción obligatoria de `tareaId` y desacople de `upid`), `65765e4` a `8688b5d` (**`FRN-24`**: asistente de creación - Paso 1 y Paso 2), `3723b40` a `e04bfcb` (**`FRN-25`**: asistente de creación - Paso 3 y Paso 4), `e0a4fc2` (reorganización de resumen y gráficos de recursos en Dashboard), `3cd1a3b`/`3b98e91` (banner Etapa 2 en `/instances/new`), `241f6af` (auditoría distinguida y filtrado de ruido SSE). |
+| **Backend** | `c08af54` (`fix: purgar permisos al destruir instancias`) | `c08af54` (**`BAC-24C` / `FIX-113`**: purga transaccional de permisos al destruir instancias, auditoría `INSTANCE_PERMISSIONS_PURGED` y notificación SSE `TASK_FINISHED` a `UsuariosAfectados`), `1801e33` (**`FIX-118`**: eliminación de credenciales por defecto en sembrado de administrador), `a25d1b3` (**`FIX-116`**: validación contra inyección de directivas en creación de instancias), `94e95a2` (**`FIX-117A`**: segregación de telemetría del host por rol para operadores), `5c72bbb` (**`FIX-119`**: validación de existencia de VMIDs y bloqueo de instancias protegidas en asignación de permisos). |
+| **Frontend** | `d4e99b2` (`Merge branch 'fix/tests-verdes': suite del frente en verde`) | `d4e99b2` / `019d2de` / `b61d117` / `e78736c` (ajustes de pruebas internas del submódulo frontend), `59e5661` / `02cf6d8` (**`FRN-27` / `FRN-28` / `FRN-26`**: modal `EditInstanceConfigModal`, hook `useEditInstanceConfig`, servicio `updateInstanceConfiguration` y pestañas de `InstanceDetailPage`), `5c993ee` (**`FIX-117B`**: adaptación del Dashboard para operadores ante segregación de métricas globales). |
 
 ---
 
-## 1. Resumen Ejecutivo del Tablero (`actual.md`)
+## 1. Resumen Ejecutivo de las 18 Tareas Activas de `documentacion/actual.md`
 
-De las **31 tareas** presentes en `documentacion/actual.md`:
-- **11 tareas implementadas con éxito (verificadas en verde)**:
-  - `BAC-24C` / `FIX-113` (Limpieza de permisos al eliminar una instancia).
-  - `BAC-36` (Endpoint REST de métricas históricas con caché de 30s y `:instanceRef`).
-  - `FIX-104B` / `FIX-105` (Desacople de UPID y adopción de `tareaId` en Frontend).
-  - `FIX-107` (Ofuscación reversible de VMIDs en Backend).
-  - `FIX-109` (Enmascaramiento de topología de host y storages en Backend).
-  - `FIX-110` (Saneamiento de errores y filtración de trazas Proxmox en Backend).
-  - `FIX-111A` (Blindaje contra secuestro de email con reautenticación y 2FA en Backend).
-  - `FIX-112` (Rate limiting en autenticación y protección contra fuerza bruta en Backend).
-  - `FIX-114` (Revocación obligatoria de sesiones concurrentes al cambiar contraseña en Backend).
-  - `FIX-115A` (Ampliación de longitud de contraseñas a 128 caracteres en Backend).
-  - `FIX-116` (Prevención de inyección de parámetros en Proxmox en Backend).
-  - `FIX-117A` (Segregación de telemetría de nodo por rol para operadores en Backend).
-  - `FIX-119` (Validación de VMIDs existentes y no protegidos en asignación de permisos en Backend).
-- **2 tareas implementadas con problemas o discrepancias de integración**:
-  - `FRN-24` y `FRN-25` (Wizard de creación en frontend: commits subidos pero discrepancias con selectores y validaciones de cuota en tests).
-- **18 tareas NO implementadas aún**:
-  - `FIX-91` (Eliminación de `InstanceTester.tsx`).
-  - `FIX-100` (Manejo de `undefined` en `formatCount` de Dashboard).
-  - `INF-10` (Disponibilidad de plantillas LXC e ISOs en Proxmox físico real).
-  - `FIX-101` (Filtros reactivos en memoria de `Instances.tsx`).
-  - `FIX-102` (Accesibilidad y visibilidad de acciones de energía para operadores).
-  - `FIX-103` (Manejo defensivo de arrays no iterables en `useNodeStatus.ts`).
-  - `FIX-104` (Banner permanente en `/instances/new`).
-  - `FIX-108` (Soporte de IDs opacos de instancia en frontend).
-  - `FIX-111B` (Modal de reautenticación para cambio de email en frontend).
-  - `FIX-115B` (Soporte de contraseñas de hasta 128 caracteres en frontend).
-  - `FIX-117B` (Dashboard resiliente a respuesta acotada de operador en frontend).
-  - `FIX-118` (Eliminación de credenciales hardcodeadas `Admin123!` en Backend).
-  - `FRN-22` (Hook `useInstanceMetrics` y cliente WebSocket en frontend).
-  - `FRN-23` (Gráficos interactivos de rendimiento y selector de rango temporal en frontend).
+### 1.1 Implementadas y pasan los tests al 100% (4 tareas)
+1. **`BAC-24C` / `FIX-113`** — Limpieza de permisos al eliminar una instancia (`Backend`):
+   - **Evidencia:** Commit `c08af54` en `internal/core/services/seguimiento_tareas.go`. Captura `UsuariosAfectados` antes de eliminar filas de `permisos_instancia`, registra `INSTANCE_PERMISSIONS_PURGED` en auditoría y despacha `TASK_FINISHED` mediante `PublicarParaUsuarios`.
+   - **Prueba:** `TestFIX113_PurgaDePermisosAlEliminarInstancia` en `test/back/etapa2_seguridad_acceptance_test.go` — **PASS**.
+2. **`FIX-117B`** — Adaptación del Dashboard de operador ante segregación de métricas globales (`Frontend`):
+   - **Evidencia:** Commit `5c993ee` en `Home.tsx` y `useNodeStatus.ts`. Oculta el bloque de almacenamiento global cuando `storage` se omite para el rol `OPERATOR` y renderiza el resumen acotado de instancias sin errores de consola.
+   - **Prueba:** `test/front/fix-117b-dashboard-operador.test.tsx` (4/4 pruebas) — **PASS**.
+3. **`FRN-27`** — Modal de reconfiguración de vCPU y RAM con advertencia de reinicio / hot-plug (`Frontend`):
+   - **Evidencia:** Commit `02cf6d8` (`EditInstanceConfigModal.tsx`, `InstanceResourcesPanel.tsx`, `useEditInstanceConfig.ts`). Precarga `cores` y `ramMb`, calcula $\Delta\text{RAM}$ reactivamente contra `allocatable.freeRamMb`, bloquea excesos de cuota, oculta/deshabilita edición para `READ_ONLY` y muestra la advertencia de hot-plug cuando la instancia está encendida.
+   - **Prueba:** `test/front/frn-27-28-edit-instance-config.test.tsx` (bloque `FRN-27`, 3/3 pruebas) — **PASS**.
+4. **`FRN-28`** — Integración de edición en la página de Detalle de Instancia y refresco reactivo (`Frontend`):
+   - **Evidencia:** Commit `02cf6d8` (`instanceDetailService.ts`, `useInstanceDetail.ts`). Envía `PUT /api/instances/:instanceRef/config`, distingue `requiresReboot: false` (toast verde y actualización reactiva de `vCPU` y `Memoria RAM` en el detalle y tarjeta `Hardware`) frente a `requiresReboot: true` (toast amarillo y banner `role="status"` de reinicio pendiente), y maneja errores `409 RESOURCE_QUOTA_EXCEEDED` y `409 INSTANCE_BUSY`.
+   - **Prueba:** `test/front/frn-27-28-edit-instance-config.test.tsx` (bloque `FRN-28`, 3/3 pruebas) — **PASS**.
 
 ---
 
-## 2. Resultados de las Suites de Prueba
+### 1.2 Implementadas (total o parcialmente) pero NO pasan los tests (8 tareas)
+1. **`FIX-108`** — Adaptación del Frontend para consumo de identificadores de instancia ofuscados (`Frontend`):
+   - **Estado de implementación:** Parcialmente implementada. `InventoryInstance.id` acepta `string | number` y las vistas operan con `inst_...` (5/11 pruebas pasan en `fix-108-ids-ofuscados.test.tsx`).
+   - **Por qué falla el test (6/11 fallos en `test/front/fix-108-ids-ofuscados.test.tsx`):** `validateInstanceRef` en `frontend/centinela/src/components/features/instances/services/instanceService.ts:12-16` únicamente comprueba `typeof ref === 'string' && ref.trim()` sin validar el formato `/^[a-zA-Z0-9_-]+$/`, permitiendo pasar identificadores maliciosos con path traversal (`../admin/users`), espacios (`inst 101`), query strings (`inst_101?admin=true`), barras (`inst/101`), punto y coma (`inst_101;rm`) o saltos de línea.
+2. **`FRN-23`** — Componentes de gráficos interactivos de rendimiento y selector de rango temporal (`Frontend`):
+   - **Estado de implementación:** Parcialmente implementada en `InstanceResourceUsage.tsx` (renderiza selector `2h`/`24h` y consulta `GET /instances/:instanceRef/metrics?timeframe=2h`; pasa 1/9 pruebas en `frn-23-metrics-charts.test.tsx`).
+   - **Por qué falla el test (8/9 fallos en `test/front/frn-23-metrics-charts.test.tsx`):**
+     - Solo existen 2 gráficos (`CPU` y `Memoria`); faltan los gráficos de **Tráfico de Red (KB/s In/Out)** y **Disco I/O (KB/s Read/Write)** exigidos en `actual.md:118-119`.
+     - Falta la opción **"En vivo"** en el selector de rango temporal conectada al WebSocket (`FRN-22`).
+     - No se muestra el indicador **"Instancia detenida"** cuando `cpu` y `mem` son `null`.
+3. **`FRN-26`** — Envío de creación, manejo de errores de cuota (`409`) y seguimiento en la UI (`Frontend`):
+   - **Estado de implementación:** Parcialmente implementada en `createNewInstances.tsx` y `useInstances.ts` (despacha `POST /api/instances`, deshabilita el botón mostrando `"Creando instancia..."`, navega a `/instances` tras `202 Accepted` y procesa `TASK_FINISHED`; pasa 1/4 pruebas en `frn-26-create-submit-quota-sse.test.tsx`).
+   - **Por qué falla el test (3/4 fallos en `test/front/frn-26-create-submit-quota-sse.test.tsx`):**
+     - Ante `409 Conflict (RESOURCE_QUOTA_EXCEEDED)`, `createNewInstances.tsx` solo emite un toast flotante global y **no renderiza un banner de alerta en línea (`role="alert"`) dentro del wizard** como exige `actual.md:139`.
+     - En `/instances`, cuando una instancia recién creada tiene `activeTask: { action: 'CREATE', status: 'RUNNING' }`, `Instances.tsx` muestra el texto genérico `"Ejecutando..."` en el botón de acciones pero **no muestra el estado transitorio `"Creando..."`** en la fila (`actual.md:140`).
+4. **`FRN-36` (`BRG-10-FRN`)** — Modularización de `InstanceDetailPage` para Pestaña de Snapshots y Estados Transitorios (`Frontend`):
+   - **Estado de implementación:** Parcialmente implementada en `InstanceDetailContent.tsx` (la pestaña `"Snapshots"` ya existe y es seleccionable; pasa 1/3 pruebas del bloque `FRN-36` en `frn-36-29-snapshots-ui.test.tsx`).
+   - **Por qué falla el test (2/3 fallos del bloque `FRN-36` en `test/front/frn-36-29-snapshots-ui.test.tsx`):**
+     - `InstanceStatusBadge` (`InstanceBadges.tsx:21-40`) solo contempla `start` (`"Encendiendo…"`) y `stop` (`"Apagando…"`), ignorando `SNAPSHOTTING` (`"Creando snapshot..."`) y `ROLLING_BACK` (`"Revirtiendo..."`).
+     - En `InstanceDetailContent.tsx:65`, `<InstanceAction variant="header" disabled={isSavingResources} ... />` no recibe `isBusy`, y `InstanceAction.tsx:206-219` no incluye `isTransitioning` en la propiedad `disabled` de los botones `Encender`, `Apagar` y `Reiniciar` cuando `variant === 'header'`.
+5. **`BAC-44`** — Interceptor global y consultas complejas sobre auditoría particionada (`Backend`):
+   - **Estado de implementación:** Parcialmente implementada en `audit_handler.go` y `audit_repository.go` (soporta `desde`, `hasta`, `accion`, `usuarioId`, `resultado`, validación `desde > hasta` y orden `fecha_hora DESC`).
+   - **Por qué falla el test (`TestEtapa3BAC44_InterceptorGlobalYConsultasAuditoria` en `test/back/etapa3_acceptance_test.go`):**
+     - `internal/core/ports/audit_port.go` aún no declara las constantes de acción de Etapa 3: `SNAPSHOT_CREATE`, `SNAPSHOT_ROLLBACK`, `SNAPSHOT_DELETE` ni `CONFIG_UPDATED` (actualmente usa `CONFIG_INSTANCE`).
+     - `audit_handler.go` no lee los query params `recursoTipo`, `recursoId`, `page` ni `limit` especificados en `actual.md:239` (solo lee `pagina` y `tamano`).
+6. **`BAC-45`** — Streaming de exportación estructurada de auditoría a CSV y JSON (`Backend`):
+   - **Estado de implementación:** Parcialmente implementada en `audit_handler.go`, `audit_service.go` y `audit_repository.go` (existe `GET /api/admin/audit/export` para CSV y JSON con sanitización de fórmulas `=`, `+`, `-`, `@`).
+   - **Por qué falla el test (`TestEtapa3BAC45_StreamingExportacionAuditoriaCSVyJSON` en `test/back/etapa3_acceptance_test.go`):**
+     - `audit_repository.go` (`ListarParaExportacion`) carga hasta 100.000 registros en memoria con `.Limit(limiteExportacion).Find(& filas)` en lugar de transmitir mediante cursor SQL (`.Rows()`, `ScanRows` o `c.Stream`) como exige `actual.md:252`.
+     - `audit_handler.go` genera `filename="auditoria.csv"` / `"auditoria.json"` en lugar del formato `filename="auditoria_centinela_YYYYMMDD.csv|json"` exigido en `actual.md:253`, y lee `formato` pero no el alias `format` de `actual.md:251`.
+7. **`FRN-31`** — Vista administrativa de Auditoría con filtros reactivos completos (`Frontend`):
+   - **Estado de implementación:** Parcialmente implementada en `Auditoria.tsx` (renderiza tabla paginada, badges semánticos verde/amarillo/rojo para `SUCCESS`/`WARNING`/`FAILED` y exportación CSV; pasa 1/4 pruebas en `frn-31-audit-etapa3.test.tsx`).
+   - **Por qué falla el test (3/4 fallos en `test/front/frn-31-audit-etapa3.test.tsx`):**
+     - El filtro de fecha es un único botón disparador de calendario sin controles con `aria-label="Desde"` y `aria-label="Hasta"` (`actual.md:309`).
+     - Faltan el selector de filtro por `recursoTipo` y las opciones de acción de Etapa 3 (`SNAPSHOT_CREATE`, `SNAPSHOT_ROLLBACK`, `SNAPSHOT_DELETE`, `ALERT_TRIGGERED`, `CONFIG_UPDATED`).
+     - Al pulsar `"Ver detalles"` no se abre un modal (`role="dialog"`) con el payload JSON formateado (`actual.md:313`).
+     - Falta el botón/opción para exportar en formato **JSON** (`actual.md:251`).
 
-### 2.1 Backend (`test/back`) — Go Test
-- **Comando:** `go test -short -v ./...`
-- **Total tests ejecutados:** 22 suites principales.
-- **Suites de Etapa 2 de Seguridad (`etapa2_seguridad_acceptance_test.go`):**
-  - ✅ `TestFIX107_OfuscacionDeVMIDs`: PASS (ofuscación bidireccional segura y rutas `:instanceRef`).
-  - ✅ `TestFIX110_SaneamientoDeErrores`: PASS (ocultamiento de trazas Proxmox al cliente).
-  - ✅ `TestFIX111A_BlindajeCambioDeEmail`: PASS (exigencia de contraseña actual y TOTP, flujo doble canal con Redis).
-  - ✅ `TestFIX112_MitigacionFuerzaBrutaRateLimit`: PASS (bloqueo transaccional de intentos y rate limiting).
-  - ✅ `TestFIX113_LimpiezaPermisosBajaInstancia`: PASS (purga atómica de permisos tras eliminación).
-  - ✅ `TestFIX114_RevocacionSesionesCambioPassword`: PASS (revocación de sesiones activas en Redis y base de datos).
-  - ✅ `TestFIX115A_LongitudPassword128Chars`: PASS (admisión de hasta 128 caracteres en DTOs y validación).
-  - ✅ `TestFIX116_InyeccionDeParametrosProxmox`: PASS (rechazo de comas y directivas hostiles en bridge y hostnames).
-  - ✅ `TestFIX118_SinCredencialesPorDefecto`: **PASS** (eliminación de la contraseña estática `Admin123!`, deshabilitación en producción y generación de contraseñas aleatorias temporales en desarrollo).
-- **Suites de Etapa 2 Generales (`etapa2_acceptance_test.go`):**
-  - ✅ `TestEtapa2BAC34_AdaptadorMetricasRRD`: PASS.
-  - ✅ `TestEtapa2BAC39_SeguimientoCreacionYPermisos`: PASS.
-  - ✅ `TestEtapa2BAC40_EndpointConfigRecursos`: PASS.
-  - ✅ `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`: PASS.
-  - ✅ `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`: PASS.
-  - ✅ `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`: PASS.
-  - ✅ `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`: PASS.
-  - ⚠️ `TestEtapa2BAC36_MetricasHistoricasEndpoint`: Fallo cosmético de aserción estática en el test (la suite buscaba la ruta `:vmid/metrics` o en `instance_handler.go`, pero tras `FIX-107` la ruta se declaró como `instancia.GET("/metrics")` bajo `:instanceRef` en `instance_metrics_handler.go`, estando 100% funcional en el backend).
-
-### 2.2 Frontend (`test/front`) — Vitest + jsdom
-- **Comando:** `npx vitest run`
-- **Archivos de prueba:** 38 archivos (20 pasaron, 16 fallaron, 2 omitidos).
-- **Pruebas individuales:** 264 pruebas (170 pasaron, 78 fallaron, 16 omitidas).
-- **Suites en verde destacadas:**
-  - ✅ `fix-104b-105-tareaid.test.tsx` (desacople de `upid` y adopción de `tareaId` verificado al 100%).
-  - ✅ `instances-operation.test.tsx` (operaciones de energía con seguimiento de `tareaId`).
-  - ✅ `instance-detail.test.tsx` (visualización de detalles).
-  - ✅ `instances-table.test.tsx` (tabla de inventario).
-  - ✅ `login-form.test.tsx`, `two-factor-form.test.tsx`, `password-change.test.tsx` (flujos de autenticación estándar).
-- **Principales causas de fallos en frontend:**
-  1. **Excepción no capturada en Dashboard (`FIX-100` / `FIX-103`):** `TypeError: Cannot read properties of undefined (reading 'toLocaleString')` en `Dashboard.tsx:63` al evaluar `formatCount(templates.count)` cuando llega `undefined`, lo que desmonta componentes en cascada.
-  2. **Identificadores numéricos rígidos (`FIX-108`):** componentes del frontend que esperan `number` en vez de `string` para los IDs de máquina ofuscados.
-  3. **Falta de componentes de métricas (`FRN-22`, `FRN-23`):** hooks y componentes Recharts pendientes de desarrollo.
-  4. **Discrepancias en el Wizard (`FRN-24`, `FRN-25`):** componentes subidos pero sin concordar exactamente con los selectores de los tests de aceptación.
-
----
-
-## 3. Matriz Exhaustiva de Tareas de `documentacion/actual.md`
-
-| # | Tarea | Área | Responsable | Estado | Evidencia de Código y Test |
-|---|---|---|---|:---:|---|
-| 1 | `BAC-24C` / `FIX-113` | Backend | Tayra | 🟢 **Implementada** | Commits `4240edf`, `846ad66`. `TestFIX113_LimpiezaPermisosBajaInstancia` pasa en verde. Purga transaccional en `seguimiento_tareas.go`. |
-| 2 | `FIX-91` | Frontend | Cristian | 🔴 **No Implementada** | `InstanceTester.tsx` sigue presente en el repositorio (`components/features/instances/components/`). |
-| 3 | `FIX-100` | Frontend | Luz / Cristian | 🔴 **No Implementada** | `Dashboard.tsx:63` arroja `TypeError: Cannot read properties of undefined (reading 'toLocaleString')`. |
-| 4 | `INF-10` | Infra | Nico / Lucas | 🟡 **Pendiente** | Requiere entorno Proxmox físico con storages `local:vztmpl` e `iso`. |
-| 5 | `BAC-36` | Backend | Tayra | 🟢 **Implementada** | Commits `ad6565f`, `16a7ba2`. `InstanceMetricsHandler` con caché Redis de 30s bajo `/instances/:instanceRef/metrics`. |
-| 6 | `FIX-101` | Frontend | Luz | 🔴 **No Implementada** | `instances-ola2.test.tsx` falla en filtros en memoria por búsqueda de texto y estado. |
-| 7 | `FIX-102` | Frontend | Belinda / Luz | 🔴 **No Implementada** | En `InstanceAction.tsx` se ajustaron `aria-label`, pero `instances-modals.test.tsx` falla en visibilidad de menú para OPERATOR. |
-| 8 | `FIX-103` | Frontend | Belinda | 🔴 **No Implementada** | `fix-103-node-history.test.tsx` falla ante series que no son arrays en `useNodeStatus.ts`. |
-| 9 | `FIX-104` | Frontend | Cristian | 🔴 **No Implementada** | El banner de aviso en `/instances/new` no es visible permanentemente desde el inicio. |
-| 10 | `FIX-104B` | Frontend | Cristian / Luz | 🟢 **Implementada** | Commit `b6ce6fe`. `fix-104b-105-tareaid.test.tsx` pasa al 100% en verde. |
-| 11 | `FIX-105` | Frontend | Cristian / Luz | 🟢 **Implementada** | Commit `b6ce6fe`. Desacople de `upid` y adopción de `tareaId` en `instanceService.ts`. |
-| 12 | `FIX-107` | Backend | Tayra | 🟢 **Implementada** | Commit `c51c77d`. `TestFIX107_OfuscacionDeVMIDs` pasa al 100% en verde (servicio Sqids/AES y rutas `:instanceRef`). |
-| 13 | `FIX-108` | Frontend | Belinda / Cristian | 🔴 **No Implementada** | `fix-108-ids-ofuscados.test.tsx` falla; frontend aún restringe IDs a enteros. |
-| 14 | `FIX-109` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `1d84e7b`. Enmascaramiento de nombres de host y storages para no-ADMIN. |
-| 15 | `FIX-110` | Backend | Tayra | 🟢 **Implementada** | Commit `c9deb62`. `TestFIX110_SaneamientoDeErrores` pasa al 100% en verde. |
-| 16 | `FIX-111A` | Backend | Lisandro | 🟢 **Implementada** | Commits `dc50c0a`, `526d0f2`. `TestFIX111A_BlindajeCambioDeEmail` pasa al 100% en verde. |
-| 17 | `FIX-111B` | Frontend | Cristian | 🔴 **No Implementada** | `fix-111b-cambio-email-reauth.test.tsx` falla; formulario no solicita clave + TOTP. |
-| 18 | `FIX-112` | Backend | Lisandro / Nico | 🟢 **Implementada** | Commits `f738f1c`, `ef53022`. `TestFIX112_MitigacionFuerzaBrutaRateLimit` pasa al 100% en verde. |
-| 19 | `FIX-113` | Backend | Tayra / Lisandro | 🟢 **Implementada** | Idem `BAC-24C`. Purga transaccional de filas en `permisos_instancia` verificada. |
-| 20 | `FIX-114` | Backend | Lisandro | 🟢 **Implementada** | Commits `638bb5e`, `a0f5465`. `TestFIX114_RevocacionSesionesCambioPassword` pasa en verde. |
-| 21 | `FIX-115A` | Backend | Lisandro | 🟢 **Implementada** | Commit `b7cdaf0`. `TestFIX115A_LongitudPassword128Chars` pasa en verde (cota 128 chars). |
-| 22 | `FIX-115B` | Frontend | Luz | 🔴 **No Implementada** | `fix-115b-contrasenas-largas.test.tsx` falla; `validatePasswordComplexity.ts` aún corta en 12 chars. |
-| 23 | `FIX-116` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `a25d1b3`. `TestFIX116_InyeccionDeParametrosProxmox` pasa en verde. |
-| 24 | `FIX-117A` | Backend | Tayra | 🟢 **Implementada** | Commit `94e95a2`. Segregación de telemetría de nodo y resumen acotado para rol OPERATOR. |
-| 25 | `FIX-117B` | Frontend | Belinda / Cristian | 🔴 **No Implementada** | `fix-117b-dashboard-operador.test.tsx` falla ante respuesta acotada de operador. |
-| 26 | `FIX-118` | Backend | Lisandro | 🟢 **Implementada** | Commit `1801e33`. `TestFIX118_SinCredencialesPorDefecto` pasa al 100% en verde (sin clave estática, desactivado en prod). |
-| 27 | `FIX-119` | Backend | Lisandro / Tayra | 🟢 **Implementada** | Commit `5c72bbb`. Validación de existencia de VMIDs y bloqueo de protegidos en `AsignarPermisos`. |
-| 28 | `FRN-22` | Frontend | Belinda | 🔴 **No Implementada** | `frn-22-use-instance-metrics.test.tsx` falla; falta implementar hook con WebSocket. |
-| 29 | `FRN-23` | Frontend | Luz | 🔴 **No Implementada** | `frn-23-metrics-charts.test.tsx` falla; faltan componentes gráficos de rendimiento. |
-| 30 | `FRN-24` | Frontend | Belinda | 🟠 **Parcial / Problemas** | Commits `65765e4` a `8688b5d` subidos, pero fallan aserciones en `frn-24-25-create-wizard.test.tsx`. |
-| 31 | `FRN-25` | Frontend | Luz | 🟠 **Parcial / Problemas** | Commits `3723b40` a `e04bfcb` subidos, pero fallan selectores y validaciones finales. |
+8. **`INF-11`** — Configuración de producción en Nginx: TLS 1.3, HSTS, CSP y WSS (`Infraestructura`):
+   - **Estado de implementación:** Parcialmente implementada en `docker/nginx-edge.conf` (ya redirige HTTP 80 a HTTPS 443 con `301`, habilita `TLSv1.2 TLSv1.3`, reenvía `Upgrade` para WebSockets en `/api/ws/` y deshabilita `proxy_buffering` en `/api/events`; pasa 2/3 subtests en `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`).
+   - **Por qué falla el test (1/3 subtests en `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`):** Faltan las cabeceras de endurecimiento `Strict-Transport-Security` (con `includeSubDomains`), `X-Frame-Options`, `X-Content-Type-Options` y `Content-Security-Policy` (con `default-src 'self'` y `wss:`) en `docker/nginx-edge.conf`.
 
 ---
 
-## 4. Acciones Prioritarias Recomendadas
+### 1.3 No implementadas (6 tareas)
+1. **`FRN-22`** — Hook `useInstanceMetrics` y cliente WebSocket para telemetría en tiempo real (`Frontend`):
+   - **Falta:** No existen `getWsTicket()` (`POST /api/auth/ws-ticket`) ni el hook `useInstanceMetrics.ts`. Fallan 9/9 pruebas en `test/front/frn-22-use-instance-metrics.test.tsx`.
+2. **`INF-13` (`BRG-11-INF`)** — Verificación y Validación de Storage Compatible con Snapshots en Proxmox Real (`Infraestructura` / `Documentación`):
+   - **Falta:** `documentacion/api-proxmox.md` no documenta aún los tipos de storage compatibles con snapshots (`lvmthin`, `zfspool`/`zfs`, `qcow2`) frente a los incompatibles (`raw`), y mantiene un UUID en texto plano en `PROXMOX_TOKEN_SECRET=` (línea 150). Falla `TestEtapa2INF13_StorageCompatibleConSnapshots` en `test/back/etapa3_acceptance_test.go`.
+3. **`BAC-42`** — Adaptador de Proxmox para Snapshots, endpoints de Creación y Listado (`Backend`):
+   - **Falta:** No existen `ListarSnapshots`, `CrearSnapshot`, `RevertirSnapshot` ni `EliminarSnapshot` en `proxmox_port.go` / `client.go`, ni las rutas `GET /api/instances/:instanceRef/snapshots` y `POST /api/instances/:instanceRef/snapshots`. Falla `TestEtapa3BAC42_AdaptadorYEndpointsSnapshotsCreacionYListado` en `test/back/etapa3_acceptance_test.go`.
+4. **`BAC-43`** — Reversión (Rollback) y Eliminación de Snapshots con bloqueo de concurrencia (`Backend`):
+   - **Falta:** No existen las rutas `POST /api/instances/:instanceRef/snapshots/:snapname/rollback` ni `DELETE /api/instances/:instanceRef/snapshots/:snapname`. Falla `TestEtapa3BAC43_RollbackYEliminacionSnapshotsConcurrencia` en `test/back/etapa3_acceptance_test.go`.
+5. **`BAC-46`** — Background worker evaluador de umbrales con histéresis y deduplicación (`Backend`):
+   - **Falta:** No existe el worker evaluador de umbrales (`ALERT_CPU_THRESHOLD`, `ALERT_RAM_THRESHOLD`, `ALERT_STORAGE_THRESHOLD`) con histéresis en Redis ni sus pruebas unitarias. Falla `TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis` en `test/back/etapa3_acceptance_test.go`.
+6. **`FRN-29`** — Pestaña "Snapshots" en Detalle de Instancia y formulario de nuevo snapshot (`Frontend`):
+   - **Falta:** La pestaña `"Snapshots"` en `InstanceDetailContent.tsx:123-128` solo muestra el texto estático `"La consulta de snapshots todavía no está disponible."` sin tabla de snapshots, ni modal `"Crear Snapshot"` / `"Tomar Snapshot"`, ni acciones de Rollback/Eliminación. Fallan las 4 pruebas de `FRN-29` en `test/front/frn-36-29-snapshots-ui.test.tsx`.
 
-1. **Frontend:**
-   - **`FIX-100` y `FIX-103` (Urgente):** Blindar `Dashboard.tsx:63` (`(typeof value !== 'number' \|\| Number.isNaN(value)) ? '—' : value.toLocaleString('es')`) y `useNodeStatus.ts:146` (`if (!Array.isArray(serie)) return previous;`). Esto desbloqueará inmediatamente 14 tests fallidos en `dashboard-node.test.tsx` y `dashboard-summary.test.tsx`.
-   - **`FIX-91`:** Eliminar `InstanceTester.tsx`.
-   - **`FIX-108`:** Flexibilizar `validateInstanceVmid` para aceptar identificadores alfanuméricos (`string \| number`) en lugar de restringirlo a enteros seguros.
-   - **`FIX-115B`:** Elevar el límite máximo de caracteres en `validatePasswordComplexity.ts` de 12 a 128.
-   - **`FRN-24` / `FRN-25`:** Ajustar los selectores accesibles del Wizard de creación para sincronizarlos con la suite de pruebas.
-2. **Backend:**
-   - **`FIX-118`:** En `db.go`, impedir la ejecución de `seedAdminPorDefecto` si `APP_ENV=production`, generar clave aleatoria temporal fuera de producción y parametrizar vía `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`.
+---
+
+## 2. Estado de las 20 Tareas Referenciadas en el Encabezado de `actual.md`
+
+| Tarea | Área | Estado en Suites (`test/back` y `test/front`) | Detalle |
+|---|---|:---:|---|
+| `FIX-104B` / `FIX-105` | Frontend | 🟢 **PASS** | `fix-104b-105-tareaid.test.tsx` (12/12 pruebas en verde). |
+| `FIX-100` | Frontend | 🟢 **PASS** | `dashboard-node.test.tsx` (12/12 pruebas en verde). |
+| `FIX-103` | Frontend | 🟢 **PASS** | `fix-103-node-history.test.tsx` (7/7 pruebas en verde). |
+| `FIX-104` / `FRN-24` / `FRN-25` | Frontend | 🟢 **PASS** | `frn-24-25-create-wizard.test.tsx` (11/11 pruebas en verde). |
+| `FIX-111B` | Frontend | 🟢 **PASS** | `fix-111b-cambio-email-reauth.test.tsx` (4/4 pruebas en verde). |
+| `FIX-115B` | Frontend | 🟢 **PASS** | `fix-115b-contrasenas-largas.test.tsx` (11/11 pruebas en verde). |
+| `BAC-36` | Backend | 🟢 **PASS** | `TestEtapa2BAC36_MetricasHistoricasEndpoint` en verde. |
+| `FIX-107` | Backend | 🟢 **PASS** | `TestFIX107_OfuscacionDeVMIDs` en verde. |
+| `FIX-109` | Backend | 🟢 **PASS** | Implementado en `node_handler.go` y `instance_handler.go`. |
+| `FIX-110` | Backend | 🟢 **PASS** | `TestFIX110_SaneamientoDeErrores` en verde. |
+| `FIX-111A` | Backend | 🟢 **PASS** | Implementado en `auth_service.go` / `user_handler.go`. |
+| `FIX-114` | Backend | 🟢 **PASS** | Implementado en `auth_service.go` (`RevocarTodasLasSesiones`). |
+| `FIX-117A` | Backend | 🟢 **PASS** | Commit `94e95a2` en `node_handler.go`. |
+| `FIX-118` | Backend | 🟢 **PASS** | `TestFIX118_SinCredencialesPorDefecto` en verde (commit `1801e33`). |
+| `FIX-119` | Backend | 🟢 **PASS** | Commit `5c72bbb` en `user_service.go`. |
+| `FIX-112` | Backend | 🟠 **Fallo Parcial** | `TestFIX112_RateLimitingAutenticacion`: falta bloqueo pesimista `SELECT ... FOR UPDATE` al leer `IntentosRecuperacion` en `ConfirmarRecuperacionContrasena`. |
+| `FIX-115A` | Backend | 🟠 **Fallo Parcial** | `TestFIX115A_ContrasenasDeHasta128Caracteres`: `auth_handler.go` y `user_port.go` aún conservan un tag `max=12` en un DTO secundario y `password.go` no verifica explícitamente la cota superior de 128 en `ValidarComplejidad`. |
+| `FIX-116` | Backend | 🟠 **Fallo Parcial** | `TestFIX116_InyeccionDeParametrosProxmox`: la validación contra comas se agregó en `instance_service.go`, pero el test exige defensa en profundidad también dentro de `internal/adapters/secondary/proxmox/client.go` antes de concatenar `net0`. |
+| `FIX-101` | Frontend | 🟠 **Fallo Parcial** | `instances-ola2.test.tsx` (5/6 pasan; falla 1 test porque el buscador en memoria filtra por nombre/IP pero no por `String(instance.id)`). |
+| `FIX-102` | Frontend | 🟠 **Fallo Parcial** | `instances-modals.test.tsx` (5/6 pasan; falla 1 test de visibilidad de acciones para `OPERATOR`). |
+| `FIX-91` | Frontend | 🔴 **No Implementada** | `fixes-pending.test.tsx` falla únicamente en `FIX-91`: el archivo muerto `frontend/centinela/src/components/features/instances/components/InstanceTester.tsx` aún no fue eliminado. |
+
+---
+
+## 3. Resultados Globales de Ejecución de Suites
+
+### 3.1 Suite de Backend (`test/back`)
+- **Compilación (`go test -c ./...`):** Exitosa (0 errores).
+- **Ejecución (`go test -short -v ./...`):**
+  - **En verde (`PASS`):** `TestINF09WebSocketsNginxEdge`, `TestINF07CPermisosTokenProxmox`, `TestEtapa1Ola3BAC32`, `TestEtapa2BAC34_AdaptadorMetricasRRD`, `TestEtapa2BAC36_MetricasHistoricasEndpoint`, `TestEtapa2BAC39_SeguimientoCreacionYPermisos`, `TestEtapa2BAC40_EndpointConfigRecursos`, `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`, `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`, `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`, `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`, `TestFIX107_OfuscacionDeVMIDs`, `TestFIX110_SaneamientoDeErrores`, `TestFIX113_PurgaDePermisosAlEliminarInstancia`, `TestFIX118_SinCredencialesPorDefecto`, `TestFIX81_OrdenMigracionesBaseLimpia`, `TestEtapa1SimuladorProxmox`, `TestEtapa2BAC50_SimuladorSnapshotsYRollback`.
+  - **En rojo (`FAIL` — detectando trabajo pendiente real):** `TestFIX112_RateLimitingAutenticacion`, `TestFIX115A_ContrasenasDeHasta128Caracteres`, `TestFIX116_InyeccionDeParametrosProxmox`, `TestEtapa2INF13_StorageCompatibleConSnapshots`, `TestEtapa3BAC42_AdaptadorYEndpointsSnapshotsCreacionYListado`, `TestEtapa3BAC43_RollbackYEliminacionSnapshotsConcurrencia`, `TestEtapa3BAC44_InterceptorGlobalYConsultasAuditoria`, `TestEtapa3BAC45_StreamingExportacionAuditoriaCSVyJSON`, `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`, `TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis`.
+
+### 3.2 Suite de Frontend (`test/front`)
+- **Comando:** `pnpm --dir test/front exec vitest run`
+- **Archivos de prueba:** **42 archivos** (**27 en verde**, **13 con fallos**, **2 omitidos** por requerir entorno Docker E2E activo).
+- **Pruebas individuales:** **287 pruebas** (**225 en verde**, **46 fallidas**, **16 omitidas**).
+
+---
+
+## 4. Matriz Completa de las 18 Tareas Activas en `documentacion/actual.md`
+
+| # | Tarea | Etapa | Área | Responsable | Clasificación | Archivo de Prueba y Resultado |
+|---|---|---|---|:---:|:---:|---|
+| 1 | `BAC-24C` / `FIX-113` | Etapa 1 | Backend | Tayra / Lisandro | 🟢 **Implementada y pasa tests** | `test/back/etapa2_seguridad_acceptance_test.go` (`TestFIX113_PurgaDePermisosAlEliminarInstancia`) — **PASS** |
+| 2 | `FIX-108` | Etapa 2 | Frontend | Belinda / Cristian | 🟠 **Implementada parcial (no pasa tests)** | `test/front/fix-108-ids-ofuscados.test.tsx` — **5/11 PASS, 6/11 FAIL** (falta sanitización regex en `validateInstanceRef`) |
+| 3 | `FIX-117B` | Etapa 2 | Frontend | Belinda / Cristian | 🟢 **Implementada y pasa tests** | `test/front/fix-117b-dashboard-operador.test.tsx` — **4/4 PASS** |
+| 4 | `FRN-22` | Etapa 2 | Frontend | Belinda | 🔴 **No implementada** | `test/front/frn-22-use-instance-metrics.test.tsx` — **0/9 PASS** (falta `useInstanceMetrics.ts` y `getWsTicket`) |
+| 5 | `FRN-23` | Etapa 2 | Frontend | Luz | 🟠 **Implementada parcial (no pasa tests)** | `test/front/frn-23-metrics-charts.test.tsx` — **1/9 PASS, 8/9 FAIL** (faltan gráficos Red/Disco, modo "En vivo" y cartel "Instancia detenida") |
+| 6 | `FRN-26` | Etapa 2 | Frontend | Cristian | 🟠 **Implementada parcial (no pasa tests)** | `test/front/frn-26-create-submit-quota-sse.test.tsx` — **1/4 PASS, 3/4 FAIL** (falta alerta `role="alert"` interna en 409 y etiqueta `"Creando..."` en tabla) |
+| 7 | `FRN-27` | Etapa 2 | Frontend | Cristian | 🟢 **Implementada y pasa tests** | `test/front/frn-27-28-edit-instance-config.test.tsx` — **3/3 PASS** |
+| 8 | `FRN-28` | Etapa 2 | Frontend | Cristian | 🟢 **Implementada y pasa tests** | `test/front/frn-27-28-edit-instance-config.test.tsx` — **3/3 PASS** |
+| 9 | `FRN-36` (`BRG-10-FRN`) | Etapa 2 | Frontend | Cristian | 🟠 **Implementada parcial (no pasa tests)** | `test/front/frn-36-29-snapshots-ui.test.tsx` — **1/3 PASS, 2/3 FAIL** (pestaña creada; faltan badges `SNAPSHOTTING`/`ROLLING_BACK` y bloqueo de botones en cabecera) |
+| 10 | `INF-13` (`BRG-11-INF`) | Etapa 2 | Infra / Docs | Nico | 🔴 **No implementada** | `test/back/etapa3_acceptance_test.go` (`TestEtapa2INF13_StorageCompatibleConSnapshots`) — **FAIL** (falta documentar storages compatibles en `api-proxmox.md` y limpiar UUID en `PROXMOX_TOKEN_SECRET`) |
+| 11 | `BAC-42` | Etapa 3 | Backend | Lisandro | 🔴 **No implementada** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3BAC42_AdaptadorYEndpointsSnapshotsCreacionYListado`) — **FAIL** (faltan métodos Proxmox y endpoints GET/POST de snapshots) |
+| 12 | `BAC-43` | Etapa 3 | Backend | Tayra | 🔴 **No implementada** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3BAC43_RollbackYEliminacionSnapshotsConcurrencia`) — **FAIL** (faltan endpoints de rollback y delete de snapshots) |
+| 13 | `BAC-44` | Etapa 3 | Backend | Tayra | 🟠 **Implementada parcial (no pasa tests)** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3BAC44_InterceptorGlobalYConsultasAuditoria`) — **FAIL** (faltan constantes Etapa 3 en `audit_port.go` y filtros `recursoTipo`, `recursoId`, `page`, `limit` en `audit_handler.go`) |
+| 14 | `BAC-45` | Etapa 3 | Backend | Lisandro | 🟠 **Implementada parcial (no pasa tests)** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3BAC45_StreamingExportacionAuditoriaCSVyJSON`) — **FAIL** (usa `.Find(&filas)` en memoria en vez de cursor `.Rows()` y nombra `auditoria.csv` en vez de `auditoria_centinela_YYYYMMDD.csv`) |
+| 15 | `INF-11` | Etapa 3 | Infra | Nico | 🟠 **Implementada parcial (no pasa tests)** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`) — **2/3 subtests PASS, 1/3 FAIL** (faltan cabeceras `Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options` y `X-Content-Type-Options` en `docker/nginx-edge.conf`) |
+| 16 | `BAC-46` | Etapa 3 | Backend | Lisandro | 🔴 **No implementada** | `test/back/etapa3_acceptance_test.go` (`TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis`) — **FAIL** (falta worker de umbrales con histéresis en Redis y pruebas unitarias) |
+| 17 | `FRN-29` | Etapa 3 | Frontend | Luz | 🔴 **No implementada** | `test/front/frn-36-29-snapshots-ui.test.tsx` — **0/4 PASS** (la pestaña Snapshots muestra solo un placeholder sin tabla, modal de creación ni acciones) |
+| 18 | `FRN-31` | Etapa 3 | Frontend | Belinda | 🟠 **Implementada parcial (no pasa tests)** | `test/front/frn-31-audit-etapa3.test.tsx` — **1/4 PASS, 3/4 FAIL** (badges de severidad listos; faltan `aria-label="Desde"/"Hasta"`, filtro `recursoTipo`, acciones Etapa 3, modal JSON y botón Exportar JSON) |

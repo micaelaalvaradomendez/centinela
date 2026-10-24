@@ -17,11 +17,17 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 const GIB = 1024 ** 3;
-const inventoryRunning = [{
-  id: 101, name: 'servidor-web', type: 'vm', node: 'pve', status: 'running', ip: '192.168.1.50',
-  cpuUsage: 25, ramUsage: GIB, maxRam: 4 * GIB, nivelAcceso: 'FULL_ACCESS', activeTask: null,
-}];
-const inventoryStopped = [{ ...inventoryRunning[0], status: 'stopped', cpuUsage: null, ramUsage: null }];
+const inventoryRunning = [
+  {
+    id: 101, name: 'servidor-web', type: 'vm', node: 'nodo-a1', status: 'running', ip: '192.168.1.50',
+    cpuUsage: 25, ramUsage: GIB, maxRam: 4 * GIB, nivelAcceso: 'FULL_ACCESS', activeTask: null,
+  },
+  {
+    id: 'inst_k8Pq2v', name: 'servidor-web-opaco', type: 'vm', node: 'nodo-a1', status: 'running', ip: '192.168.1.51',
+    cpuUsage: 25, ramUsage: GIB, maxRam: 4 * GIB, nivelAcceso: 'FULL_ACCESS', activeTask: null,
+  },
+];
+const inventoryStopped = inventoryRunning.map((inst) => ({ ...inst, status: 'stopped', cpuUsage: null, ramUsage: null }));
 
 const historySeries = [
   { timestamp: 1_760_000_000, cpuPercent: 10, ramUsedBytes: GIB, ramTotalBytes: 4 * GIB, netInBps: 2048, netOutBps: 1024, diskReadBps: 4096, diskWriteBps: 2048 },
@@ -48,11 +54,29 @@ class FakeResizeObserver {
 let fetchMock: ReturnType<typeof vi.fn>;
 let consoleError: ReturnType<typeof vi.spyOn>;
 
-function stubBackend(options: { inventory?: unknown[]; series?: unknown; metricsPending?: boolean } = {}) {
+function stubBackend(options: { inventory?: unknown[]; series?: unknown[]; metricsPending?: boolean; stopped?: boolean } = {}) {
+  const isStopped = options.stopped ?? (options.inventory === inventoryStopped);
+  const seriesPayload = options.series ?? historySeries;
   fetchMock = vi.fn().mockImplementation((url: string) => {
     const target = String(url);
-    if (/\/instances\/101\/metrics/.test(target)) {
-      return options.metricsPending ? new Promise<Response>(() => undefined) : Promise.resolve(json(options.series ?? historySeries));
+    if (/\/instances\/(101|inst_k8Pq2v)\/metrics/.test(target)) {
+      return options.metricsPending
+        ? new Promise<Response>(() => undefined)
+        : Promise.resolve(json({ data: seriesPayload }));
+    }
+    if (/\/instances\/(101|inst_k8Pq2v)(\?|$)/.test(target)) {
+      const ref = target.includes('inst_k8Pq2v') ? 'inst_k8Pq2v' : '101';
+      return Promise.resolve(json({
+        vmid: ref,
+        nombre: 'servidor-web',
+        nodo: 'nodo-a1',
+        estado: isStopped ? 'stopped' : 'running',
+        tipo: 'qemu',
+        cpu: isStopped ? 0 : 25,
+        mem: isStopped ? 0 : GIB,
+        maxCpu: 2,
+        maxMem: 4 * GIB,
+      }));
     }
     if (/\/instances(\?|$)/.test(target)) return Promise.resolve(json(options.inventory ?? inventoryRunning));
     if (target.includes('/auth/ws-ticket') || target.includes('/events/ticket')) return Promise.resolve(json({ ticket: 'ticket-frn23' }));
@@ -61,20 +85,21 @@ function stubBackend(options: { inventory?: unknown[]; series?: unknown; metrics
   vi.stubGlobal('fetch', fetchMock);
 }
 
-function renderDetail() {
+function renderDetail(instanceRef = '101') {
   window.sessionStorage.setItem('centinela_access', 'access-token-frn23');
   window.localStorage.setItem('centinela_user', JSON.stringify({
     id: 'admin-1', organizacionId: 'org-1', nombreCompleto: 'Admin Test', email: 'admin@centinela.local',
     rol: 'ADMIN', instanciasPermitidas: [], tiene2FA: true,
   }));
   return render(withProtectedProviders(
-    <MemoryRouter initialEntries={['/instances/101']}>
+    <MemoryRouter initialEntries={[`/instances/${instanceRef}`]}>
       <Routes><Route path="/instances/:vmid" element={<InstanceDetailPage />} /></Routes>
     </MemoryRouter>,
   ));
 }
 
-const metricsCalls = () => (fetchMock.mock.calls as [string][]).map(([url]) => String(url)).filter((url) => /\/instances\/101\/metrics/.test(url));
+const metricsCalls = (ref = '101') =>
+  (fetchMock.mock.calls as [string][]).map(([url]) => String(url)).filter((url) => new RegExp(`/instances/${ref}/metrics`).test(url));
 
 // El selector puede ser tabs, botones, radios o un select: se busca por rol y nombre accesible.
 async function findRangeControl(name: RegExp) {
@@ -217,6 +242,15 @@ describe('FRN-23 - gráficos de rendimiento y selector de rango temporal', () =>
     });
     const panel = screen.getByRole('tabpanel', { hidden: true });
     expect(within(panel).queryAllByRole('img').length + within(panel).queryAllByRole('figure').length).toBeGreaterThan(0);
+  });
+
+  it('soporta referencias de instancia ofuscadas (FIX-107, ej. inst_k8Pq2v) al consultar el detalle y las métricas', async () => {
+    stubBackend();
+    renderDetail('inst_k8Pq2v');
+
+    await waitFor(() => {
+      expect(metricsCalls('inst_k8Pq2v').some((url) => /\/instances\/inst_k8Pq2v\/metrics\?timeframe=2h/.test(url))).toBe(true);
+    });
   });
 });
 

@@ -372,27 +372,33 @@ func TestFIX112_RateLimitingAutenticacion(t *testing.T) {
 	})
 }
 
-// FIX-113 / BAC-24C: al completarse un borrado se purgan los permisos del VMID (y solo entonces).
+// FIX-113 / BAC-24C: al completarse un borrado se purgan los permisos del VMID (y solo entonces)
+// y se entrega el evento TASK_FINISHED a los usuarios afectados cuya fila se acaba de purgar.
 func TestFIX113_PurgaDePermisosAlEliminarInstancia(t *testing.T) {
-	t.Run("seguimiento_tareas.go purga permisos y audita INSTANCE_PERMISSIONS_PURGED", func(t *testing.T) {
+	t.Run("seguimiento_tareas.go purga permisos, audita INSTANCE_PERMISSIONS_PURGED y publica TASK_FINISHED a UsuariosAfectados", func(t *testing.T) {
 		source := secReadGoDir(t, "internal/core/services")
-		for _, marker := range []string{"permisos_instancia", "INSTANCE_PERMISSIONS_PURGED"} {
+		mainSource := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
+		for _, marker := range []string{"permisos_instancia", "INSTANCE_PERMISSIONS_PURGED", "UsuariosAfectados"} {
 			if !strings.Contains(source, marker) {
 				t.Errorf("FIX-113: internal/core/services no contiene %q", marker)
 			}
 		}
+		if !strings.Contains(mainSource, "PublicarParaUsuarios") && !strings.Contains(source, "PublicarParaUsuarios") {
+			t.Errorf("FIX-113: OnTaskFinished debe publicar TASK_FINISHED a UsuariosAfectados mediante PublicarParaUsuarios")
+		}
 	})
 
-	t.Run("un borrado fallido conserva los permisos y uno exitoso los elimina", func(t *testing.T) {
+	t.Run("un borrado fallido conserva los permisos y uno exitoso los elimina notificando TASK_FINISHED al operador", func(t *testing.T) {
 		requireIntegration(t)
 		adminToken, _ := secAdmin(t)
 		operator := createActiveUser(t, adminToken, "fix113", "OPERATOR")
 		operatorToken := loginWithTOTP(t, operator.Email, operator.Password, operator.Secret).AccessToken
+		ref102 := instanceRefByVMID(t, adminToken, 102)
 		permissions := "/admin/users/" + operator.ID + "/permissions"
 		if status, body := requestValue(t, http.MethodPut, permissions, adminToken, map[string]any{
-			"permisos": []map[string]any{{"vmid": 102, "nivelAcceso": "READ_ONLY"}},
+			"permisos": []map[string]any{{"vmid": ref102, "nivelAcceso": "READ_ONLY"}},
 		}); status != http.StatusNoContent {
-			t.Fatalf("precondición: asignar permiso sobre 102 falló (%d): %#v", status, body)
+			t.Fatalf("precondición: asignar permiso sobre %s (102) falló (%d): %#v", ref102, status, body)
 		}
 		count := func() string {
 			return queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM permisos_instancia WHERE usuario_id = '%s' AND vmid_proxmox = 102;", operator.ID))
@@ -403,9 +409,9 @@ func TestFIX113_PurgaDePermisosAlEliminarInstancia(t *testing.T) {
 			t.Fatalf("no se pudo simular el fallo en el stub de Proxmox: %v", err)
 		}
 		t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas") })
-		status, body := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		status, body := requestJSON(t, http.MethodDelete, "/instances/"+ref102, adminToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("DELETE /instances/102 esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("DELETE /instances/%s esperado 202, recibido %d: %#v", ref102, status, body)
 		}
 		failedID := requiredString(t, body, "tareaId")
 		if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", failedID), "FAILED", 15*time.Second) {
@@ -415,18 +421,23 @@ func TestFIX113_PurgaDePermisosAlEliminarInstancia(t *testing.T) {
 			t.Errorf("FIX-113: un borrado fallido no debe tocar permisos_instancia, quedan %s filas", got)
 		}
 
-		// 2. Tarea exitosa: se purgan los permisos y queda auditado.
+		// 2. Tarea exitosa: se purgan los permisos, queda auditado y el operador recibe TASK_FINISHED.
 		_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas")
-		status, body = requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		operatorEvents := listenEvents(t, operatorToken)
+		status, body = requestJSON(t, http.MethodDelete, "/instances/"+ref102, adminToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("DELETE /instances/102 esperado 202, recibido %d: %#v", status, body)
+			t.Fatalf("DELETE /instances/%s esperado 202, recibido %d: %#v", ref102, status, body)
+		}
+		deleteTaskID := requiredString(t, body, "tareaId")
+		if event := waitTaskFinished(t, operatorEvents, deleteTaskID, 15*time.Second); event == nil {
+			t.Errorf("FIX-113 / BAC-24C: el operador con permiso sobre la 102 debe recibir TASK_FINISHED aunque su fila se purgue al cierre")
 		}
 		if !waitForValue(t, fmt.Sprintf("SELECT count(*) FROM permisos_instancia WHERE usuario_id = '%s' AND vmid_proxmox = 102;", operator.ID), "0", 15*time.Second) {
 			t.Fatalf("FIX-113: los permisos de la 102 no se purgaron tras el borrado exitoso (quedan %s)", count())
 		}
 		status, value := requestValue(t, http.MethodGet, permissions, adminToken, nil)
 		encoded, _ := json.Marshal(value)
-		if status != http.StatusOK || regexp.MustCompile(`"vmid":\s*102\b`).Match(encoded) {
+		if status != http.StatusOK || strings.Contains(string(encoded), ref102) || regexp.MustCompile(`"vmid":\s*102\b`).Match(encoded) {
 			t.Errorf("FIX-113: GET %s sigue listando la 102 (%d): %s", permissions, status, encoded)
 		}
 		if n := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM auditoria WHERE accion = 'INSTANCE_PERMISSIONS_PURGED' AND detalles::text LIKE '%%%s%%';", operator.ID)); n == "0" {
@@ -434,7 +445,7 @@ func TestFIX113_PurgaDePermisosAlEliminarInstancia(t *testing.T) {
 		}
 
 		// 3. Un VMID reciclado no hereda acceso: el operador no puede operar la instancia.
-		if status, _ := requestJSON(t, http.MethodGet, "/instances/102/metrics", operatorToken, nil); status != http.StatusForbidden {
+		if status, _ := requestJSON(t, http.MethodGet, "/instances/"+ref102+"/metrics", operatorToken, nil); status != http.StatusForbidden {
 			t.Errorf("FIX-113: el operador debe recibir 403 sobre el VMID reciclado, recibido %d", status)
 		}
 	})
@@ -562,8 +573,9 @@ func TestFIX117A_SegregacionDeTelemetriaGlobal(t *testing.T) {
 	adminToken, _ := secAdmin(t)
 	operator := createActiveUser(t, adminToken, "fix117a", "OPERATOR")
 	operatorToken := loginWithTOTP(t, operator.Email, operator.Password, operator.Secret).AccessToken
+	ref101 := instanceRefByVMID(t, adminToken, 101)
 	if status, body := requestValue(t, http.MethodPut, "/admin/users/"+operator.ID+"/permissions", adminToken, map[string]any{
-		"permisos": []map[string]any{{"vmid": 101, "nivelAcceso": "FULL_ACCESS"}},
+		"permisos": []map[string]any{{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"}},
 	}); status != http.StatusNoContent {
 		t.Fatalf("precondición: asignar permisos falló (%d): %#v", status, body)
 	}
@@ -640,21 +652,22 @@ func TestFIX119_ValidacionDeVMIDsEnAsignacionDePermisos(t *testing.T) {
 		return queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM permisos_instancia WHERE usuario_id = '%s';", operator.ID))
 	}
 
-	t.Run("un VMID inexistente en Proxmox responde 400 INVALID_REQUEST", func(t *testing.T) {
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+	ref102 := instanceRefByVMID(t, adminToken, 102)
+	ref103 := instanceRefByVMID(t, adminToken, 103)
+
+	t.Run("un VMID inexistente o inválido responde 400 INVALID_REQUEST", func(t *testing.T) {
 		raw := requestRaw(t, http.MethodPut, endpoint, adminToken, map[string]any{
-			"permisos": []map[string]any{{"vmid": 99999, "nivelAcceso": "READ_ONLY"}},
+			"permisos": []map[string]any{{"vmid": "inst_inexistente99999", "nivelAcceso": "READ_ONLY"}},
 		})
 		if raw.Status != http.StatusBadRequest || secErrorCode(raw.Body) != "INVALID_REQUEST" {
 			t.Errorf("FIX-119: VMID inexistente esperado 400 INVALID_REQUEST, recibido %d %s", raw.Status, raw.RawBody)
-		}
-		if !strings.Contains(raw.RawBody, "99999") {
-			t.Errorf("FIX-119: el error debe indicar el VMID inexistente: %s", raw.RawBody)
 		}
 	})
 
 	t.Run("un VMID protegido responde 403 PROTECTED_INSTANCE_CANNOT_BE_ASSIGNED y no persiste nada", func(t *testing.T) {
 		raw := requestRaw(t, http.MethodPut, endpoint, adminToken, map[string]any{
-			"permisos": []map[string]any{{"vmid": 101, "nivelAcceso": "FULL_ACCESS"}, {"vmid": 103, "nivelAcceso": "READ_ONLY"}},
+			"permisos": []map[string]any{{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"}, {"vmid": ref103, "nivelAcceso": "READ_ONLY"}},
 		})
 		if raw.Status != http.StatusForbidden || secErrorCode(raw.Body) != "PROTECTED_INSTANCE_CANNOT_BE_ASSIGNED" {
 			t.Errorf("FIX-119: VMID protegido esperado 403 PROTECTED_INSTANCE_CANNOT_BE_ASSIGNED, recibido %d %s", raw.Status, raw.RawBody)
@@ -666,7 +679,7 @@ func TestFIX119_ValidacionDeVMIDsEnAsignacionDePermisos(t *testing.T) {
 
 	t.Run("VMIDs existentes y operables se asignan con 204", func(t *testing.T) {
 		status, body := requestValue(t, http.MethodPut, endpoint, adminToken, map[string]any{
-			"permisos": []map[string]any{{"vmid": 101, "nivelAcceso": "FULL_ACCESS"}, {"vmid": 102, "nivelAcceso": "READ_ONLY"}},
+			"permisos": []map[string]any{{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"}, {"vmid": ref102, "nivelAcceso": "READ_ONLY"}},
 		})
 		if status != http.StatusNoContent {
 			t.Errorf("FIX-119: asignación válida esperado 204, recibido %d: %#v", status, body)

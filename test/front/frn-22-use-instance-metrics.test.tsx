@@ -222,5 +222,14 @@ describe('FRN-22 - useInstanceMetrics y cliente WebSocket', () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
     expect(FakeWebSocket.instances[1].url).toMatch(/\/ws\/instances\/102\/metrics/);
   });
+
+  it('soporta referencias de instancia ofuscadas (FIX-107, ej. inst_k8Pq2v) en la URL del WebSocket', async () => {
+    const useInstanceMetrics = await loadHook();
+    renderHook(() => useInstanceMetrics('inst_k8Pq2v'));
+    await flush();
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.instances[0].url).toMatch(/\/ws\/instances\/inst_k8Pq2v\/metrics\?.*ticket=ticket-1/);
+  });
 });
 
