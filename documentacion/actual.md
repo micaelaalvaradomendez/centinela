@@ -3,88 +3,32 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Estado del tablero (22/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de implementación** de la Etapa 1 y Etapa 2. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md).
+> **Estado del tablero (24/10/2026):** según ClickUp, en este archivo quedan las tareas **pendientes de implementación** de la Etapa 1 y Etapa 2. Lo ya verificado con las suites está en [`terminado.md`](terminado.md) / [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md), y las correcciones de las implementadas con problemas, en [`futuro.md`](futuro.md) / [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md).
 >
 > **Pasados a `terminado-1.md` (Etapa 1):**
 > - `FIX-104B` / `FIX-105` y `FIX-102` (resueltos y con tests en verde el 21/10/2026).
 > - `FIX-100` (resuelto y con tests en verde el 22/10/2026: guarda en `formatCount` y `formatShare`).
 > - `FIX-91` (pendiente de implementación: eliminar el código muerto `InstanceTester.tsx`; sigue en `futuro-1.md`).
 > - `FIX-101`, `FIX-103` y `FIX-104` (cerrados el 22/10/2026: expectativas desactualizadas de `test/front`, no defectos del submódulo; pruebas en verde).
+> - `BAC-24C` / `FIX-113` (resuelto y con tests en verde el 24/10/2026: purga atómica de permisos al eliminar instancia; pruebas `TestFIX113` y pasos de integración en verde).
 >
 > **Pasados a `terminado2.md` (Etapa 2):**
 > - `BAC-36`, `FIX-107`, `FIX-109`, `FIX-110`, `FIX-111A`, `FIX-112`, `FIX-114`, `FIX-115A`, `FIX-116`, `FIX-117A`, `FIX-118`, `FIX-119` (resueltos y con tests en verde el 21/10/2026).
 > - `FIX-111B` y `FIX-115B` (resueltos y con tests en verde el 22/10/2026: modal de reautenticación y claves hasta 128 chars).
 > - `FRN-24` y `FRN-25` (cerradas el 22/10/2026: implementación funcional y pruebas alineadas al contrato real).
 > - `INF-10` (pendiente de verificación en Proxmox físico; seguimiento en `FIX-123` dentro de `futuro2.md`).
+> - `FIX-117B` (resuelto y con tests en verde el 24/10/2026: adaptación de Dashboard para operador; `fix-117b-dashboard-operador.test.tsx` 4/4 en verde).
+> - `FIX-108` (implementada el 24/10/2026 con fallas de validación de entrada; seguimiento en `FIX-124` dentro de `futuro2.md`).
 
 ---
 
 ### ETAPA 1: Tareas Pendientes de Implementación
 
-#### `BAC-24C` / `FIX-113` - Limpieza de permisos al eliminar una instancia
-- **Área:** Backend
-- **Asignada:** Tayra / Lisandro
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-24B` y `BAC-25B`.
-- **Importancia:** 🔴 **ALTA** (CWE-284: Improper Access Control, CWE-639: Authorization Bypass Through User-Controlled Key).
-- **Problema:** `/cluster/nextid` devuelve el menor VMID libre. Si se borra la 110 y después se crea otra instancia, recibe el 110 y **hereda las filas de `permisos_instancia`** de la borrada: un operador tendría acceso a una máquina que no se le asignó.
-- **Entregable:**
-  - Cuando una tarea de borrado termina con `COMPLETED`, eliminar en una transacción las filas de `permisos_instancia` de ese VMID.
-  - Registrar la limpieza en `auditoria` con `accion: INSTANCE_PERMISSIONS_PURGED` y la lista de usuarios afectados.
-  - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
-  - Si la tarea falla, no se toca nada.
-- **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
+*Actualmente no hay tareas pendientes de implementación en la Etapa 1. Todas las tareas fueron completadas y verificadas en [`terminado-1.md`](terminado-1.md).*
 
 ---
 
 ### ETAPA 2: Tareas Pendientes de Implementación
-
-### `FIX-108` - Adaptación del Frontend para consumo de identificadores de instancia ofuscados (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Cristian
-- **Estimación:** 1,5 h
-- **Depende de:** `FIX-107`.
-- **Problema técnico detallado:**
-  Actualmente, el frontend modela el identificador de instancia estrictamente como un número entero (`vmid: number` y `id: number` en `InventoryInstance`), validándolo con `Number.isSafeInteger(vmid) && vmid > 0` en `validateInstanceVmid`.
-  Al migrar el backend hacia identificadores opacos/cifrados no secuenciales (ej. `"inst_k8Pq2v"`), el frontend rechaza las respuestas con errores de validación de esquema en `instanceService.ts`.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/components/features/instances/types/instance.ts`:
-     - Actualizar el tipo `InventoryInstance`:
-       ```typescript
-       export interface InventoryInstance {
-         id: string | number; // Soporta el identificador opaco público
-         name: string;
-         type: 'VM' | 'LXC';
-         ...
-       }
-       ```
-  2. En `instanceService.ts`:
-     - Flexibilizar `validateInstanceVmid` o renombrarlo a `validateInstanceId(id: string | number): string` para admitir tanto cadenas alfanuméricas ofuscadas como enteros legados, sanitizando que no contengan caracteres especiales ni inyecciones.
-     - Actualizar las URLs de invocación (`/instances/${validId}/${action}`) para enviar el string del identificador público.
-  3. En las rutas de la aplicación (`src/routes` o componentes con parámetros de URL `/instances/:id`):
-     - Asegurar que los componentes de detalle de instancia y modales de acción reciban y operen con el identificador en formato string sin forzar conversiones numéricas destructivas (`parseInt` o `Number(...)`).
-- **Criterio de éxito:**
-  - La tabla de instancias renderiza correctamente el listado proveniente del backend con IDs ofuscados.
-  - Los botones de acción de ciclo de vida (iniciar, apagar, ver métricas) operan de manera transparente utilizando el identificador opaco en las URLs del navegador.
-
-
-### `FIX-117B` - Adaptación del Dashboard de operador ante segregación de métricas globales (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Cristian
-- **Estimación:** 1,0 h
-- **Depende de:** `FIX-117A`.
-- **Importancia:** 🟡 **MEDIA** (Resiliencia UI y prevención de errores por campos omitidos).
-- **Problema técnico detallado:**
-  Al implementarse `FIX-117A`, el backend deja de enviar métricas globales del host (`instancesSummary`, almacenamiento global) cuando quien consulta es un usuario con rol `OPERATOR`. Los componentes del Dashboard principal que asumen la presencia incondicional de estos objetos arrojan excepciones en tiempo de ejecución o renderizan valores vacíos/NaN.
-- **Qué se debe hacer:**
-  1. En los componentes de Dashboard y resumen de métricas del frontend:
-     - Condicionar la visualización de tarjetas de métricas globales de hardware y almacenamiento según el rol del usuario autenticado (`user.rol === 'ADMIN'`).
-     - Para usuarios con rol `OPERATOR`, renderizar un resumen enfocado exclusivamente a las instancias asignadas y accesibles, sin intentar acceder a las propiedades omitidas por el backend.
-- **Criterio de éxito:**
-  - El Dashboard de un operador renderiza limpiamente sin advertencias ni errores de consola ante la respuesta acotada de `/node/status`.
-
 
 #### `FRN-22` - Hook `useInstanceMetrics` y cliente WebSocket para telemetría en tiempo real
 

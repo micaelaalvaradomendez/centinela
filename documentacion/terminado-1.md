@@ -1432,3 +1432,23 @@ Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
   2. Certificar que `dashboard-node.test.tsx` pase 12 de 12 en verde.
 - **Criterio de éxito:** el Dashboard tolera contadores indefinidos o nulos sin lanzar `TypeError` y la suite `dashboard-node.test.tsx` pasa al 100% en verde.
 
+
+### `BAC-24C` / `FIX-113` - Limpieza de permisos al eliminar una instancia (Backend)
+
+> [!NOTE]
+> **Estado verificado (24/10/2026, backend `c08af54`): implementada y con test en verde.** Commit `c08af54`. Al completar la destrucción de una instancia (`COMPLETED`), `seguimiento_tareas.go` elimina en una transacción atómica las filas asociadas en `permisos_instancia` para evitar que un reciclaje de VMID otorgue acceso no autorizado a nuevos operadores (CWE-284, CWE-639). Se registra `INSTANCE_PERMISSIONS_PURGED` en auditoría y se entrega el evento `TASK_FINISHED` por SSE a los usuarios afectados. Las pruebas `TestFIX113_PurgaDePermisosAlEliminarInstancia` en `test/back/etapa2_seguridad_acceptance_test.go` y los pasos de integración en `TestINT01` y `TestINT02` pasan al 100% en verde (✅).
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-24B` y `BAC-25B`.
+- **Importancia:** 🔴 **ALTA** (CWE-284: Improper Access Control, CWE-639: Authorization Bypass Through User-Controlled Key).
+- **Problema:** `/cluster/nextid` devuelve el menor VMID libre. Si se borra la 110 y después se crea otra instancia, recibe el 110 y **hereda las filas de `permisos_instancia`** de la borrada: un operador tendría acceso a una máquina que no se le asignó.
+- **Entregables:**
+  - Cuando una tarea de borrado termina con `COMPLETED`, eliminar en una transacción las filas de `permisos_instancia` de ese VMID.
+  - Registrar la limpieza en `auditoria` con `accion: INSTANCE_PERMISSIONS_PURGED` y la lista de usuarios afectados.
+  - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
+  - Si la tarea falla, no se toca nada.
+- **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
+
+

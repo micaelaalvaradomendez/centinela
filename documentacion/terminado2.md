@@ -496,3 +496,21 @@ Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
   2. Inputs con `maxLength={128}` y textos descriptivos actualizados en formularios de autenticación.
 - **Criterio de éxito:** `fix-115b-contrasenas-largas.test.tsx` pasa al 100% en verde.
 
+
+
+### `FIX-117B` - Adaptación del Dashboard de operador ante segregación de métricas globales (Frontend)
+
+> [!NOTE]
+> **Estado verificado (24/10/2026, frontend `d4e99b2`): implementada y con test en verde.** Commit `5c993ee`. `Home.tsx` y `useNodeStatus.ts` acondicionaron la renderización de las tarjetas de almacenamiento y telemetría global para que no fallen cuando `storage` es omitido por el backend ante usuarios con rol `OPERATOR`. La suite `test/front/fix-117b-dashboard-operador.test.tsx` pasa 4 de 4 en verde (100% ✅).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1,0 h
+- **Depende de:** `FIX-117A`.
+- **Importancia:** 🟡 **MEDIA** (Resiliencia UI y prevención de errores por campos omitidos).
+- **Problema:** Al implementarse `FIX-117A`, el backend deja de enviar métricas globales del host (`instancesSummary`, almacenamiento global) cuando quien consulta es un usuario con rol `OPERATOR`. Los componentes del Dashboard principal que asumen la presencia incondicional de estos objetos arrojan excepciones en tiempo de ejecución o renderizan valores vacíos/NaN.
+- **Entregables:**
+  1. En los componentes de Dashboard y resumen de métricas del frontend, condicionar la visualización de tarjetas de métricas globales de hardware y almacenamiento según el rol del usuario autenticado (`user.rol === 'ADMIN'`).
+  2. Para usuarios con rol `OPERATOR`, renderizar un resumen enfocado exclusivamente a las instancias asignadas y accesibles, sin intentar acceder a las propiedades omitidas por el backend.
+- **Criterio de éxito:** El Dashboard de un operador renderiza limpiamente sin advertencias ni errores de consola ante la respuesta acotada de `/node/status` y la suite `test/front/fix-117b-dashboard-operador.test.tsx` pasa 4 de 4 en verde (100% ✅).
+

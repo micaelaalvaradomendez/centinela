@@ -74,6 +74,55 @@ Verificados contra frontend `b0a7105` y backend `a25d1b3`.
   3. Comprobar que `GET /storage/{storage}/content` con el API Token liste ambos recursos.
 - **Criterio de éxito:** `GET /api/node/templates` responde con el catálogo real sin errores de permisos.
 
+
+### `FIX-124` - Sanitización estricta de identificadores opacos de instancia en Frontend (FIX-108) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-108` (en `terminado2.md`).
+- **Problema técnico detallado:**
+  En la implementación de `FIX-108` (frontend `d4e99b2`), la función `validateInstanceRef` en `src/components/features/instances/services/instanceService.ts:12-16` solo ejecuta un recorte de espacios en blanco (`ref.trim()`) cuando recibe un `string`, omitiendo validar contra la expresión regular de identificadores seguros `/^[a-zA-Z0-9_-]+$/`. Como consecuencia, permite entradas hostiles como secuencias de path traversal (`../admin/users`), inyección de parámetros (`?force=1`), separadores de ruta (`inst/1`), punto y coma (`inst_1;rm`), espacios internos (`inst abc`) o saltos de línea (`inst_1\nX`). Adicionalmente, en `src/pages/InstanceDetailPage.tsx:18` persiste una conversión residual `Number(instanceReference)` que infringe la restricción de manipular identificadores opacos exclusivamente como cadenas de texto.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `src/components/features/instances/services/instanceService.ts`:
+     - Restringir la validación de referencias de instancia en `validateInstanceRef` contra `/^[a-zA-Z0-9_-]+$/`:
+       ```typescript
+       const OPAQUE_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+       function validateInstanceRef(ref: unknown): InstanceRef {
+         if (typeof ref === 'string') {
+           const trimmed = ref.trim();
+           if (trimmed && OPAQUE_ID_REGEX.test(trimmed)) return trimmed;
+         }
+         if (typeof ref === 'number' && Number.isSafeInteger(ref) && ref > 0) return ref;
+         throw new ApiRequestError('La instancia no tiene una referencia válida.');
+       }
+       ```
+  2. En `src/pages/InstanceDetailPage.tsx`:
+     - Eliminar la conversión residual `Number(instanceReference)` y validar la referencia directamente sin forzar conversiones numéricas con `Number(...)` o `parseInt(...)` sobre parámetros de ruta.
+  3. Ejecutar y certificar la suite de pruebas `test/front/fix-108-ids-ofuscados.test.tsx`.
+- **Criterio de éxito:**
+  - Todas las entradas maliciosas o malformadas son rechazadas localmente en `instanceService.ts` antes de despachar solicitudes de red.
+  - La suite `test/front/fix-108-ids-ofuscados.test.tsx` pasa 11 de 11 pruebas en verde (100% ✅).
+
+
+
+
+### `FIX-108` - Adaptación del Frontend para consumo de identificadores de instancia ofuscados (Frontend)
+
+> [!WARNING]
+> **Estado verificado (24/10/2026, frontend `d4e99b2`): implementada con fallas de validación de entrada.** El frontend adoptó el identificador de instancia como `string | number` (`id: string | number`), y los servicios y rutas despachan hacia `/instances/:instanceRef`. Sin embargo, `validateInstanceRef` en `instanceService.ts` solo realiza un recorte de espacios (`ref.trim()`) y no valida contra `/^[a-zA-Z0-9_-]+$/`, permitiendo path traversal, caracteres hostiles y espacios. Corrección y seguimiento abierto en **`FIX-124`** ([futuro2.md](futuro2.md)). La suite `test/front/fix-108-ids-ofuscados.test.tsx` pasa 5 de 11 pruebas (6 fallidas).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1,5 h
+- **Depende de:** `FIX-107`.
+- **Problema:** El frontend modelaba el identificador de instancia estrictamente como un número entero (`vmid: number` e `id: number` en `InventoryInstance`), validándolo con `Number.isSafeInteger(vmid) && vmid > 0`. Al migrar el backend hacia identificadores opacos/cifrados no secuenciales (ej. `"inst_k8Pq2v"`), el frontend rechazaba las respuestas con errores de validación de esquema en `instanceService.ts`.
+- **Entregables:**
+  1. En `instance.ts`: actualizar `InventoryInstance` para que `id` admita `string | number` y definir el tipo `InstanceRef`.
+  2. En `instanceService.ts`: flexibilizar la validación para admitir identificadores de instancia alfanuméricos y enteros legados.
+  3. En rutas y componentes: asegurar navegación `/instances/:instanceRef` sin conversiones destructivas a entero.
+- **Criterio de éxito:** La tabla de instancias renderiza identificadores opacos y las operaciones de ciclo de vida despachan la referencia en la URL sin conversiones numéricas destructivas. Los defectos de sanitización estricta quedan derivados a `FIX-124`.
+
 ---
 
 ## 📋 Resumen del Flujo de Ejecución Recomendado
@@ -84,6 +133,7 @@ flowchart TD
         FIX105["FIX-105: Frontend adopta tareaId"] --> FIX106["FIX-106: Tests sincronizados sin UPID"]
         FIX106 --> FIX107["FIX-107: Cifrado/Ofuscación de VMIDs (Back)"]
         FIX107 --> FIX108["FIX-108: Frontend soporta IDs ofuscados (Front)"]
+        FIX108 --> FIX124["FIX-124: Sanitización estricta de IDs opacos (Front)"]
         FIX108 --> FIX109["FIX-109: Enmascarar Nodos y Storages (Back)"]
         FIX109 --> FIX110["FIX-110: Saneamiento de Errores y WebSockets (Back)"]
     end
