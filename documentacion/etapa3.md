@@ -88,6 +88,14 @@ flowchart TD
         INT09[INT-09: Validación Final en Servidor Proxmox Real]
     end
 
+    subgraph PuentePVE8 [Bloque Puente a Etapa de Adaptación Proxmox VE 8.4.21]
+        BRG_BAC54[BAC-54: Parametrización Dinámica Hosts y VMIDs]:::bridge
+        BRG_BAC55[BAC-55: Switch de Versión en Simulador]:::bridge
+        BRG_INF14[INF-14: Auditoría y Sonda PVE 8.4 Real]:::bridge
+        BRG_FRN37[FRN-37: Desacople de Plantillas en Wizard]:::bridge
+        BRG_INT10[INT-10: Baseline Dual-Test Harness]:::bridge
+    end
+
     BRG_BAC50 --> BAC42
     BRG_BAC51 --> BAC43
     BRG_FRN36 --> FRN29
@@ -124,6 +132,12 @@ flowchart TD
     INF11 --> INT09
     BRG_INF13 --> INT09
 
+    INT07 --> BRG_BAC54
+    BRG_BAC54 --> BRG_BAC55
+    INT07 --> BRG_INT10
+    INT08 --> BRG_FRN37
+    INT09 --> BRG_INF14
+
     classDef base fill:#e5e7eb,stroke:#6b7280,color:#111827
     classDef bridge fill:#fef3c7,stroke:#f59e0b,color:#92400e
 ```
@@ -139,8 +153,9 @@ flowchart TD
 | **3** | `FRN-30`, `FRN-32`, `FRN-33`, `FRN-34` | Ola 2: requiere endpoints de rollback, exportación, eventos de alerta y directivas Nginx |
 | **4** | `INT-07` | Cierre de Ola 3 en backend y frontend. Ejecuta la suite automatizada completa de la etapa |
 | **5** | `INT-08`, y después `INT-09` | `INT-07` en verde al 100%. `INT-09` valida el despliegue final contra el Proxmox real |
+| **6 (Puente)** | `BAC-54`, `BAC-55`, `INF-14`, `FRN-37`, `INT-10` | Cierre de Ola 4/5 (`INT-07`/`INT-09`). Prepara submódulos, simulador y fixtures para la [Etapa de Adaptación PVE 8.4.21](etapa-adaptacion-proxmox-8.md) |
 
-**Camino crítico:** `BAC-42` $\rightarrow$ `BAC-43` $\rightarrow$ `FRN-30` $\rightarrow$ `INT-07` $\rightarrow$ `INT-08` $\rightarrow$ `INT-09`.
+**Camino crítico:** `BAC-42` $\rightarrow$ `BAC-43` $\rightarrow$ `FRN-30` $\rightarrow$ `INT-07` $\rightarrow$ `INT-08` $\rightarrow$ `INT-09` $\rightarrow$ `Puente PVE 8.4.21`.
 
 ---
 
@@ -291,6 +306,85 @@ flowchart TD
 
 ---
 
+### Bloque 6: Tareas Puente (Bridge) para la Transición a Proxmox VE 8.4.21
+
+> [!IMPORTANT]
+> **Cierre de Brechas de Entorno y Preparación (Etapa 3 $\rightarrow$ Adaptación PVE 8.4.21):**
+> Al concluir las validaciones de la Etapa 3 en el entorno de desarrollo base (PVE 9.2.2), el sistema debe prepararse para su migración y despliegue sobre el servidor físico productivo que opera con **Proxmox VE 8.4.21** (detallado en [`etapa-adaptacion-proxmox-8.md`](etapa-adaptacion-proxmox-8.md)).
+> Estas 5 tareas puente desacoplan configuraciones rígidas, habilitan el conmutador de perfiles de versión en el simulador, capturan la telemetría del host final y flexibilizan los contratos de interfaz y testing para permitir una adaptación inmediata sin riesgo de regresión:
+> 1. `BAC-54` (`BRG-14-BAC`): Extracción y Parametrización en `.env` para Servidores Heterogéneos.
+> 2. `BAC-55` (`BRG-15-SIM`): Switch de Perfil de Versión en `proxmox-simulador` (`PROXMOX_SIM_TARGET_VERSION`).
+> 3. `INF-14` (`BRG-12-INF`): Auditoría Preliminar y Recolección de Telemetría Cruda en Servidor PVE 8.4.21 Físico.
+> 4. `FRN-37` (`BRG-11-FRN`): Desacoplamiento de Constantes de Plantillas de SO en Asistente de Creación.
+> 5. `INT-10` (`BRG-13-INT`): Baseline Dual-Test Harness para Suites de Aceptación (Tolerancia PVE 8 y PVE 9).
+
+#### `BAC-54` (`BRG-14-BAC`) - Extracción y Parametrización en `.env` para Servidores Heterogéneos
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `INT-07`.
+- **Problema:** En el código actual persisten suposiciones sobre el nombre de nodo (`proxmox` o `pve`) y el rango de IDs protegidos (`100-105`). En el servidor nuevo con PVE 8.4.21, el nodo y los VMIDs protegidos varían y no deben bloquear cargas del anfitrión.
+- **Entregable:**
+  1. Parametrización estricta en `backend/cmd/api/main.go` y `middleware/protected_instance.go`: lectura prioritaria de `PROXMOX_NODE`, `PROXMOX_URL` y `PROXMOX_PROTECTED_VMIDS`.
+  2. Fallback seguro: si `PROXMOX_PROTECTED_VMIDS` viene vacío o no se define, no bloquear IDs arbitrarios ni fallar el arranque.
+  3. Soporte para la bandera opcional `PROXMOX_TARGET_PVE_VERSION` (por defecto `"auto"`).
+- **Criterio de éxito:** Modificar el `.env` con un nodo alternativo y VMIDs protegidos personalizados altera el comportamiento del backend sin requerir recompilación.
+
+#### `BAC-55` (`BRG-15-SIM`) - Switch de Perfil de Versión en `proxmox-simulador` (`PROXMOX_SIM_TARGET_VERSION`)
+- **Área:** Backend / Simulador
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-54`.
+- **Problema:** El simulador responde únicamente con firmas de PVE 9.2.2. Se requiere que admita perfiles de versión mediante variable de entorno para poder contrastar pruebas tanto en versión 9 como en versión 8.4.21.
+- **Entregable:**
+  1. En `backend/cmd/proxmox-simulador/simulador.go`:
+     - Incorporar lectura de `PROXMOX_SIM_TARGET_VERSION` (valores: `"9.2.2"`, `"8.4.21"`; default `"9.2.2"` para no romper Etapa 3).
+  2. Implementación de respuestas condicionadas:
+     - En `nodes/{node}/status`: exponer firma `pve-manager/8.4-21` y kernel `6.8` cuando la variable esté en modo 8.4.21.
+     - Hook de preparación para que las tareas de adaptación (`ADP-05`, `ADP-06`) conecten sus validaciones específicas.
+- **Criterio de éxito:** Ejecutar `PROXMOX_SIM_TARGET_VERSION=8.4.21 go run ./cmd/proxmox-simulador` emite la cabecera y el JSON de status del nodo correspondientes a la versión 8.4.21.
+
+#### `INF-14` (`BRG-12-INF`) - Auditoría Preliminar y Recolección de Telemetría Cruda en Servidor PVE 8.4.21 Físico
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 2.0 h
+- **Depende de:** `INT-09`.
+- **Problema:** Se necesita el inventario real y las firmas JSON exactas que devuelve el nuevo servidor de producción PVE 8.4.21 para alimentar las fixtures de desarrollo y detectar posibles extensiones de storage no documentadas.
+- **Entregable:**
+  1. Script de recolección segura `scripts/pve8-audit-probe.sh` que consulte con token de prueba los endpoints:
+     - `GET /api2/json/version`
+     - `GET /api2/json/nodes/{node}/status`
+     - `GET /api2/json/cluster/resources`
+     - `GET /api2/json/nodes/{node}/storage`
+     - `GET /api2/json/nodes/{node}/storage/{storage}/content`
+  2. Archivar las capturas sanitizadas (sin tokens ni secretos) en `backend/API proxmox respuestas/pve8-capturas/`.
+- **Criterio de éxito:** Carpeta de capturas creada con las respuestas reales del host físico 8.4.21 documentadas.
+
+#### `FRN-37` (`BRG-11-FRN`) - Desacoplamiento de Constantes de Plantillas de SO en Asistente de Creación
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-30`.
+- **Problema:** El wizard de creación (`useCreateInstanceWizard.ts` y `createInstanceOptions.ts`) contiene referencias duras a nombres de plantillas Debian 13.
+- **Entregable:**
+  1. Abstracción del parser de plantillas en `frontend/centinela/src/components/features/instances/data/createInstanceOptions.ts`:
+     - Normalizador que clasifique cualquier plantilla devuelta por el backend según su familia (`Debian`, `Ubuntu`, `Alpine`, `Otro`) extrayendo la versión mayor dinámicamente (`debian-12`, `debian-13`, etc.).
+  2. Pruebas unitarias de frontend verificando que el selector renderice correctamente plantillas Debian 12 Bookworm.
+- **Criterio de éxito:** El wizard muestra la tarjeta y badge "Debian 12" al recibir `debian-12-standard...` sin depender de valores estáticos Debian 13.
+
+#### `INT-10` (`BRG-13-INT`) - Baseline Dual-Test Harness para Suites de Aceptación (Tolerancia PVE 8 y PVE 9)
+- **Área:** Testing / QA
+- **Asignado:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `INT-07`.
+- **Problema:** Pruebas como `TestEtapa1SimuladorProxmox` en `test/back` fallarían si el simulador o un mock responde con tipos enteros en `prefix` o `memory`.
+- **Entregable:**
+  1. En `test/back/`: crear helper `assertNetworkPrefix(t, val)` que valide prefijos CIDR de red representados tanto como string `"24"` como número `24`.
+  2. Actualizar las aserciones de integración existentes para que sean agnósticas de la versión subyacente.
+- **Criterio de éxito:** Las pruebas de aceptación corren exitosamente sin fallar ante payloads con prefijo numérico o textual.
+
+---
+
 ## 6. Resumen de Distribución y Carga de Trabajo
 
 | Ola | Tarea | Área | Responsable(s) | Estimación | Empieza con | Cierra con (bloqueantes) |
@@ -312,20 +406,27 @@ flowchart TD
 | 4 | `INT-07` | Testing / Back | Tayra, Lisandro | 2.5 h | — | `BAC-43`, `BAC-45`, `BAC-47`, `BAC-48` |
 | 5 | `INT-08` | Integración | Equipo completo | 2.0 h | — | `INT-07`, `FRN-30`, `FRN-32`, `FRN-33`, `FRN-34` |
 | 5 | `INT-09` | Integración / Infra | Nico, Lucas, Back | 2.0 h | — | `INT-08`, `INF-11` |
-| | **Total** | | | **35.0 h** | | **17 tareas, promedio 2.06 h** |
+| 6 | `BAC-54` | Backend (Bridge) | Lisandro | 1.5 h | `INT-07` | `INT-07` |
+| 6 | `BAC-55` | Backend (Bridge) | Lisandro | 2.0 h | `BAC-54` | `BAC-54` |
+| 6 | `INF-14` | Infraestructura (Bridge) | Nico | 2.0 h | `INT-09` | `INT-09` |
+| 6 | `FRN-37` | Frontend (Bridge) | Belinda | 1.5 h | `INT-08` | `FRN-30` |
+| 6 | `INT-10` | Testing (Bridge) | Tayra | 1.5 h | `INT-07` | `INT-07` |
+| | **Total** | | | **43.5 h** | | **22 tareas, promedio 1.98 h** |
 
 ---
 
-### Carga Horaria por Integrante en la Etapa 3
+### Carga Horaria por Integrante en la Etapa 3 (con Tareas Puente PVE 8)
 
 | Integrante | Rol | Horas Asignadas | Tareas |
 |---|---|---:|---|
-| **Lisandro** | Backend | 6.5 h + `INT-07` | `BAC-42`, `BAC-45`, `BAC-46` |
-| **Tayra** | Backend | 8.0 h + `INT-07` | `BAC-44`, `BAC-48`, `BAC-43`, `BAC-47` |
-| **Belinda** | Frontend | 4.5 h | `FRN-31`, `FRN-33` |
+| **Lisandro** | Backend | 10.0 h + `INT-07` | `BAC-42`, `BAC-45`, `BAC-46`, `BAC-54`, `BAC-55` |
+| **Tayra** | Backend / Testing | 9.5 h + `INT-07` | `BAC-44`, `BAC-48`, `BAC-43`, `BAC-47`, `INT-10` |
+| **Belinda** | Frontend | 6.0 h | `FRN-31`, `FRN-33`, `FRN-37` |
 | **Luz** | Frontend | 3.5 h | `FRN-29`, `FRN-32` |
 | **Cristian** | Frontend | 4.0 h | `FRN-30`, `FRN-34` |
-| **Nico** | Infraestructura | 2.0 h + `INT-09` | `INF-11` |
+| **Nico** | Infraestructura | 4.0 h + `INT-09` | `INF-11`, `INF-14` |
 | **Lucas** | Infraestructura | 0.5 h + `INT-09` | Soporte en `INT-09` |
 | **Equipo Completo** | Integración | 2.0 h | `INT-08` (Smoke Test End-to-End local UAT) |
+| **Tayra y Lisandro** | Testing / Integración | 2.5 h | `INT-07` (Suite Automatizada Etapa 3) |
+| **Nico, Lucas y Back** | Despliegue Físico | 2.0 h | `INT-09` (Validación Proxmox Real Base) |
 

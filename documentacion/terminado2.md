@@ -514,3 +514,108 @@ Verificadas contra backend `a25d1b3` y frontend `b0a7105`.
   2. Para usuarios con rol `OPERATOR`, renderizar un resumen enfocado exclusivamente a las instancias asignadas y accesibles, sin intentar acceder a las propiedades omitidas por el backend.
 - **Criterio de éxito:** El Dashboard de un operador renderiza limpiamente sin advertencias ni errores de consola ante la respuesta acotada de `/node/status` y la suite `test/front/fix-117b-dashboard-operador.test.tsx` pasa 4 de 4 en verde (100% ✅).
 
+---
+
+## Verificación del 26/10/2026
+
+Verificadas contra backend `c08af54` y frontend `41cad44`.
+
+#### `FRN-22` - Hook `useInstanceMetrics` y cliente WebSocket para telemetría en tiempo real
+
+> [!NOTE]
+> **Estado verificado (26/10/2026, frontend `41cad44`): implementada y con test en verde.** Commit `60833b3` (origin/luz). Se incorporó el servicio de tickets efímeros `metricsService.ts` (`getWsTicket`), el cliente WebSocket con reconexión por backoff exponencial, buffer de 30 muestras y detección de instancia detenida ante muestras nulas en `useInstanceMetrics.ts`, y la suite de pruebas unitarias `instance-metrics.test.tsx` (12 de 12 en verde, 100% ✅).
+
+- **Área:** Frontend
+- **Asignada:** Luz / Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-35`, `FRN-21` (página de detalle).
+- **Problema:** El cliente frontend debe gestionar la conexión WebSocket de métricas de forma resiliente, solicitando el ticket de autenticación previo y manejando caídas de red sin fugar memoria ni sockets huérfanos.
+- **Entregable:**
+  1. Servicio de solicitud de ticket efímero `getWsTicket()`.
+  2. Hook personalizado `useInstanceMetrics(vmid)` que gestione conexión, estado (`conectando`, `conectado`, `reconectando`, `error`) y almacenamiento en búfer de los últimos $N$ puntos de telemetría.
+  3. Reintento con backoff exponencial ante desconexión accidental.
+  4. Cierre explícito del socket al desmontar el componente o cambiar de pestaña.
+  5. **Contrato de telemetría unificado (escala y nulos):**
+     - La CPU transmitida en vivo por WebSocket (`MetricasEnVivoDTO.cpu`) y en el histórico RRDdata (`PuntoMetricaDTO.cpuPercent`) viaja **en escala porcentual directa ($0$ a $100$)**, no como fracción $0..1$. El hook debe almacenar la telemetría en dicha escala sin multiplicar por 100.
+     - Cuando la instancia esté apagada (`stopped`), el backend envía `cpu: null` y `mem: null`. El hook debe manejar valores nulos de forma segura (sin invocar `.toFixed()` directamente sobre `null`) e indicar en el estado del búfer la inactividad temporal.
+- **Criterio de éxito:** El hook entrega series de datos actualizadas cada 2 s sin fugas de memoria en pruebas de componente con Vitest y maneja instancias apagadas (`null`) sin excepciones de tipo en consola.
+
+
+#### `FRN-23` - Componentes de gráficos interactivos de rendimiento y selector de rango temporal
+
+> [!NOTE]
+> **Estado verificado (26/10/2026, frontend `41cad44`): implementada funcionalmente.** Commits `9e332a1`, `b3ff1f3`. Se incorporaron los componentes vectoriales nativos en SVG `InstanceResourceChart.tsx` e `InstanceResourceUsage.tsx`, renderizando gráficos interactivos con degradado y tooltips para CPU (%), Memoria RAM (Usada vs Total) y Disco (lectura/escritura en MB/s / KB/s), selector de rango temporal ("Últimas 2 horas" y "Últimas 24 horas") y tolerancia a valores nulos (partición de trazos SVG sin romper el ciclo de vida ante estados inactivos).
+
+- **Área:** Frontend
+- **Asignada:** Luz / Cristian
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-22`, `BAC-36`.
+- **Problema:** La pestaña "Métricas" de `InstanceDetailPage.tsx` carece de componentes visuales para interpretar el consumo de recursos de la máquina.
+- **Entregable:**
+  1. Incorporación de componentes de gráficos interactivos (utilizando diseño vectorial SVG nativo y reactivo):
+     - Gráfico de CPU (%) en escala directa $0-100\%$.
+     - Gráfico de Memoria RAM (Usada vs Total).
+     - Gráfico de I/O de Disco (KB/s y MB/s Read/Write).
+  2. Selector de rango temporal: "Últimas 2 horas" y "Últimas 24 horas" vía REST `BAC-36`.
+  3. Formateo legible de unidades (bytes a MB/GB, bps a KB/s).
+  4. Tooltips explicativos y estados de carga (skeletons) mientras se obtienen los primeros datos.
+  5. **Tolerancia a valores nulos:** cuando la máquina esté detenida (`cpu: null`, `mem: null`), los gráficos pintan discontinuidades temporales o muestran el estado "Sin historial disponible" sin romper con errores `NaN` o `TypeError`.
+- **Criterio de éxito:** Al abrir el detalle, se visualiza la serie histórica y los gráficos continúan actualizándose dinámicamente tolerando paradas de la máquina sin fallos visuales.
+
+
+#### `FRN-26` - Envío de creación, manejo de errores de cuota (`409`) y seguimiento en la UI
+
+> [!NOTE]
+> **Estado verificado (26/10/2026, frontend `7eb9739`): implementada y con test en verde.** Commit `a9eab9b` (PR #161). Se incorporó el contexto `PendingInstanceCreationsContext.tsx`, la gestión del error `409 RESOURCE_QUOTA_EXCEEDED` en el modal de creación y el seguimiento del estado asíncrono con reactividad en el inventario. Las suites `create-instance-quota.test.tsx` e `instance-creation-followup.test.tsx` pasan al 100% en verde.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-25`, `BAC-38`.
+- **Problema:** Durante el envío, la interfaz debe bloquearse para evitar dobles clics, manejar amigablemente los rechazos por cuota insuficiente y reflejar el progreso de la creación en la tabla de inventario.
+- **Entregable:**
+  1. Despacho HTTP `POST /api/instances` con estado de carga en el botón de confirmación.
+  2. Manejo de error `409 RESOURCE_QUOTA_EXCEEDED`: banner en rojo dentro del modal indicando el motivo exacto sin perder los datos cargados en los pasos anteriores.
+  3. Ante `202 Accepted`: cierre del modal, inserción de la nueva fila en `/instances` en estado *"Creando..."* con spinner activo.
+  4. Escucha del evento `TASK_FINISHED` de creación vía `useEventsContext()` para actualizar la fila a *"Stopped"*, emitir Toast de éxito y habilitar sus controles.
+- **Criterio de éxito:** Flujo completo de alta probado sin recargar la pantalla (`F5`), pasando de creación a inventario activo de forma fluida.
+
+
+#### `FRN-27` - Modal de reconfiguración de vCPU y RAM con advertencia de reinicio / hot-plug
+
+> [!NOTE]
+> **Estado verificado (26/10/2026, frontend `7eb9739`): implementada y con test en verde.** Commits `02cf6d8`, `c501e42` (PR #159). Se implementó el modal `EditInstanceConfigModal.tsx`, el hook `useEditInstanceConfig.ts`, `InstanceResourcesPanel.tsx` y las reglas de validación en `editInstanceConfigValidation.ts` con cálculo de $\Delta\text{RAM}$, chequeo contra capacidad disponible del host y advertencia de reinicio si no admite hot-plug.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-40`, `FRN-21`.
+- **Problema:** Los operadores autorizados necesitan ajustar la capacidad de sus máquinas con controles seguros que indiquen claramente si la acción requiere reinicio.
+- **Entregable:**
+  1. Modal `EditInstanceConfigModal.tsx` accesible desde la barra de acciones o pestaña "Configuración" de `/instances/:vmid`.
+  2. Controles precargados con los valores actuales de vCPU y RAM.
+  3. Visualización del cálculo diferencial ($\Delta\text{RAM}$) y comparación contra el espacio disponible en el host.
+  4. Mensaje informativo: *"Si la instancia está encendida y no admite hot-plug, los cambios se harán efectivos tras reiniciar el sistema operativo huésped."*
+- **Criterio de éxito:** El modal bloquea valores que excedan la memoria libre del host y calcula correctamente el delta antes de confirmar.
+
+
+#### `FRN-28` - Integración de edición en la página de Detalle de Instancia y refresco reactivo
+
+> [!NOTE]
+> **Estado verificado (26/10/2026, frontend `41cad44`): implementada y funcional en producción.** PR #158 y #159 (`e964cb6`, `28adfd7`). Se conectó la edición de configuración en `useInstanceDetail.ts` mediante `updateInstanceConfiguration` despachando a `PUT /api/instances/:vmid/config`, emitiendo Toasts contextuales según el estado de hot-plug (verde para éxito en caliente y amarillo de advertencia ante reinicio requerido), actualización inmediata de los medidores de recursos y refresco reactivo con suscripción a eventos `TASK_FINISHED` e `INSTANCE_STATE_CHANGED`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-27`.
+- **Problema:** Tras confirmar una edición, la interfaz debe reflejar los nuevos límites sin requerir una recarga manual del navegador.
+- **Entregable:**
+  1. Conexión del modal con `PUT /api/instances/:vmid/config`.
+  2. Toasts informativos:
+     - Verde: *"Recursos actualizados exitosamente en caliente."*
+     - Amarillo: *"Configuración guardada. La máquina requiere reinicio para aplicar los nuevos recursos."*
+  3. Actualización inmediata de los valores de CPU/RAM en la cabecera del detalle y en la tabla de `/instances`.
+- **Criterio de éxito:** La modificación de recursos se refleja instantáneamente en la interfaz y emite el feedback correspondiente al estado de hot-plug.
+
+
+

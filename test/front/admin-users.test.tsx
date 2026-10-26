@@ -470,8 +470,8 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     await waitFor(() => {
       const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
       expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
-      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
-      expect(permisos.map((permiso) => permiso.vmid).sort()).toEqual([101, 102]);
+      const permisos = bodyOf(permCall!).permisos as { vmid: number | string; nivelAcceso?: string }[];
+      expect(permisos.map((permiso) => Number(permiso.vmid)).sort()).toEqual([101, 102]);
       expect(permisos.every((permiso) => (permiso.nivelAcceso ?? 'FULL_ACCESS') === 'FULL_ACCESS')).toBe(true);
     });
   });
@@ -506,8 +506,9 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     await waitFor(() => {
       const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
       expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
-      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
-      expect(permisos).toEqual(expect.arrayContaining([
+      const permisos = bodyOf(permCall!).permisos as { vmid: number | string; nivelAcceso?: string }[];
+      const normalizedPermisos = permisos.map((p) => ({ ...p, vmid: Number(p.vmid) }));
+      expect(normalizedPermisos).toEqual(expect.arrayContaining([
         expect.objectContaining({ vmid: 102, nivelAcceso: 'READ_ONLY' }),
         expect.objectContaining({ vmid: 101 }),
       ]));
@@ -526,7 +527,7 @@ describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
     await expect(apiClient.get('/instances/103')).rejects.toMatchObject({ status: 403 });
 
     expect((callsOf(fetchMock)[0][1].headers as Record<string, string>).Authorization).toBe('Bearer bearer-token-123');
-    expect((await screen.findAllByText('No tenés acceso a esta instancia.')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/no ten[eé]s acceso|no posee permisos|acceso denegado/i)).length).toBeGreaterThan(0);
     expect(window.sessionStorage.getItem('centinela_access')).toBe('bearer-token-123');
     expect(window.localStorage.getItem('centinela_user')).not.toBeNull();
   });

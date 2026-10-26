@@ -6,7 +6,10 @@ import React from 'react';
 // (Sidebar, PermissionGate, useInstances) falla por falta de Provider, cosa que en la app no pasa.
 // No se fija el archivo: se toma todo export `*Provider` de src/context.
 type ContextModule = Record<string, unknown>;
-const contextModules = import.meta.glob<ContextModule>('@/context/**/*.{ts,tsx,js,jsx}', { eager: true });
+const contextModules = import.meta.glob<ContextModule>(
+  ['@/context/**/*.{ts,tsx,js,jsx}', '@/components/**/context/**/*.{ts,tsx,js,jsx}'],
+  { eager: true },
+);
 
 const providers = Object.values(contextModules).flatMap((module) =>
   Object.entries(module)
@@ -15,18 +18,26 @@ const providers = Object.values(contextModules).flatMap((module) =>
 );
 
 function wrap(children: React.ReactNode, include: (name: string) => boolean): React.ReactElement {
-  return providers
-    .filter(({ name }) => include(name))
-    .reduceRight<React.ReactElement>(
-      (inner, { Provider }) => React.createElement(Provider, null, inner),
-      React.createElement(React.Fragment, null, children),
-    );
+  const active = providers.filter(({ name }) => include(name));
+  active.sort((a, b) => {
+    if (/Auth/.test(a.name)) return -1;
+    if (/Auth/.test(b.name)) return 1;
+    if (/Event/.test(a.name)) return -1;
+    if (/Event/.test(b.name)) return 1;
+    if (/PendingInstanceCreations/.test(a.name)) return 1;
+    if (/PendingInstanceCreations/.test(b.name)) return -1;
+    return 0;
+  });
+  return active.reduceRight<React.ReactElement>(
+    (inner, { Provider }) => React.createElement(Provider, null, inner),
+    React.createElement(React.Fragment, null, children),
+  );
 }
 
-// Lo que monta App.tsx (todos los providers salvo el de eventos). Para renderizar rutas completas:
-// ProtectedLayout ya monta su EventsProvider dentro de las rutas protegidas.
+// Lo que monta App.tsx (todos los providers salvo los que monta ProtectedLayout). Para renderizar rutas completas:
+// ProtectedLayout ya monta EventsProvider y PendingInstanceCreationsProvider dentro de las rutas protegidas.
 export function withAppProviders(children: React.ReactNode): React.ReactElement {
-  return wrap(children, (name) => !/Event/.test(name));
+  return wrap(children, (name) => !/Event|PendingInstanceCreations/.test(name));
 }
 
 // App.tsx más ProtectedLayout (con EventsProvider). Para renderizar una página protegida suelta

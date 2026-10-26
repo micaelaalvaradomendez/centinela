@@ -157,8 +157,8 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('INT-02 — Smoke Test End-to-
     const nodeStatus = await apiClient.get<Record<string, unknown>>('/node/status');
     expect(nodeStatus).toHaveProperty('cpu');
     expect(nodeStatus).toHaveProperty('ram');
-    // FIX-117A: para OPERATOR se omite storage global
-    expect(nodeStatus.storage).toBeUndefined();
+    // FIX-117A: para OPERATOR se omite storage global (llega null o undefined)
+    expect(nodeStatus.storage == null).toBe(true);
     expect(nodeStatus).toHaveProperty('instancesSummary');
   });
 

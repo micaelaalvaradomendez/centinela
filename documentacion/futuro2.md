@@ -108,72 +108,18 @@ Verificados contra frontend `b0a7105` y backend `a25d1b3`.
 
 
 
-### `FIX-125` - Normalización de VMIDs numéricos en asignación de permisos de usuario (Frontend)
+### `FIX-126` - Renderizado condicional de StorageMeter en Dashboard para OPERATOR (Frontend)
 
 - **Área:** Frontend
 - **Asignado:** Belinda / Cristian
 - **Estimación:** 0.5 h
-- **Depende de:** `FRN-18`, `BAC-31`.
-- **Problema técnico detallado:**
-  En `frontend/centinela/src/components/features/users/hooks/useUserInstanceAccess.ts:66`, la función extrae las claves de las instancias con permisos pendientes mediante `Object.keys(pendingAccess)`. En JavaScript, las claves de los objetos se iteran siempre como cadenas de texto (`string`), transformando un VMID numérico legado como `102` en `'102'`. Posteriormente, en `src/components/features/users/services/userInstanceService.ts:19-23`, la función auxiliar `instanceVmid(id)` solo retorna enteros si `typeof id === 'number'`, devolviendo intactas las cadenas de caracteres. Al despachar la solicitud `PUT /api/admin/users/:id/permissions`, el payload se arma con `{ vmid: '102' }` en lugar de `{ vmid: 102 }`, fallando las pruebas de contrato en `test/front/admin-users.test.tsx:474, 510`. Se debe tener en cuenta que ante el backend real (`FIX-107`), las instancias siempre viajan con su referencia pública ofuscada (`inst_<hash>`).
-- **Qué debe hacer el equipo de frontend:**
-  1. En `src/components/features/users/services/userInstanceService.ts:19-23`, actualizar `instanceVmid`:
-     ```typescript
-     export function instanceVmid(id: string | number): string | number {
-       if (typeof id === 'number') return id;
-       const trimmed = id.trim();
-       if (/^\d+$/.test(trimmed)) {
-         return Number(trimmed);
-       }
-       return trimmed;
-     }
-     ```
-  2. En `useUserInstanceAccess.ts`, asegurar que las claves extraídas de `pendingAccess` se normalicen a entero si representan dígitos.
-  3. Certificar que `test/front/admin-users.test.tsx` pase sus 23 pruebas en verde (incluyendo aserciones 474 y 510).
-- **Criterio de éxito:**
-  - `PUT /api/admin/users/:id/permissions` envía identificadores enteros para VMIDs numéricos legados y cadenas para IDs ofuscados.
-  - La suite `test/front/admin-users.test.tsx` pasa al 100% en verde (23/23 ✅).
-
-
-### `FIX-126` - Sincronización de suite E2E INT-02 y renderizado condicional de StorageMeter en Dashboard para OPERATOR (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Cristian
-- **Estimación:** 1.0 h
 - **Depende de:** `FIX-117A`, `FIX-117B`.
 - **Problema técnico detallado:**
-  1. En `frontend/centinela/src/pages/Dashboard.tsx:140`, el componente `<StorageMeter>` se renderiza de forma incondicional aun cuando `data?.storage` es `null` (comportamiento canónico de `FIX-117A` para usuarios con rol `OPERATOR`), mostrando un medidor en 0% en lugar de ocultar la tarjeta de capacidad de almacenamiento del host según lo exigido en `FIX-117B`.
-  2. En `test/front/int02-e2e.test.ts:161`, la suite E2E de `INT-02` (ejecutada en `TestINT02IntegracionFrontBack`) contiene la aserción `expect(nodeStatus.storage).toBeUndefined()`. El backend serializa `"storage": null` conforme a la especificación OpenAPI (`contrato_etapa1.go:42` y `backend/SETUP.md:568`), provocando la falla `AssertionError: expected null to be undefined`.
+  En `frontend/centinela/src/pages/Dashboard.tsx:140`, el componente `<StorageMeter>` se renderiza de forma incondicional aun cuando `data?.storage` es `null` (comportamiento canónico de `FIX-117A` para usuarios con rol `OPERATOR`), mostrando un medidor en 0% en lugar de ocultar la tarjeta de capacidad de almacenamiento del host según lo exigido en `FIX-117B`.
 - **Qué debe hacer el equipo de frontend:**
-  1. En `Dashboard.tsx`, condicionar el renderizado del bloque de almacenamiento a la presencia efectiva de `data?.storage` o al rol `user.rol === 'ADMIN'`, impidiendo que un operador visualice métricas de disco vacías.
-  2. En `test/front/int02-e2e.test.ts:161`, actualizar la aserción para admitir el valor nulo canónico (`expect(nodeStatus.storage).toBeNull()` o `expect(nodeStatus.storage == null).toBe(true)`).
+  En `Dashboard.tsx`, condicionar el renderizado del bloque de almacenamiento a la presencia efectiva de `data?.storage` o al rol `user.rol === 'ADMIN'`, impidiendo que un operador visualice métricas de disco vacías.
 - **Criterio de éxito:**
-  - El Dashboard no renderiza `<StorageMeter>` para operadores ni ante `data.storage === null`.
-  - La suite `test/front/int02-e2e.test.ts` y el test `TestINT02IntegracionFrontBack` pasan al 100% en verde (6/6 ✅).
-
-
-### `FIX-127` - Alineación de la suite integral LOGIN-04 al contrato de identificadores ofuscados FIX-107 (Testing / Backend / Frontend)
-
-- **Área:** Testing / Integración
-- **Asignado:** Tayra / Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `FIX-107`, `FIX-108`.
-- **Problema técnico detallado:**
-  Las pruebas de regresión continua `TestLOGIN04IntegracionFrontBack` (`test/front/login04-e2e.test.ts`) y `TestHitoLOGIN04CircuitoCompletoSeguridadYAutenticacion` (`test/back/login04_acceptance_test.go`), originadas en la Fase Base, no fueron sincronizadas tras la implementación de `FIX-107`:
-  1. En el Paso 5 / Paso 6.2, ambas suites intentan asignar permisos enviando el entero crudo `101` (`{ vmid: 101 }`) en lugar de resolver la referencia pública ofuscada (`inst_<hash>`). El backend rechaza la solicitud con HTTP `400 INVALID_REQUEST` (`"Se requiere el campo permisos (array de {vmid, nivelAcceso})"` y `"Alguna instancia indicada no es válida"`).
-  2. En `test/front/login04-e2e.test.ts:239` (Paso 10), la prueba filtra los registros de auditoría mediante `String(item.detalles ?? '').includes(userId)`. Dado que `item.detalles` es deserializado como objeto JavaScript, `String(item.detalles)` evalúa a `"[object Object]"`, fallando la comprobación de auditoría para `CREAR_USUARIO` y las demás acciones.
-  3. `test/back/resource_access_acceptance_test.go` presenta la misma desalineación al invocar `permissionsPayload(101)`.
-- **Qué debe hacer el equipo:**
-  1. En `test/front/login04-e2e.test.ts`:
-     - En el Paso 5, consultar primero `GET /api/instances` para obtener la referencia pública `inst_<hash>` de la máquina de prueba (idéntico al patrón ya aplicado en `int02-e2e.test.ts`) y asignar permisos sobre dicha referencia.
-     - En el Paso 10, inspeccionar los detalles de auditoría utilizando `JSON.stringify(item.detalles)` o accediendo a las propiedades del objeto (`item.detalles.usuarioCreado`).
-  2. En `test/back/login04_acceptance_test.go`:
-     - Utilizar la función auxiliar `instanceRefByVMID(t, adminToken, 101)` para obtener la referencia antes de invocar `PUT /admin/users/:id/permissions` y `GET /instances/:ref`.
-  3. En `test/back/resource_access_acceptance_test.go`:
-     - Actualizar `permissionsPayload` para operar con referencias públicas `instanceRefByVMID`.
-- **Criterio de éxito:**
-  - `TestLOGIN04IntegracionFrontBack` pasa 10 de 10 pruebas en verde (100% ✅).
-  - `TestHitoLOGIN04CircuitoCompletoSeguridadYAutenticacion` pasa al 100% en verde.
+  El Dashboard no renderiza `<StorageMeter>` para operadores ni ante `data.storage === null`.
 
 
 ### `FIX-108` - Adaptación del Frontend para consumo de identificadores de instancia ofuscados (Frontend)
@@ -215,16 +161,13 @@ flowchart TD
         FIX115A["FIX-115A: Ampliar cota max=128 chars (Back)"] --> FIX115B["FIX-115B: Formularios passwords largas (Front)"]
         FIX116["FIX-116: Sanitización de net0 en Proxmox (Back)"]
         FIX117A["FIX-117A: Segregar métricas host a operadores (Back)"] --> FIX117B["FIX-117B: Adaptar Dashboard operador (Front)"]
-        FIX117B --> FIX126["FIX-126: Sincronizar E2E y ocultar StorageMeter en operador (Front)"]
+        FIX117B --> FIX126["FIX-126: Ocultar StorageMeter en operador (Front)"]
         FIX118["FIX-118: Eliminar Admin123! en migraciones (Back)"]
         FIX119["FIX-119: Validar existencia de VMIDs en permisos (Back)"]
-        FIX125["FIX-125: Normalizar VMIDs en permisos (Front)"]
-        FIX107 --> FIX127["FIX-127: Alinear LOGIN-04 a IDs ofuscados (Test/Back/Front)"]
     end
 
     FIX105 --> FIX113
     FIX111A --> FIX114
     FIX112 --> FIX118
-    FIX119 --> FIX125
 ```
 
