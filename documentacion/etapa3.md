@@ -166,18 +166,6 @@ flowchart TD
 
 
 
-#### `FRN-30` - Modal destructivo de Rollback y eliminación con confirmación antierror
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-29`, `BAC-43`.
-- **Problema:** Revertir un snapshot descarta todos los cambios generados desde su captura. Un clic involuntario causaría pérdida irreparable de datos en el cliente.
-- **Entregable:**
-  1. Modal antierror `RollbackSnapshotModal.tsx` con advertencia en rojo: *"Esta acción restaurará la máquina al punto seleccionado. Todos los datos posteriores se perderán."*
-  2. Input de seguridad que exija escribir textualmente el nombre del snapshot antes de habilitar el botón "Revertir".
-  3. Modal de confirmación para eliminación de snapshots.
-  4. Bloqueo de la botonera de la instancia con indicador *"Restaurando estado..."* mientras la tarea asíncrona se resuelve.
-- **Criterio de éxito:** El botón de rollback solo es presionable tras tipear el nombre idéntico. Al confirmar, la interfaz entra en modo de espera y muestra un Toast al finalizar.
 
 ---
 
@@ -185,18 +173,6 @@ flowchart TD
 
 
 
-#### `FRN-32` - Componente y flujo de exportación de reportes de auditoría
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-31`, `BAC-45`.
-- **Problema:** Los operadores de cumplimiento requieren descargar los registros en archivos locales para archivo legal o análisis externo.
-- **Entregable:**
-  1. Botón "Exportar registros" con menú desplegable para elegir "Exportar como CSV" o "Exportar como JSON".
-  2. Integración con `auditService.exportLogs(filtros, format)` transfiriendo los filtros actualmente activos en pantalla.
-  3. Estado de carga en el botón durante la generación del reporte y disparo automático de la descarga nativa en el navegador.
-  4. Notificación Toast al completar la descarga.
-- **Criterio de éxito:** Al hacer clic en exportar, se descarga el archivo con los filtros aplicados sin recargar la página ni bloquear la UI.
 
 ---
 
@@ -204,60 +180,10 @@ flowchart TD
 
 
 
-#### `BAC-47` - Despacho multicanal de alertas (SSE en tiempo real y correo estructurado)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-46`, `BAC-52` (`BRG-12-BAC`: broker SSE generalizado para alertas globales).
-- **Problema:** Una vez detectada la saturación, todos los administradores conectados deben ser prevenidos en sus pantallas y por canal de contingencia (correo).
-- **Entregable:**
-  1. Emisión de eventos `ALERT_TRIGGERED` y `ALERT_RESOLVED` a través del canal `/api/events` hacia los clientes SSE.
-  2. Despacho estructurado de correo electrónico a través del adaptador `EmailService`:
-     - Asunto: `[ALERTA CRÍTICA] Saturación de Recursos en {Recurso}`.
-     - Cuerpo con métricas exactas, fecha y recomendación operativa.
-  3. Registro automático de la alerta en la tabla inmutable `auditoria`.
-- **Criterio de éxito:** Al dispararse la saturación, los clientes SSE reciben el evento en menos de 1 s y el log del servidor registra el correo despachado por `EmailService`.
-
-#### `FRN-33` - Centro de Notificaciones y banners contextuales de alerta por saturación
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-47`.
-- **Problema:** Los administradores en el frontend necesitan identificar de un vistazo las alertas activas del sistema sin tener que revisar manualmente cada gráfica.
-- **Entregable:**
-  1. Campana / Centro de Notificaciones en la barra superior con contador de alertas no leídas.
-  2. Banner contextual persistente de color rojo en la cabecera del Dashboard ante alertas de severidad `CRITICAL`.
-  3. Badge de advertencia en la fila del inventario si una instancia específica tiene alertas de saturación activas.
-  4. Sonido o feedback visual sutil al recibir un evento `ALERT_TRIGGERED` en vivo.
-- **Criterio de éxito:** Al emitirse una alerta de saturación, el banner aparece automáticamente en la pantalla de los administradores sin requerir `F5`.
-
 ---
 
 ### Bloque 4: Hardening de Seguridad, Sesiones y Conectividad (`RNF-01` a `RNF-06`)
 
-#### `BAC-48` - Hardening de autenticación: Cookies `HttpOnly`, Rate Limiting y Sanitización
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-03`, `BAC-17B`.
-- **Problema:** Almacenar tokens de larga duración en `sessionStorage` deja una ventana de exposición ante vulnerabilidades XSS. Además, los endpoints de login y recuperación requieren protección estricta contra fuerza bruta.
-- **Entregable:**
-  1. Modificación de `POST /api/auth/login` y `POST /api/auth/refresh`: emisión del `refreshToken` en cookie HTTP con directivas `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/auth`.
-  2. Middleware de Rate Limiting por IP para endpoints públicos (`/auth/login`, `/auth/password/forgot`) limitando a 5 intentos por minuto con respuesta `429 Too Many Requests`.
-  3. Sanitización estricta de encabezados y payloads JSON contra inyecciones de caracteres de control.
-- **Criterio de éxito:** Pruebas automatizadas confirman que JavaScript no puede leer la cookie de refresh y que peticiones abusivas consecutivas reciben 429.
-
-#### `FRN-34` - Adaptación del cliente a cookies seguras de sesión y auditoría de accesibilidad
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-48`.
-- **Problema:** El cliente de API debe adaptarse para enviar credenciales automáticas en llamadas de refresh y la interfaz debe cumplir con estándares de accesibilidad para la entrega final.
-- **Entregable:**
-  1. Ajuste de `apiClient.ts` para enviar `credentials: 'include'` en peticiones al backend.
-  2. Eliminación de referencias al almacenamiento manual del `refreshToken` en `sessionStorage`.
-  3. Auditoría y corrección de accesibilidad (WCAG 2.1 AA) en modales, botones y selectores, garantizando navegación completa por teclado y etiquetas `aria-*`.
-- **Criterio de éxito:** El flujo de rotación de tokens funciona automáticamente mediante cookies y las pruebas de accesibilidad pasan sin advertencias.
 
 ---
 
@@ -318,59 +244,6 @@ flowchart TD
 > 4. `FRN-37` (`BRG-11-FRN`): Desacoplamiento de Constantes de Plantillas de SO en Asistente de Creación.
 > 5. `INT-10` (`BRG-13-INT`): Baseline Dual-Test Harness para Suites de Aceptación (Tolerancia PVE 8 y PVE 9).
 
-#### `BAC-54` (`BRG-14-BAC`) - Extracción y Parametrización en `.env` para Servidores Heterogéneos
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `INT-07`.
-- **Problema:** En el código actual persisten suposiciones sobre el nombre de nodo (`proxmox` o `pve`) y el rango de IDs protegidos (`100-105`). En el servidor nuevo con PVE 8.4.21, el nodo y los VMIDs protegidos varían y no deben bloquear cargas del anfitrión.
-- **Entregable:**
-  1. Parametrización estricta en `backend/cmd/api/main.go` y `middleware/protected_instance.go`: lectura prioritaria de `PROXMOX_NODE`, `PROXMOX_URL` y `PROXMOX_PROTECTED_VMIDS`.
-  2. Fallback seguro: si `PROXMOX_PROTECTED_VMIDS` viene vacío o no se define, no bloquear IDs arbitrarios ni fallar el arranque.
-  3. Soporte para la bandera opcional `PROXMOX_TARGET_PVE_VERSION` (por defecto `"auto"`).
-- **Criterio de éxito:** Modificar el `.env` con un nodo alternativo y VMIDs protegidos personalizados altera el comportamiento del backend sin requerir recompilación.
-
-#### `BAC-55` (`BRG-15-SIM`) - Switch de Perfil de Versión en `proxmox-simulador` (`PROXMOX_SIM_TARGET_VERSION`)
-- **Área:** Backend / Simulador
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `BAC-54`.
-- **Problema:** El simulador responde únicamente con firmas de PVE 9.2.2. Se requiere que admita perfiles de versión mediante variable de entorno para poder contrastar pruebas tanto en versión 9 como en versión 8.4.21.
-- **Entregable:**
-  1. En `backend/cmd/proxmox-simulador/simulador.go`:
-     - Incorporar lectura de `PROXMOX_SIM_TARGET_VERSION` (valores: `"9.2.2"`, `"8.4.21"`; default `"9.2.2"` para no romper Etapa 3).
-  2. Implementación de respuestas condicionadas:
-     - En `nodes/{node}/status`: exponer firma `pve-manager/8.4-21` y kernel `6.8` cuando la variable esté en modo 8.4.21.
-     - Hook de preparación para que las tareas de adaptación (`ADP-05`, `ADP-06`) conecten sus validaciones específicas.
-- **Criterio de éxito:** Ejecutar `PROXMOX_SIM_TARGET_VERSION=8.4.21 go run ./cmd/proxmox-simulador` emite la cabecera y el JSON de status del nodo correspondientes a la versión 8.4.21.
-
-#### `INF-14` (`BRG-12-INF`) - Auditoría Preliminar y Recolección de Telemetría Cruda en Servidor PVE 8.4.21 Físico
-- **Área:** Infraestructura
-- **Asignado:** Nico
-- **Estimación:** 2.0 h
-- **Depende de:** `INT-09`.
-- **Problema:** Se necesita el inventario real y las firmas JSON exactas que devuelve el nuevo servidor de producción PVE 8.4.21 para alimentar las fixtures de desarrollo y detectar posibles extensiones de storage no documentadas.
-- **Entregable:**
-  1. Script de recolección segura `scripts/pve8-audit-probe.sh` que consulte con token de prueba los endpoints:
-     - `GET /api2/json/version`
-     - `GET /api2/json/nodes/{node}/status`
-     - `GET /api2/json/cluster/resources`
-     - `GET /api2/json/nodes/{node}/storage`
-     - `GET /api2/json/nodes/{node}/storage/{storage}/content`
-  2. Archivar las capturas sanitizadas (sin tokens ni secretos) en `backend/API proxmox respuestas/pve8-capturas/`.
-- **Criterio de éxito:** Carpeta de capturas creada con las respuestas reales del host físico 8.4.21 documentadas.
-
-#### `FRN-37` (`BRG-11-FRN`) - Desacoplamiento de Constantes de Plantillas de SO en Asistente de Creación
-- **Área:** Frontend
-- **Asignado:** Belinda
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-30`.
-- **Problema:** El wizard de creación (`useCreateInstanceWizard.ts` y `createInstanceOptions.ts`) contiene referencias duras a nombres de plantillas Debian 13.
-- **Entregable:**
-  1. Abstracción del parser de plantillas en `frontend/centinela/src/components/features/instances/data/createInstanceOptions.ts`:
-     - Normalizador que clasifique cualquier plantilla devuelta por el backend según su familia (`Debian`, `Ubuntu`, `Alpine`, `Otro`) extrayendo la versión mayor dinámicamente (`debian-12`, `debian-13`, etc.).
-  2. Pruebas unitarias de frontend verificando que el selector renderice correctamente plantillas Debian 12 Bookworm.
-- **Criterio de éxito:** El wizard muestra la tarjeta y badge "Debian 12" al recibir `debian-12-standard...` sin depender de valores estáticos Debian 13.
 
 #### `INT-10` (`BRG-13-INT`) - Baseline Dual-Test Harness para Suites de Aceptación (Tolerancia PVE 8 y PVE 9)
 - **Área:** Testing / QA

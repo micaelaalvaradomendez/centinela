@@ -44,16 +44,7 @@ Verificados contra frontend `b0a7105` y backend `a25d1b3`.
 
 ---
 
-### `FIX-91` - Eliminar el componente muerto `InstanceTester` (`FRN-15` / `FRN-16`) (Frontend)
 
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 0,5 h
-- **Depende de:** `FRN-15`, `FRN-16` (en `terminado-1.md`).
-- **Problema técnico detallado:**
-  `frontend/centinela/src/components/features/instances/components/InstanceTester.tsx` se titula **"Probador de Instancias (Mock Local)"**, define `INITIAL_INSTANCES` con datos falsos (ids 1..3, "servidor-web-produccion", "base-datos-staging", etc.) y simula las transiciones con `setTimeout`. No se importa desde ningún archivo de producción y persiste como código muerto con datos mock.
-- **Qué debe hacer el equipo de frontend:** eliminar el archivo `InstanceTester.tsx`.
-- **Criterio de éxito:** no queda código de producto con datos mock ni componentes sin importar.
 
 
 > [!NOTE]

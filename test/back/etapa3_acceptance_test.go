@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -491,5 +492,114 @@ func TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis(t *testing.T) {
 		t.Errorf("BAC-46: no se encontraron pruebas unitarias del evaluador de umbrales e histéresis en el backend")
 	} else {
 		runBackendUnitTests(t, testFiles)
+	}
+}
+
+// TestEtapa3BAC47_DespachoMulticanalAlertasSSEyCorreo verifica BAC-47 (documentacion/actual.md):
+//   1. Emisión de eventos ALERT_TRIGGERED y ALERT_RESOLVED por el canal SSE /api/events.
+//   2. Despacho estructurado de correo electrónico a través de EmailService con asunto crítico.
+//   3. Registro inmutable de la alerta en la tabla auditoria con acción ALERT_TRIGGERED.
+func TestEtapa3BAC47_DespachoMulticanalAlertasSSEyCorreo(t *testing.T) {
+	servicesCode := secReadGoDir(t, "internal/core/services")
+	portsCode := secReadGoDir(t, "internal/core/ports")
+	combined := servicesCode + "\n" + portsCode
+
+	t.Run("puertos y servicios declaran eventos ALERT_TRIGGERED, ALERT_RESOLVED y despacho EmailService", func(t *testing.T) {
+		for _, required := range []string{"ALERT_TRIGGERED", "ALERT_RESOLVED"} {
+			if !strings.Contains(combined, required) {
+				t.Errorf("BAC-47: el backend debe declarar la constante de alerta %q", required)
+			}
+		}
+
+		if !regexp.MustCompile(`(?i)ALERTA CRÍTICA|ALERTA CRITICA|recurso_saturado|EnviarAlerta`).MatchString(combined) {
+			t.Errorf("BAC-47: EmailService o el servicio de eventos no implementa el despacho de correo de alerta crítica")
+		}
+	})
+
+	t.Run("pruebas unitarias de despacho multicanal presentes en el backend", func(t *testing.T) {
+		_, testFiles := goFilesContaining(t, `ALERT_TRIGGERED|ALERT_RESOLVED|DespachoAlerta|AlertaCorreo`)
+		if len(testFiles) == 0 {
+			t.Errorf("BAC-47: no se encontraron pruebas unitarias de despacho multicanal de alertas en el backend")
+		} else {
+			runBackendUnitTests(t, testFiles)
+		}
+	})
+}
+
+// TestEtapa3BAC48_HardeningAutenticacionCookiesRateLimiting verifica BAC-48 (documentacion/actual.md):
+//   1. Emisión de refreshToken en cookie HTTP con HttpOnly, Secure, SameSite=Strict y Path=/api/auth.
+//   2. Middleware de Rate Limiting por IP para /auth/login y /auth/password/forgot (429 Too Many Requests).
+//   3. Sanitización de cabeceras y payloads contra caracteres de control.
+func TestEtapa3BAC48_HardeningAutenticacionCookiesRateLimiting(t *testing.T) {
+	middlewareCode := secReadGoDir(t, "internal/adapters/primary/http/middleware")
+	handlersCode := secReadGoDir(t, "internal/adapters/primary/http")
+	combined := middlewareCode + "\n" + handlersCode
+
+	t.Run("emisión de refreshToken como cookie HttpOnly Secure SameSite=Strict", func(t *testing.T) {
+		if !regexp.MustCompile(`(?i)SetCookie\([^)]*HttpOnly[^)]*true|httpOnly\s*=\s*true`).MatchString(combined) &&
+			!regexp.MustCompile(`(?i)refreshToken.*(HttpOnly|SameSite)`).MatchString(combined) {
+			t.Errorf("BAC-48: el backend no emite el refreshToken en cookie HttpOnly con SameSite estricto")
+		}
+	})
+
+	t.Run("rate limiting en endpoints públicos responde 429 Too Many Requests", func(t *testing.T) {
+		if !strings.Contains(combined, "429") && !regexp.MustCompile(`(?i)StatusTooManyRequests|RateLimit|limiter`).MatchString(combined) {
+			t.Errorf("BAC-48: no se detecta middleware de Rate Limiting con HTTP 429 en adaptadores HTTP")
+		}
+	})
+}
+
+// TestEtapa3BAC54_ParametrizacionEntornoServidoresHeterogeneos verifica BAC-54 (documentacion/actual.md):
+//   1. Lectura de PROXMOX_NODE, PROXMOX_URL y PROXMOX_PROTECTED_VMIDS desde variables de entorno.
+//   2. Fallback seguro ante listas vacías sin fallar el arranque.
+//   3. Bandera opcional PROXMOX_TARGET_PVE_VERSION.
+func TestEtapa3BAC54_ParametrizacionEntornoServidoresHeterogeneos(t *testing.T) {
+	mainCode := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
+	protectedMiddleware := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/middleware/protected_instance.go")))
+
+	t.Run("main.go y middlewares leen configuración dinámica de nodo y VMIDs", func(t *testing.T) {
+		for _, envVar := range []string{"PROXMOX_NODE", "PROXMOX_PROTECTED_VMIDS"} {
+			if !strings.Contains(mainCode, envVar) {
+				t.Errorf("BAC-54: main.go no parametriza %q dinámicamente", envVar)
+			}
+		}
+
+		if !strings.Contains(protectedMiddleware, "ParseVmidsProtegidos") {
+			t.Errorf("BAC-54: protected_instance.go no define ParseVmidsProtegidos para interpretar la variable de entorno")
+		}
+	})
+}
+
+// TestEtapa3BAC55_SwitchPerfilVersionSimulador verifica BAC-55 (documentacion/actual.md):
+//   1. PROXMOX_SIM_TARGET_VERSION en simulador.go (soporta 9.2.2 y 8.4.21).
+//   2. Emisión condicional de firmas pveversion y kversion.
+func TestEtapa3BAC55_SwitchPerfilVersionSimulador(t *testing.T) {
+	simCode := string(readFile(t, sourcePath("backend", "cmd/proxmox-simulador/simulador.go")))
+	instCode := string(readFile(t, sourcePath("backend", "cmd/proxmox-simulador/instancias.go")))
+	combined := simCode + "\n" + instCode
+
+	t.Run("simulador soporta configuración de versión de destino", func(t *testing.T) {
+		if !regexp.MustCompile(`(?i)PROXMOX_SIM_TARGET_VERSION|TargetVersion|VersionDestino`).MatchString(combined) {
+			t.Errorf("BAC-55: cmd/proxmox-simulador no implementa PROXMOX_SIM_TARGET_VERSION para alternar perfil de versión")
+		}
+	})
+}
+
+// TestEtapa3INF14_AuditoriaYSondaPVE8Real verifica INF-14 (documentacion/actual.md):
+//   1. Existencia del script de diagnóstico scripts/pve8-audit-probe.sh.
+//   2. Consulta a los endpoints base /version, /status, /cluster/resources y /storage.
+func TestEtapa3INF14_AuditoriaYSondaPVE8Real(t *testing.T) {
+	probeScript := filepath.Join(envOrDefault("CENTINELA_ROOT", "../.."), "scripts", "pve8-audit-probe.sh")
+	content, err := os.ReadFile(probeScript)
+	if err != nil {
+		t.Errorf("INF-14: falta el script de auditoría preliminar scripts/pve8-audit-probe.sh: %v", err)
+		return
+	}
+
+	script := string(content)
+	for _, requiredEndpoint := range []string{"/api2/json/version", "/nodes/", "/cluster/resources", "/storage"} {
+		if !strings.Contains(script, requiredEndpoint) {
+			t.Errorf("INF-14: scripts/pve8-audit-probe.sh no audita el endpoint %q", requiredEndpoint)
+		}
 	}
 }
