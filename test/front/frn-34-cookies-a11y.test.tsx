@@ -3,24 +3,20 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // FRN-34 (Etapa 3) — Adaptación del cliente a cookies seguras de sesión y auditoría de accesibilidad.
-// Entregables:
-//   1. Ajuste de apiClient.ts para enviar credentials: 'include' en peticiones al backend.
-//   2. Eliminación de referencias al almacenamiento manual del refreshToken en sessionStorage.
-//   3. Auditoría de accesibilidad (WCAG 2.1 AA): etiquetas aria-* en formularios, botones y modales.
+// Metodología TDD estricta: Valida que los modales críticos de Etapa 3 (Snapshots Rollback / Confirmaciones)
+// cuenten con atributos de accesibilidad WCAG 2.1 AA (role="alertdialog" / role="dialog", aria-labelledby, aria-describedby)
+// y que el flujo de autenticación use cookies HttpOnly sin persistir tokens de refresco en web storage.
+
 describe('FRN-34 - Cookies seguras de sesión y accesibilidad en Frontend', () => {
-  const apiClientPath = path.resolve(__dirname, '../../frontend/centinela/src/api/apiClient.ts');
+  const apiClientPath = path.resolve(__dirname, '../../frontend/centinela/src/services/apiClient.ts');
   const tokenStoragePath = path.resolve(__dirname, '../../frontend/centinela/src/storage/tokenStorage.ts');
+  const snapshotsDir = path.resolve(__dirname, '../../frontend/centinela/src/components/features/instances');
 
   it('apiClient.ts configura credentials: "include" para transmitir cookies HttpOnly', () => {
     let content = '';
     if (fs.existsSync(apiClientPath)) {
       content = fs.readFileSync(apiClientPath, 'utf-8');
-    } else {
-      // Buscar cliente alternativo si cambió de ruta
-      const clientAlt = path.resolve(__dirname, '../../frontend/centinela/src/services/apiClient.ts');
-      if (fs.existsSync(clientAlt)) content = fs.readFileSync(clientAlt, 'utf-8');
     }
-
     expect(content, 'apiClient debe configurar credentials: "include"').toMatch(/credentials:\s*['"]include['"]/);
   });
 
@@ -33,19 +29,30 @@ describe('FRN-34 - Cookies seguras de sesión y accesibilidad en Frontend', () =
     }
   });
 
-  it('los modales y formularios de la aplicación implementan atributos de accesibilidad WCAG', () => {
-    const pagesDir = path.resolve(__dirname, '../../frontend/centinela/src/pages');
-    let hasAria = false;
-    for (const file of fs.readdirSync(pagesDir)) {
-      if (/\.tsx$/.test(file)) {
-        const text = fs.readFileSync(path.join(pagesDir, file), 'utf-8');
-        if (/aria-label|aria-describedby|role="dialog"|role="alert"/.test(text)) {
-          hasAria = true;
-          break;
+  it('los modales de snapshots y acciones destructivas de Etapa 3 implementan accesibilidad WCAG (alertdialog / aria-labelledby)', () => {
+    // Busca archivos de modal de snapshots
+    let rollbackModalFound = false;
+    let hasWcagDialogAttributes = false;
+
+    function walkDir(dir: string) {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkDir(fullPath);
+        } else if (entry.isFile() && /snapshot.*modal|rollback.*modal/i.test(entry.name)) {
+          rollbackModalFound = true;
+          const text = fs.readFileSync(fullPath, 'utf-8');
+          if (/role=["']alertdialog["']|role=["']dialog["']|aria-labelledby|aria-describedby/.test(text)) {
+            hasWcagDialogAttributes = true;
+          }
         }
       }
     }
-    expect(hasAria, 'Las páginas y componentes deben incluir atributos de accesibilidad aria-*').toBe(true);
+
+    walkDir(snapshotsDir);
+
+    expect(rollbackModalFound, 'FRN-34: Debe existir el componente modal de rollback/snapshots').toBe(true);
+    expect(hasWcagDialogAttributes, 'FRN-34: El modal destructivo debe declarar atributos de accesibilidad WCAG (role="alertdialog" o aria-labelledby)').toBe(true);
   });
 });
-

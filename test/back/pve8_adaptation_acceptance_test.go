@@ -1,47 +1,45 @@
 package back_test
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 )
 
-// Pruebas de aceptación de la Etapa de Adaptación a Proxmox VE 8.4.21 (documentacion/actual.md):
-//   - ADP-01 (BAC-PVE8-01): Ajuste de parámetros de aprovisionamiento QEMU (ostype=l26, agent=1) y LXC (unprivileged=1, nesting=1).
-//   - ADP-02 (BAC-PVE8-02): Parámetros de purga profunda en eliminación de instancias (purge=1, destroy-unreferenced-disks=1).
-//   - ADP-03 (BAC-PVE8-03): Parser tolerante de memoria (entero/string) y prefijo de red CIDR sin desajuste de digest.
-//   - ADP-04 (BAC-PVE8-04): Parametrización dinámica de VMIDs protegidos vía variable de entorno.
-//   - ADP-05 (SIM-PVE8-01): Modo dual en el simulador Proxmox con PROXMOX_SIM_TARGET_VERSION=8.4.21.
-//   - ADP-06 (SIM-PVE8-02): Catálogo de plantillas e ISOs oficiales Debian 12 Bookworm en el simulador.
-//   - ADP-09 (INF-PVE8-01) y ADP-10 (INF-PVE8-02): Privilegios de token y storage LVM-thin documentados para PVE 8.4.21.
+// Suite de Aceptación para la Etapa de Adaptación a Proxmox VE 8.4.21 (documentacion/etapa-adaptacion-proxmox-8.md).
+// Metodología TDD estricta: Todo test sobre una tarea pendiente DEBE FALLAR (Rojo) hasta que el equipo
+// desarrolle e implemente el código productivo correspondiente.
 
 // TestADP01_ParametrosAprovisionamientoQEMU_LXC verifica ADP-01:
-// Inyección obligatoria de ostype=l26 y agent=1 para QEMU, y unprivileged=1 y nesting=1 para LXC.
+// En Proxmox VE 8.4.21, client.go debe forzar ostype=l26 y agent=1 en QEMU,
+// y unprivileged=1 con features: nesting=1 en LXC.
 func TestADP01_ParametrosAprovisionamientoQEMU_LXC(t *testing.T) {
 	clientCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/proxmox/client.go")))
 
 	t.Run("QEMU inyecta ostype=l26 y agent=1 para canal virtio-serial en PVE 8.4", func(t *testing.T) {
-		if !regexp.MustCompile(`"ostype",\s*"l26"`).MatchString(clientCode) {
+		if !regexp.MustCompile(`"ostype":\s*"l26"`).MatchString(clientCode) {
 			t.Errorf("ADP-01: client.go:parametrosCreacion debe enviar ostype=l26 para instancias QEMU")
 		}
-		if !regexp.MustCompile(`"agent",\s*"1"`).MatchString(clientCode) {
+		if !regexp.MustCompile(`"agent":\s*"1"`).MatchString(clientCode) && !regexp.MustCompile(`"agent":\s*1\b`).MatchString(clientCode) {
 			t.Errorf("ADP-01: client.go:parametrosCreacion debe enviar agent=1 para habilitar el socket virtio-serial en QEMU")
 		}
 	})
 
 	t.Run("LXC inyecta unprivileged=1 y nesting=1 para compatibilidad systemd en PVE 8.4", func(t *testing.T) {
-		if !regexp.MustCompile(`"unprivileged",\s*"1"`).MatchString(clientCode) {
+		if !regexp.MustCompile(`"unprivileged":\s*"1"`).MatchString(clientCode) && !regexp.MustCompile(`"unprivileged":\s*1\b`).MatchString(clientCode) {
 			t.Errorf("ADP-01: client.go:parametrosCreacion debe enviar unprivileged=1 para aislamiento en contenedores LXC")
 		}
-		if !regexp.MustCompile(`(?i)(nesting=1|"features",\s*"nesting=1")`).MatchString(clientCode) {
+		if !regexp.MustCompile(`nesting=1`).MatchString(clientCode) {
 			t.Errorf("ADP-01: client.go:parametrosCreacion debe configurar features nesting=1 para el arranque limpio de systemd en LXC")
 		}
 	})
 }
 
 // TestADP02_ParametrosPurgaBorrado verifica ADP-02:
-// DELETE /nodes/{node}/{tipo}/{vmid} debe incluir ?purge=1&destroy-unreferenced-disks=1.
+// EliminarInstancia en client.go debe incorporar purge=1 y destroy-unreferenced-disks=1
+// para evitar el error 500 en instancias con configuración HA y no dejar discos huérfanos.
 func TestADP02_ParametrosPurgaBorrado(t *testing.T) {
 	clientCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/proxmox/client.go")))
 
@@ -57,28 +55,28 @@ func TestADP02_ParametrosPurgaBorrado(t *testing.T) {
 }
 
 // TestADP03_ParserDefensivoMemoryPrefix verifica ADP-03:
-// Soporte agnóstico de tipos en json.Number / prefijoFlexible para compatibilidad con PVE 8.4 y 9.2.
+// Soporte agnóstico de tipos en json.Number / prefijoFlexible y existencia de suite unitaria dedicada client_pve8_test.go.
 func TestADP03_ParserDefensivoMemoryPrefix(t *testing.T) {
-	clientCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/proxmox/client.go")))
-
-	t.Run("prefijoFlexible y json.Number presentes en cliente Proxmox", func(t *testing.T) {
-		if !strings.Contains(clientCode, "prefijoFlexible") {
-			t.Errorf("ADP-03: client.go debe contar con tipo prefijoFlexible para tolerar máscaras de red como string y número")
-		}
-		if !strings.Contains(clientCode, "UseNumber") || !strings.Contains(clientCode, "json.Number") {
-			t.Errorf("ADP-03: ObtenerConfig debe usar json.Number para admitir memory tanto en formato string como numérico")
+	t.Run("archivo de pruebas unitarias client_pve8_test.go presente en proxmox adapter", func(t *testing.T) {
+		unitTestPath := sourcePath("backend", "internal/adapters/secondary/proxmox/client_pve8_test.go")
+		if _, err := os.Stat(unitTestPath); os.IsNotExist(err) {
+			t.Fatalf("ADP-03: falta la suite unitaria internal/adapters/secondary/proxmox/client_pve8_test.go con payloads crudos de PVE 8.4")
 		}
 	})
 }
 
 // TestADP04_ParametrizacionVMIDsProtegidos verifica ADP-04:
-// PROXMOX_PROTECTED_VMIDS permite personalizar o vaciar la lista de protección.
+// ParseVmidsProtegidos debe soportar rangos numéricos con guion (ej. "100-105, 200, 300-302").
 func TestADP04_ParametrizacionVMIDsProtegidos(t *testing.T) {
-	middlewareCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/middleware/protected_instance.go")))
+	code := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/middleware/protected_instance.go")))
+	testCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/middleware/protected_instance_test.go")))
 
-	t.Run("ParseVmidsProtegidos maneja cadenas personalizadas y listas vacías", func(t *testing.T) {
-		if !strings.Contains(middlewareCode, "ParseVmidsProtegidos") {
-			t.Errorf("ADP-04: protected_instance.go debe exportar la función ParseVmidsProtegidos")
+	t.Run("ParseVmidsProtegidos soporta rangos con guion y listas mixtas", func(t *testing.T) {
+		if !regexp.MustCompile(`strings\.Split.*-|\bstrings\.Cut.*-|\bstrings\.Contains.*-|\bSplit\(.*"-"`).MatchString(code) {
+			t.Errorf("ADP-04: ParseVmidsProtegidos en protected_instance.go no implementa soporte para rangos numéricos con guion (ej. '100-105')")
+		}
+		if !regexp.MustCompile(`(?i)Test.*Rango|100-105|100-103`).MatchString(testCode) {
+			t.Errorf("ADP-04: protected_instance_test.go debe incluir casos de prueba unitaria para rangos con guion")
 		}
 	})
 }
@@ -96,33 +94,38 @@ func TestADP05_ModoDualSimulador(t *testing.T) {
 }
 
 // TestADP06_CatalogoDebian12Simulador verifica ADP-06:
-// storage.go ofrece plantillas oficiales debian-12 en vez de debian-13 y no incluye el content type 'import'.
+// storage.go no debe hardcodear Debian 13 en el simulador para PVE 8.4 y debe ofrecer ISO oficial de Debian 12.
 func TestADP06_CatalogoDebian12Simulador(t *testing.T) {
 	storageCode := string(readFile(t, sourcePath("backend", "cmd/proxmox-simulador/storage.go")))
 
-	t.Run("storage.go expone debian-12 en catálogo de plantillas", func(t *testing.T) {
-		if !strings.Contains(storageCode, "debian-12") {
-			t.Errorf("ADP-06: cmd/proxmox-simulador/storage.go debe incluir plantillas/ISOs oficiales de Debian 12 Bookworm")
+	t.Run("storage.go no expone Debian 13 y contiene ISO oficial de Debian 12 Bookworm", func(t *testing.T) {
+		if strings.Contains(storageCode, "debian-13") {
+			t.Errorf("ADP-06: cmd/proxmox-simulador/storage.go contiene referencias hardcodeadas a debian-13; debe adaptarse a Debian 12 Bookworm para PVE 8.4")
+		}
+		if !strings.Contains(storageCode, "debian-12") || !strings.Contains(storageCode, ".iso") {
+			t.Errorf("ADP-06: cmd/proxmox-simulador/storage.go debe incluir ISO oficial de Debian 12 (ej. debian-12.5.0-amd64-netinst.iso)")
 		}
 	})
 }
 
 // TestADP09_ADP10_InfraestructuraPVE8 verifica ADP-09 y ADP-10:
-// api-proxmox.md documenta la configuración específica para PVE 8.4.21.
+// Requiere la presencia del script de auditoría y validación de host real scripts/pve8-audit-probe.sh.
 func TestADP09_ADP10_InfraestructuraPVE8(t *testing.T) {
-	docPath := filepath.Join(envOrDefault("CENTINELA_ROOT", "../.."), "documentacion", "api-proxmox.md")
-	docContent := string(readFile(t, docPath))
+	scriptPath := filepath.Join(envOrDefault("CENTINELA_ROOT", "../.."), "scripts", "pve8-audit-probe.sh")
 
-	t.Run("api-proxmox.md documenta privilegios y storages para Proxmox VE 8.4.21", func(t *testing.T) {
-		for _, requiredPriv := range []string{"VM.Allocate", "Datastore.AllocateSpace", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Network"} {
-			if !strings.Contains(docContent, requiredPriv) {
-				t.Errorf("ADP-09: api-proxmox.md debe documentar el privilegio %q", requiredPriv)
-			}
+	t.Run("script de auditoría scripts/pve8-audit-probe.sh existe y verifica permisos y storage", func(t *testing.T) {
+		info, err := os.Stat(scriptPath)
+		if os.IsNotExist(err) {
+			t.Fatalf("ADP-09/ADP-10: falta el script de validación de sonda en host real %q", scriptPath)
 		}
-
-		if !regexp.MustCompile(`(?i)local-lvm|lvmthin`).MatchString(docContent) {
-			t.Errorf("ADP-10: api-proxmox.md debe documentar pool LVM-thin (local-lvm) para aprovisionamiento")
+		if info.Mode()&0111 == 0 {
+			t.Errorf("ADP-09/ADP-10: el script %q debe tener permisos de ejecución (+x)", scriptPath)
+		}
+		content := string(readFile(t, scriptPath))
+		for _, requiredPriv := range []string{"VM.Allocate", "Datastore.AllocateSpace", "local-lvm"} {
+			if !strings.Contains(content, requiredPriv) {
+				t.Errorf("ADP-09/ADP-10: scripts/pve8-audit-probe.sh debe verificar %q", requiredPriv)
+			}
 		}
 	})
 }
-

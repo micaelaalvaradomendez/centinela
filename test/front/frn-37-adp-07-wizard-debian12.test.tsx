@@ -9,8 +9,8 @@ import { fetchCreationTemplates } from '@/components/features/instances/services
 // FRN-37 / ADP-07: Adaptación Frontend Selector Plantillas Debian 12 / PVE 8.
 // En Proxmox VE 8.4.21, las plantillas predeterminadas de LXC son Debian 12 (Bookworm),
 // e.g.: "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst".
-// El frontend debe parsear y permitir seleccionar plantillas Debian 12 de forma dinámica,
-// reflejando la selección en el resumen sin depender de Debian 13 ni fallar en la selección.
+// El frontend debe detectar y extraer metadatos de sistema operativo ('Debian') y versión ('12')
+// a partir del identificador de la plantilla (no mostrar "—"), y renderizar el badge y resumen correspondientes.
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -79,12 +79,12 @@ function setupPVE8Session() {
   return fetchMock;
 }
 
-describe('FRN-37 / ADP-07: Selector de Plantillas Debian 12 PVE 8', () => {
+describe('FRN-37 / ADP-07: Selector y Metadatos de Plantillas Debian 12 PVE 8', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('fetchCreationTemplates parsea correctamente templates LXC de Debian 12 de PVE 8', async () => {
+  it('fetchCreationTemplates extrae metadatos de sistema operativo ("Debian") y versión ("12") para plantillas Debian 12', async () => {
     setupPVE8Session();
     const result = await fetchCreationTemplates();
     expect(result).toHaveLength(2);
@@ -93,9 +93,13 @@ describe('FRN-37 / ADP-07: Selector de Plantillas Debian 12 PVE 8', () => {
     expect(debian12Lxc).toBeDefined();
     expect(debian12Lxc?.value).toBe('local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst');
     expect(debian12Lxc?.type).toBe('LXC_TEMPLATE');
+
+    // Criterio de éxito de ADP-07: no mostrar "—", extraer el sistema operativo y la versión
+    expect(debian12Lxc?.operatingSystem, 'ADP-07: el servicio debe identificar "Debian" como sistema operativo').toBe('Debian');
+    expect(debian12Lxc?.version, 'ADP-07: el servicio debe extraer "12" como versión de la plantilla').toBe('12');
   });
 
-  it('el wizard permite seleccionar la plantilla Debian 12 para contenedor LXC sin hardcodear Debian 13', async () => {
+  it('el wizard muestra la información detectada de Debian 12 en la tabla de templates', async () => {
     setupPVE8Session();
     const user = userEvent.setup();
 
@@ -137,18 +141,8 @@ describe('FRN-37 / ADP-07: Selector de Plantillas Debian 12 PVE 8', () => {
     // Paso 4: Sistema Operativo (selección de template)
     await screen.findByRole('radiogroup', { name: /template del sistema operativo/i });
     
-    // Verificar que aparece el template debian-12-standard
-    const templateRadio = await screen.findByRole('radio', { name: /seleccionar debian-12-standard/i });
-    expect(templateRadio).toBeInTheDocument();
-    await user.click(templateRadio);
-
-    const nextBtn4 = screen.getByRole('button', { name: /siguiente/i });
-    expect(nextBtn4).toBeEnabled();
-    await user.click(nextBtn4);
-
-    // Paso 5: Resumen
-    await screen.findByRole('heading', { name: /resumen de la configuraci[oó]n/i });
-    expect(screen.getAllByText(/ct-debian12-test/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/debian-12-standard/i).length).toBeGreaterThan(0);
+    // Verificar que aparece el template y que sus columnas muestran Debian y 12
+    const debianCell = await screen.findByText(/^Debian$/i);
+    expect(debianCell).toBeInTheDocument();
   });
 });

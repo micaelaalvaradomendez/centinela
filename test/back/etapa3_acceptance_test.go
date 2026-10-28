@@ -472,27 +472,37 @@ func TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS(t *testing.T) {
 }
 
 // TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis verifica BAC-46 (documentacion/actual.md):
-//   1. Worker en segundo plano que evalúa umbrales de CPU, RAM y Almacenamiento del host.
-//   2. Histéresis (múltiples muestras consecutivas por encima del umbral) y período de enfriamiento
-//      (cooldown en Redis) para evitar tormentas de alertas.
+//   1. Worker en segundo plano (EvaluadorAlertas) que evalúa umbrales de CPU, RAM y Almacenamiento del host.
+//   2. Histéresis (muestras consecutivas por encima del umbral y umbral de recuperación) y deduplicación
+//      en Redis para evitar tormentas de alertas.
 //   3. Emisión de evento SSE ALERT_TRIGGERED y registro en auditoría con acción ALERT_TRIGGERED.
 func TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis(t *testing.T) {
 	servicesCode := secReadGoDir(t, "internal/core/services")
 	mainCode := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
 	combined := servicesCode + "\n" + mainCode
 
-	for _, marker := range []string{"ALERT_TRIGGERED", "ALERT_CPU_THRESHOLD", "ALERT_RAM_THRESHOLD", "ALERT_STORAGE_THRESHOLD"} {
-		if !strings.Contains(combined, marker) {
-			t.Errorf("BAC-46: el backend no contiene %q para el worker evaluador de umbrales con histéresis", marker)
+	t.Run("worker y umbrales de histéresis declarados en backend", func(t *testing.T) {
+		for _, marker := range []string{"EvaluadorAlertas", "ALERT_TRIGGERED", "umbralRecuperacion"} {
+			if !strings.Contains(combined, marker) {
+				t.Errorf("BAC-46: el backend no contiene %q para el worker evaluador de umbrales con histéresis", marker)
+			}
 		}
-	}
 
-	_, testFiles := goFilesContaining(t, `ALERT_CPU_THRESHOLD|ALERT_RAM_THRESHOLD|ALERT_STORAGE_THRESHOLD|Histeresis`)
-	if len(testFiles) == 0 {
-		t.Errorf("BAC-46: no se encontraron pruebas unitarias del evaluador de umbrales e histéresis en el backend")
-	} else {
-		runBackendUnitTests(t, testFiles)
-	}
+		if !regexp.MustCompile(`(?i)umbralHostCPU|ALERT_CPU_THRESHOLD`).MatchString(combined) ||
+			!regexp.MustCompile(`(?i)umbralHostRAM|ALERT_RAM_THRESHOLD`).MatchString(combined) ||
+			!regexp.MustCompile(`(?i)umbralHostDisco|ALERT_STORAGE_THRESHOLD`).MatchString(combined) {
+			t.Errorf("BAC-46: el worker no define umbrales de saturación para CPU, RAM y Disco del host")
+		}
+	})
+
+	t.Run("pruebas unitarias del evaluador de umbrales e histéresis presentes y en verde", func(t *testing.T) {
+		_, testFiles := goFilesContaining(t, `TestAlertas_HisteresisYNormalizacion|TestAlertas_UmbralesDelHost`)
+		if len(testFiles) == 0 {
+			t.Errorf("BAC-46: no se encontraron pruebas unitarias del evaluador de umbrales e histéresis en el backend")
+		} else {
+			runBackendUnitTests(t, testFiles)
+		}
+	})
 }
 
 // TestEtapa3BAC47_DespachoMulticanalAlertasSSEyCorreo verifica BAC-47 (documentacion/actual.md):
