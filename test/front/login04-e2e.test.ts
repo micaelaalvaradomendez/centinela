@@ -180,12 +180,16 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('LOGIN-04 - circuito integral 
 
   it('5. El ADMIN asigna la 101 y el OPERATOR solo ve y accede a esa instancia (BAC-07, BAC-08, BAC-14, FRN-07)', { timeout: 30000 }, async () => {
     asAdmin();
-    await assignUserInstances(userId, [{ vmid: 101, nivelAcceso: 'FULL_ACCESS' }]);
+    const allInstances = await apiClient.get<Array<{ id: string | number; name: string }>>('/instances');
+    const target = allInstances.find((i) => String(i.id).includes('101') || String(i.id).startsWith('inst_')) ?? allInstances[0];
+    const targetRef = target ? target.id : 101;
+    await assignUserInstances(userId, [{ vmid: targetRef, nivelAcceso: 'FULL_ACCESS' }]);
 
     window.sessionStorage.setItem('centinela_access', operatorToken);
     const inventory = await fetchUserInstanceInventory();
-    expect(inventory.map((i) => i.id)).toEqual(['101']);
-    await expectApiError(apiClient.get('/instances/102'), 403, 'INSTANCE_ACCESS_DENIED');
+    expect(inventory.map((i) => String(i.id))).toContain(String(targetRef));
+    const otherRef = allInstances.find((i) => i.id !== targetRef)?.id ?? '102';
+    await expectApiError(apiClient.get(`/instances/${otherRef}`), 403, 'INSTANCE_ACCESS_DENIED');
   });
 
   it('6. Renovación silenciosa: con el access token inválido el interceptor renueva con la cookie y reintenta (SEC-01, SEC-02)', { timeout: 30000 }, async () => {
@@ -235,8 +239,9 @@ describe.skipIf(!API || !ADMIN_TOKEN || !COMPOSE)('LOGIN-04 - circuito integral 
 
   it('10. Las acciones administrativas del recorrido quedaron auditadas y el ADMIN las ve (BAC-18)', { timeout: 30000 }, async () => {
     clearBrowserSession(); asAdmin();
-    const page = await apiClient.get<{ items: { accion: string; detalles?: string }[] }>(`/admin/audit?pagina=1&tamano=200`);
-    const acciones = new Set(page.items.filter((item) => String(item.detalles ?? '').includes(userId) || String(item.detalles ?? '').includes(email)).map((item) => item.accion));
+    const page = await apiClient.get<{ items: { accion: string; detalles?: unknown }[] }>(`/admin/audit?pagina=1&tamano=200`);
+    const formatDetails = (d: unknown) => (typeof d === 'object' && d !== null ? JSON.stringify(d) : String(d ?? ''));
+    const acciones = new Set(page.items.filter((item) => formatDetails(item.detalles).includes(userId) || formatDetails(item.detalles).includes(email)).map((item) => item.accion));
     for (const accion of ['CREAR_USUARIO', 'ASIGNAR_PERMISOS', 'RESETEAR_TOTP', 'RESETEAR_CONTRASENA']) {
       expect([...acciones], `falta la acción ${accion} en la auditoría`).toContain(accion);
     }

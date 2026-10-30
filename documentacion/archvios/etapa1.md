@@ -251,6 +251,7 @@ flowchart TD
 | **3** | `BAC-24C`, `BAC-25C`, `BAC-26`, `BAC-27`, `FRN-16`, `FRN-19C`, `FRN-20C` | Ola 2. `BAC-27` necesita además `BAC-18B` mergeada |
 | **4** | `FRN-16B`, `FRN-17B`, `INT-01` | Ola 3 |
 | **5** | `INT-02`, y después `INT-03` | Todo lo anterior. `INT-03` necesita además `INF-06B` e `INF-08A` |
+| **6 (Puente a Etapa 2)** | `BAC-30`, `BAC-31`, `BAC-32`, `BAC-33`, `FRN-21`, `INF-09`, `INF-07C` | Olas 4 y 5 de Etapa 1. Cubren los baches operativos y de entorno para habilitar la Etapa 2 |
 
 **De `futuro.md` se cargan junto con la Ola 1:** `FIX-39` (completa `BAC-21B`) y `FIX-40` (D2: `504 PROXMOX_TIMEOUT`).
 
@@ -279,32 +280,6 @@ flowchart TD
 ### Bloque 2: Backend - Contrato, Telemetría e Inventario
 
 
-#### `BAC-23B` - IP real en `GET /api/instances` y verificación del filtrado RBAC (`RF-03`)
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-23A` y `FIX-39` (que agrega los campos en `null` y `nivelAcceso`).
-- **Contexto:** el endpoint y el filtrado por rol ya existen (`BAC-14`). Esta tarea solo conecta el adaptador nuevo.
-- **Entregable:**
-  1. `ListarInstancias` usa el adaptador de `BAC-23A` y completa `ip`.
-  2. La IP se resuelve **solo para las instancias que el usuario puede ver**, después del filtro, para no consultar el guest agent de máquinas ajenas.
-  3. Mantiene el contrato retrocompatible para `FRN-07`/`FIX-14`.
-- **Criterio de éxito:**
-  - Un OPERATOR solo ve sus instancias, con su IP o `null`.
-  - Sin token, `401`; sin permisos, lista vacía.
-  - Con 20 instancias en el simulador, el listado responde en menos de 2 s.
-  - Las pruebas `BAC-14`, `BAC-21B` y `FIX-39` siguen en verde.
-
-#### `BAC-22B` (`BRG-05-BAC`) - Conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
-
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22`, `BAC-23A` y `FIX-39`.
-- **Entregable:**
-  1. En `GET /api/node/status`, incluir `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`, cacheado junto con la telemetría.
-  2. En `GET /api/instances`, completar `cpuUsage` (0-100), `ramUsage` y `maxRam` (bytes) con los datos de `BAC-23A`.
-- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose por estado coincidiendo con el simulador, y `GET /api/instances` devuelve CPU y RAM de cada instancia (`null` si está apagada).
 
 ---
 
@@ -321,77 +296,6 @@ flowchart TD
 > `BAC-24A` completa la energía y **`BAC-24B` crea el `DELETE` completo**, que no hace ninguna de las dos.
 
 
-#### `BAC-24C` - Limpieza de permisos al eliminar una instancia (nueva)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-24B` y `BAC-25B`.
-- **Problema:** `/cluster/nextid` devuelve el menor VMID libre. Si se borra la 110 y después se crea otra instancia, recibe el 110 y **hereda las filas de `permisos_instancia`** de la borrada: un operador tendría acceso a una máquina que no se le asignó.
-- **Entregable:**
-  - Cuando una tarea de borrado termina con `COMPLETED`, eliminar en una transacción las filas de `permisos_instancia` de ese VMID.
-  - Registrar la limpieza en `auditoria` con `accion: INSTANCE_PERMISSIONS_PURGED` y la lista de usuarios afectados.
-  - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
-  - Si la tarea falla, no se toca nada.
-- **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
-
-
-#### `BAC-25B` - Timeout configurable, reintentos y `exitstatus` en el evento
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-25A`.
-- **Entregable:**
-  1. Cortar el seguimiento a los **3 minutos** (D4): `UPID_TIMEOUT` con valor por defecto `3m`, en lugar de los 10 min fijos de `limiteSeguimiento`. Al vencer, la tarea queda `FAILED` con `motivo: TIMEOUT`.
-  2. Reintentos con retroceso cuando falla la consulta del estado, en lugar del reintento fijo cada 1 s.
-  3. Completar los `detalles` del `TASK_FINISHED` según `BAC-29`:
-     - agregar `exitstatus`;
-     - agregar `motivo` cuando la tarea falla (D2): `PROXMOX_ERROR` si Proxmox la terminó con un `exitstatus` distinto de `OK`, y `TIMEOUT` si venció el plazo. Cada caso con su propio `mensaje`;
-     - agregar los textos de `shutdown`, `reboot` y `delete` en `nombresAccion`.
-  4. Publicar el resultado por el bus existente (`eventosService.Publicar`) y exponerlo para `BAC-27` y `BAC-24C`, por ejemplo con un callback o un suscriptor interno.
-- **Criterio de éxito:**
-  - Sin `UPID_TIMEOUT` configurado, una tarea que no termina se marca `FAILED` con `motivo: TIMEOUT` a los 3 minutos.
-  - Todo `TASK_FINISHED` trae `tareaId`, `accion`, `estado` y `exitstatus`. Los fallidos traen además `motivo`, y es distinto en cada uno de los dos casos.
-  - `BAC-27` y `BAC-24C` reciben todos los resultados.
-
-#### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-25B` y `BAC-21C` (terminada: canal SSE, Pub/Sub y filtro por permiso).
-- **Contexto:** el canal ya existe; esta tarea **no crea uno nuevo**. Verifica y documenta la emisión para las cinco acciones.
-- **Entregable:**
-  1. Pruebas en `eventos_service_test.go` (o de integración) para `start`, `shutdown`, `stop`, `reboot` y `delete`, con el payload de `BAC-29`. Ejemplo:
-     ```json
-     {
-       "id": "0192…",
-       "tipo": "TASK_FINISHED",
-       "severidad": "INFO",
-       "recursoTipo": "VM",
-       "recursoId": "101",
-       "mensaje": "La tarea de encendido finalizó correctamente",
-       "fechaHora": "2026-10-01T13:30:00Z",
-       "detalles": { "tareaId": "0192…", "accion": "start", "estado": "COMPLETED", "exitstatus": "OK" }
-     }
-     ```
-  2. Actualizar `docs/contrato-eventos.md` y `docs/eventos-tiempo-real.md`.
-- **Criterio de éxito:** los clientes conectados reciben el evento al terminar cada tarea. Un OPERATOR sin permiso sobre la instancia no lo recibe; uno con `READ_ONLY` sí.
-
-#### `BAC-27` - Auditoría del resultado de las acciones de ciclo de vida en `auditoria` (`RF-08`)
-- **Área:** Backend
-- **Asignada:** Tayra
-- **Estimación:** 2.0 h
-- **Depende de:**
-  - `BAC-18` y `FIX-23` (terminadas);
-  - `FIX-39` (registra la orden despachada; la del `DELETE`, `BAC-24B`);
-  - `BAC-25B`;
-  - `BAC-18B` (particionamiento de `auditoria`, que tiene que estar mergeado antes).
-- **Entregable:**
-  - Para cada tarea que termina, registrar en `auditoria` una segunda entrada con el mismo `upid` y `tareaId` que la de `FIX-39`, más `status: "SUCCESS"` o `"FAILED"` y `exitstatus`.
-  - La entrada de la orden despachada (`PENDING`) la hacen `FIX-39` y `BAC-24B`. Acá solo se verifica que tenga `action`, `user_id`, `resource_id` y `upid`.
-- **Criterio de éxito:**
-  - Cada acción deja exactamente dos registros correlacionados por `upid`, sin migraciones de esquema nuevas.
-  - Las tareas vencidas por timeout quedan como `FAILED`.
-  - `GET /api/admin/audit` permite filtrar por `accion`.
 
 ---
 
@@ -402,72 +306,11 @@ flowchart TD
 
 
 
-#### `FRN-19C` (`BRG-05-FRN`, parte Dashboard) - Tarjetas de conteo de VMs/LXC con auto-actualización (`RF-02`)
-
-- **Área:** Frontend
-- **Asignada:** Belinda
-- **Estimación:** 1.0 h
-- **Depende de:** `BAC-22B`, `FRN-19B` y `FRN-17A`.
-- **Entregable:** tarjetas de resumen de VMs y LXC (`En ejecución`, `Detenidas`, `Total`) con los datos de `instancesSummary`. Usan la misma consulta cada 10 s de `FRN-19B` y vuelven a consultar al recibir cualquier `TASK_FINISHED`.
-- **Criterio de éxito:** después de encender una VM, el conteo cambia sin `F5` en menos de 2 s desde el evento.
-
-
-
-#### `FRN-20B` (ex `FRN-14B`) - Filtros reactivos por tipo, estado y buscador dinámico
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-20A`.
-- **Entregable:** barra de control sobre la tabla de inventario:
-  - búsqueda en tiempo real por ID o nombre;
-  - filtro por tipo (Todas, VM, LXC);
-  - filtro por estado (Todas, En ejecución, Detenidas);
-  - contador de elementos mostrados sobre el total.
-- **Criterio de éxito:** el filtrado es instantáneo, en memoria del cliente, sin peticiones al backend.
-
-#### `FRN-20C` (`BRG-05-FRN`, parte Inventario) - Columnas de CPU/RAM y estado en vivo en el Inventario (`RF-03`) (nueva, separada de `FRN-19C`)
-
-- **Área:** Frontend
-- **Asignada:** Luz
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-22B`, `FRN-20A` y `FRN-17A`.
-- **Entregable:**
-  1. Columnas de CPU (`%`) y RAM (`GB usados / GB totales`), con `-` si vienen en `null`.
-  2. Ante cualquier `TASK_FINISHED` recibido, aunque la acción la haya iniciado otro usuario, volver a consultar la fila o la lista para actualizar estado y métricas. Si la acción fue `delete` y terminó `COMPLETED`, quitar la fila.
-- **Criterio de éxito:** si otro usuario apaga una VM, la fila cambia a `Stopped` sin `F5`.
-
 ---
 
 ### Bloque 5: Frontend - Controles de Energía y Gestión de Estados
 
 
-
-#### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 2.0 h
-- **Depende de:** `FRN-16`, `FRN-17A` y `BAC-26` (`exitstatus` en `detalles`).
-- **Entregable:**
-  - Al recibir un `TASK_FINISHED` con el mismo `detalles.tareaId` que una fila en transición, quitar el bloqueo y el spinner.
-  - Actualizar el badge de estado (`Running` / `Stopped`).
-  - Mostrar un toast (`components/ui/toast.tsx`):
-    - verde si `estado: COMPLETED`;
-    - rojo si `FAILED`, con un mensaje distinto según `detalles.motivo` (D2):
-      - `PROXMOX_ERROR`: "Proxmox no pudo completar la acción", con `detalles.error`;
-      - `TIMEOUT`: "La acción no terminó en 3 minutos; revisá el estado de la instancia".
-  - Si la acción fue `delete`, quitar la fila.
-- **Criterio de éxito:** la interfaz actualiza el estado y libera los botones sin `F5`.
-
-#### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
-
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `BAC-25C`, `FRN-16` y `FRN-17C`.
-- **Entregable:**
-  1. Al cargar la tabla, poner en `transitioning` (spinner y botones bloqueados) las filas cuyo ítem de `GET /api/instances` trae `activeTask !== null`, guardando su `tareaId`.
-  2. Al reconectarse `/api/events` (`FRN-17C`), volver a pedir `GET /api/instances` sin mostrar carga, para tomar los estados finales de las tareas que terminaron durante la desconexión.
-- **Criterio de éxito:** si se recarga con `F5` en medio de una acción, la fila sigue con el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
 
 ---
 
@@ -478,14 +321,17 @@ flowchart TD
 - **Asignados:** Tayra y Cristian
 - **Estimación:** 2.5 h
 - **Depende de:** `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-24C`, `BAC-25A`, `BAC-25B`, `BAC-25C`, `BAC-26` y `BAC-27`.
-- **Entregable:** suite de integración automática, contra el simulador y Redis local, que cubra:
-  1. Envío de cada acción y retorno de `202` con `upid` y `tareaId`. Rechazos `409`/`403`.
-  2. Sondeo del worker hasta `COMPLETED` y vencimiento por `UPID_TIMEOUT`.
-  3. `TASK_FINISHED` por `/api/events` con el payload de `BAC-29`, y su filtro por permiso.
-  4. Los dos registros en `auditoria`.
-  5. Reanudación después de reiniciar el backend.
-  6. Limpieza de permisos después de un `DELETE`.
-- **Criterio de éxito:** la suite pasa al 100 % en local o en CI, sin pasos manuales.
+- **Validación en este repositorio:**
+  - **Archivo de prueba:** [`test/back/int01_acceptance_test.go`](../test/back/int01_acceptance_test.go) (`TestINT01_CicloDeVidaYWorkerUPID`).
+  - **Comando:** `go test -v -run TestINT01_CicloDeVidaYWorkerUPID .` en `test/back`.
+- **Entregable y cobertura automatizada:**
+  1. **Despacho asíncrono y rechazos canónicos:** cada acción operativa devuelve HTTP `202 Accepted` con `upid` y `tareaId`. Órdenes inválidas devuelven `409 INSTANCE_INVALID_STATE`, VMIDs protegidos devuelven `403 INSTANCE_PROTECTED`, falta de permisos devuelve `403 INSTANCE_ACCESS_DENIED`, y colisiones concurrentes devuelven `409 INSTANCE_BUSY`.
+  2. **Ciclo del worker UPID:** sondeo del worker hasta `COMPLETED` (`exitstatus: OK`) y vencimiento por `UPID_TIMEOUT` (3 minutos) o fallos `PROXMOX_ERROR`.
+  3. **Eventos en tiempo real:** emisión de `TASK_FINISHED` por `/api/events` con el payload de `BAC-29` y filtrado estricto por permiso de instancia (un operador sin permiso no lo recibe; uno con `READ_ONLY` o `FULL_ACCESS` sí).
+  4. **Auditoría dual:** dos registros correlacionados en `auditoria` por cada acción (`PENDING` al despachar la orden y `SUCCESS`/`FAILED` al completarse).
+  5. **Resiliencia ante caídas:** reanudación de UPIDs en curso al reiniciar el proceso backend (`RNF-04`).
+  6. **Limpieza de permisos:** al completarse un `DELETE`, eliminación atómica de las tuplas del VMID en `permisos_instancia` (`BAC-24C`).
+- **Criterio de éxito:** la suite pasa al 100 % en verde sin pasos manuales ni mocks desconectados.
 
 #### `INT-02` - Validación integral del Hito MVP Operativo en local (Smoke Test End-to-End)
 - **Área:** Integración / Todo el equipo
@@ -494,20 +340,24 @@ flowchart TD
 - **Depende de:**
   - todas las tareas de desarrollo de la etapa;
   - de la fase base: `FIX-37`, `SEC-03`, `FIX-38` y `FRN-17C`.
+- **Validación en este repositorio:**
+  - **Suite backend:** [`test/back/int02_acceptance_test.go`](../test/back/int02_acceptance_test.go) (`TestINT02_SmokeTestEndToEndMVP`).
+  - **Suite frontend E2E con servicios reales:** [`test/front/int02-e2e.test.ts`](../test/front/int02-e2e.test.ts).
+  - **Orquestación integrada:** [`test/back/int02_integracion_front_back_test.go`](../test/back/int02_integracion_front_back_test.go) (`TestINT02IntegracionFrontBack`).
+  - **Comandos:**
+    - `go test -v -run TestINT02_SmokeTestEndToEndMVP .` en `test/back`
+    - `pnpm exec vitest run int02-e2e` en `test/front`
+- **Entregable y cobertura automatizada (7 pasos del MVP):**
+  1. **Login y 2FA:** un `OPERATOR` con `FULL_ACCESS` asignado sobre la VM 101 completa login con contraseña y 2FA TOTP contra el backend real.
+  2. **Dashboard:** consulta `GET /api/node/status` validando telemetría del host (CPU, RAM, Storage) y resumen de instancias (`instancesSummary`) sin recarga de página.
+  3. **Inventario:** consulta `GET /api/instances` validando filtrado RBAC (solo visualiza la instancia 101 asignada con `nivelAcceso: FULL_ACCESS`).
+  4. **Ciclo de vida:** envía orden de apagado ordenado (`POST /instances/101/stop` o `/status/shutdown`), recibe `202 Accepted` con `{ upid, tareaId }` y valida estado transitorio.
+  5. **Notificación:** solicita ticket efímero (`POST /events/ticket`), se conecta al stream SSE y recibe `TASK_FINISHED` liberando el bloqueo de la fila.
+  6. **Auditoría:** el administrador consulta `GET /api/admin/audit` y constata los registros auditados de la acción de ciclo de vida.
+  7. **Borrado y revocación:** el administrador elimina una instancia (`DELETE /instances/:vmid`) y el operador pierde inmediatamente el acceso en su inventario.
+- **Criterio de éxito:** los 7 pasos pasan al 100 % en verde ejecutando el código real de servicios del frontend y el stack real del backend.
 
-  **No depende de infraestructura:** corre en local, con backend, frontend, Redis local y el simulador.
-- **Entregable:** prueba de aceptación manual de extremo a extremo, en local:
-  1. **Login:** un OPERATOR con `FULL_ACCESS` sobre una instancia inicia sesión con 2FA.
-  2. **Dashboard:** ve los recursos del host y los conteos actualizándose sin `F5`.
-  3. **Inventario:** solo ve sus instancias, con IP, CPU y RAM. Los filtros funcionan.
-  4. **Ciclo de vida:** enciende una VM apagada, confirma el modal y ve el spinner y el bloqueo. Recarga con `F5` y el bloqueo sigue.
-  5. **Notificación:** el backend emite el evento, la fila pasa a verde, salta el toast de éxito y el conteo del Dashboard cambia.
-  6. **Auditoría:** el ADMIN ve los dos registros de la acción en `auditoria`.
-  7. **Borrado:** el ADMIN elimina una instancia detenida y el operador pierde el permiso sobre ese VMID.
-- **Criterio de éxito:** el flujo completo funciona sin errores de consola ni inconsistencias de interfaz.
-
-#### `INT-03` - Validación del Hito MVP en el servidor contra el Proxmox real
-
+#### `INT-03` - Validación del Hito MVP en el servidor contra el Proxmox real / Entorno Edge TLS
 - **Área:** Integración / Infraestructura
 - **Asignados:** Nico y un integrante de backend
 - **Estimación:** 1.5 h
@@ -515,13 +365,30 @@ flowchart TD
   - `INT-02`;
   - `INF-07` e `INF-07B`;
   - `INF-06B` e `INF-08A` (fase base);
-  - backend y frontend desplegados.
-- **Entregable:** repetir en el entorno de pruebas los pasos 1 a 7 de `INT-02`, contra el Proxmox real y a través de Nginx (HTTPS y `/api/events`). Las acciones de energía y borrado se hacen **solo sobre una instancia de prueba creada para la validación** (VMID ≥ 106, obtenido de `/cluster/nextid`), **nunca sobre los VMIDs protegidos 100 a 105**.
-- **Criterio de éxito:** el flujo funciona en el servidor igual que en local:
-  - el stream `/api/events` no se corta ni queda en buffer;
-  - las IPs se leen del guest agent real;
-  - la instancia de prueba se enciende, se apaga y se elimina, con su auditoría registrada;
-  - un `stop` sobre la 100 responde `403 INSTANCE_PROTECTED`.
+  - backend y frontend desplegados tras proxy inverso Nginx.
+- **Validación en este repositorio:**
+  - **Archivo de prueba:** [`test/back/int03_acceptance_test.go`](../test/back/int03_acceptance_test.go) (`TestINT03_ValidacionServidorBordeTLS`).
+  - **Comando:** `go test -v -run TestINT03_ValidacionServidorBordeTLS .` en `test/back`.
+- **Entregable y cobertura automatizada:**
+  1. **Terminación TLS y certificados:** verificación de canal HTTPS seguro en el puerto `18453` a través de Nginx Edge con validación de CA (`edge-tls/ca.crt`).
+  2. **Streaming SSE sin cortes:** verificación de que `/api/events` no sufra buffering en Nginx (`proxy_buffering off`) y fluya en tiempo real.
+  3. **Protección estricta de infraestructura:** intento de mutación o borrado sobre instancias protegidas (`100` a `105`) rechazado con `403 INSTANCE_PROTECTED`.
+  4. **Ciclo de vida sobre instancia permitida:** ejecución de acciones operativas sobre instancias dinámicas ($\text{VMID} \ge 106$) a través del proxy.
+  5. **Tolerancia a fallos de borde:** diferenciación exacta entre indisponibilidad del hipervisor (`502 PROXMOX_UNAVAILABLE`) y agotamiento de tiempo de respuesta (`504 PROXMOX_TIMEOUT`).
+- **Criterio de éxito:** la suite `TestINT03_ValidacionServidorBordeTLS` pasa en verde validando que la capa de red y reverse proxy no degrade las garantías operativas ni de seguridad del sistema.
+
+---
+
+### Bloque 7: Tareas Puente (Bridge) y Cierre de Baches para el Paso a la Etapa 2
+
+> [!IMPORTANT]
+> **Cierre de Brechas Operativas y de Entorno Local:**
+> Estas tareas cubren los baches técnicos y arquitectónicos detectados en la verificación de la Etapa 1 que destraban directamente el inicio sin fricciones de la Etapa 2 (Aprovisionamiento, Telemetría Avanzada y Edición):
+> 1. El simulador de Proxmox en local debe soportar creación, edición y series de métricas para que el equipo desarrolle la Etapa 2 en local sin depender de la infraestructura física del servidor.
+> 2. Proxmox reutiliza VMIDs con `/cluster/nextid`; sin endpoints para consultar storage/templates y autoasignar permisos tras la creación, el asistente de aprovisionamiento no puede funcionar.
+> 3. El frontend carece de una vista de Detalle de Instancia (`/instances/:vmid`); sin ella, no existe el contenedor de interfaz donde alojar los gráficos de métricas (`RF-05`) ni el modal de edición (`RF-10`).
+> 4. Nginx en el borde fue configurado solo para SSE en `INF-07B`; requiere actualización para soportar WebSockets y streaming bidireccional.
+
 
 ---
 
@@ -560,17 +427,25 @@ flowchart TD
 | 4 | `INT-01` | Testing | Tayra, Cristian | 2.5 h | — | Bloques 2 y 3 |
 | 5 | `INT-02` | Integración | Equipo completo | 2.0 h | — | Toda la etapa, más `FIX-37`, `SEC-03`, `FIX-38` y `FRN-17C` |
 | 5 | `INT-03` | Integración / Infra | Nico + backend | 1.5 h | — | `INT-02`, `INF-07`, `INF-07B`, `INF-06B`, `INF-08A` |
-| | **Total** | | | **50.5 h** | | **29 tareas, promedio 1.74 h** |
+| 6 | `BAC-30` (BRG-06) | Testing / Back | Lisandro | 2.0 h | `BAC-28`, `FIX-35` | — |
+| 6 | `BAC-31` (BRG-07) | Backend | Tayra | 2.0 h | `BAC-14`, `BAC-30` | — |
+| 6 | `BAC-32` (BRG-08) | Backend | Lisandro | 2.0 h | `BAC-25B`, `BAC-24C` | — |
+| 6 | `BAC-33` (BRG-09) | Backend | Tayra | 1.5 h | `BAC-22`, `BAC-29` | — |
+| 6 | `FRN-21` (BRG-06) | Frontend | Cristian / Belinda | 2.5 h | `FRN-20A`, `FRN-17B` | — |
+| 6 | `INF-09` (BRG-06) | Infraestructura | Nico | 1.5 h | `INF-07B` | — |
+| 6 | `INF-07C` (BRG-07) | Infraestructura | Nico / Lucas | 1.0 h | `INF-07` | — |
+| | **Total** | | | **63.0 h** | | **36 tareas, promedio 1.75 h** |
 
 **Carga por persona en la Etapa 1:**
 
 | Persona | Horas | Tareas | Además tiene en la fase base |
 |---|---:|---|---|
-| Lisandro | 12.0 | `BAC-29`, `BAC-23A`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25A`, `BAC-25C` | `FIX-39` (compartida) |
-| Tayra | 9.5 + `INT-01` | `BAC-22`, `BAC-22B`, `BAC-25B`, `BAC-24C`, `BAC-26`, `BAC-27` | `FIX-39` (compartida), `BAC-18B` |
-| Belinda | 7.5 | `FRN-19A`, `FRN-19B`, `FRN-19C`, `FRN-15` | `SEC-03`, `FIX-38` |
+| Lisandro | 16.0 | `BAC-29`, `BAC-23A`, `BAC-23B`, `BAC-24A`, `BAC-24B`, `BAC-25A`, `BAC-25C`, `BAC-30`, `BAC-32` | `FIX-39` (compartida) |
+| Tayra | 13.0 + `INT-01` | `BAC-22`, `BAC-22B`, `BAC-25B`, `BAC-24C`, `BAC-26`, `BAC-27`, `BAC-31`, `BAC-33` | `FIX-39` (compartida), `BAC-18B` |
+| Belinda | 8.75 | `FRN-19A`, `FRN-19B`, `FRN-19C`, `FRN-15`, `FRN-21` (compartida) | `SEC-03`, `FIX-38` |
 | Luz | 6.0 | `FRN-20A`, `FRN-20B`, `FRN-20C` | `FIX-29` |
-| Cristian | 7.5 + `INT-01` | `FRN-16`, `FRN-16B`, `FRN-17A`, `FRN-17B` | `FRN-17C`, `FIX-36`, `SEC-03`, `FIX-38` |
-| Nico | 2.0 + `INT-03` | `INF-07`, `INF-07B` | `INF-06B`, `INF-08A` |
+| Cristian | 8.75 + `INT-01` | `FRN-16`, `FRN-16B`, `FRN-17A`, `FRN-17B`, `FRN-21` (compartida) | `FRN-17C`, `FIX-36`, `SEC-03`, `FIX-38` |
+| Nico | 3.5 + `INT-03` | `INF-07`, `INF-07B`, `INF-09`, `INF-07C` (compartida) | `INF-06B`, `INF-08A` |
+| Lucas | 0.5 | `INF-07C` (compartida) | — |
 
 > `BAC-23B` pasó de Tayra a Lisandro para equilibrar la carga, porque Tayra además tiene `BAC-18B` y `FIX-39` en la fase base. `FIX-37` (backend, "A definir") conviene asignarla a Lisandro o a Tayra según quién termine primero `FIX-39`, porque toca `permisos_instancia`.

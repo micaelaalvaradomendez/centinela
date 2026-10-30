@@ -49,7 +49,7 @@ func TestEtapa1(t *testing.T) {
 				}
 			}
 		}
-		if !regexp.MustCompile(`(?i)node/status[^\n]*(autenticad|RequireAuth|Bearer)|(autenticad|RequireAuth|Bearer)[^\n]*node/status`).MatchString(contract) {
+		if !regexp.MustCompile(`(?is)node/status.{0,250}?(autenticad|RequireAuth|Bearer)|(autenticad|RequireAuth|Bearer).{0,250}?node/status`).MatchString(contract) {
 			t.Errorf("docs/contrato-etapa1.md no indica que GET /api/node/status lo puede consultar cualquier usuario autenticado (D1)")
 		}
 		swagger := string(readFile(t, sourcePath("backend", "docs/swagger.json")))
@@ -86,7 +86,14 @@ func TestEtapa1(t *testing.T) {
 		}
 		operator := createActiveUser(t, adminToken, "op_nodo", "OPERATOR")
 		session := loginWithTOTP(t, operator.Email, operator.Password, operator.Secret)
-		status, body = requestJSON(t, http.MethodGet, "/node/status", session.AccessToken, nil)
+		deadlineNodo := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadlineNodo) {
+			status, body = requestJSON(t, http.MethodGet, "/node/status", session.AccessToken, nil)
+			if status == http.StatusOK {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 		if status != http.StatusOK {
 			t.Fatalf("GET /api/node/status con un OPERATOR: esperado 200 (D1), recibido %d: %#v", status, body)
 		}
@@ -141,6 +148,13 @@ func TestEtapa1(t *testing.T) {
 		}
 		expectNumber(t, body, 266400, 0, "uptimeSeconds")
 		startProxmoxStub(t)
+
+		// Paso 7 (FIX-62). Al restablecer Proxmox y vencer el TTL, el endpoint debe recuperarse: 200 con stale false y telemetría actualizada.
+		time.Sleep(11 * time.Second)
+		status, body = requestJSON(t, http.MethodGet, "/node/status", adminToken, nil)
+		if status != http.StatusOK || body["stale"] != false {
+			t.Errorf("tras restablecer Proxmox y vencer el TTL: esperado 200 con stale false (recuperación de telemetría), recibido %d: %#v", status, body)
+		}
 	})
 
 	t.Run("BAC-23A el adaptador de inventario resuelve la IP con guest agent e interfaces de LXC y tiene pruebas unitarias", func(t *testing.T) {
@@ -181,7 +195,9 @@ func TestEtapa1(t *testing.T) {
 			if status != http.StatusAccepted {
 				t.Fatalf("start de la 102: esperado 202, recibido %d: %#v", status, body)
 			}
-			ids = append(ids, "'"+requiredString(t, body, "tareaId")+"'")
+			tareaID := requiredString(t, body, "tareaId")
+			ids = append(ids, "'"+tareaID+"'")
+			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
 		dispatched := time.Now()
 		query := fmt.Sprintf("SELECT count(*) FROM tareas_asincronas WHERE id IN (%s) AND estado = 'COMPLETED';", strings.Join(ids, ","))
@@ -247,7 +263,7 @@ func TestEtapa1(t *testing.T) {
 		if after := stubWrites(t, 101); after != before {
 			t.Errorf("con un 403 por permisos el backend igual escribió en Proxmox")
 		}
-		// 5. Órdenes válidas: 202 con upid y tareaId.
+		// 5. Órdenes válidas: 202 con tareaId (sin upid público).
 		for _, order := range []struct {
 			vmid   int
 			action string
@@ -258,8 +274,11 @@ func TestEtapa1(t *testing.T) {
 				t.Errorf("%s: esperado 202, recibido %d: %#v", path, status, body)
 				continue
 			}
-			requiredString(t, body, "upid")
-			requiredString(t, body, "tareaId")
+			if _, expuesto := body["upid"]; expuesto {
+				t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+			}
+			tareaID := requiredString(t, body, "tareaId")
+			waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "COMPLETED", 5*time.Second)
 		}
 		// 6. Entregable 4: códigos documentados en el inventario de FIX-08 y en Swagger.
 		inventory := string(readFile(t, sourcePath("backend", "docs/estandar_http.md")))
@@ -297,7 +316,7 @@ func TestEtapa1(t *testing.T) {
 			}
 		}
 
-		// Sobre la 102 (detenida): 202 con upid y tareaId, la orden queda auditada y llega TASK_FINISHED de un LXC.
+		// Sobre la 102 (detenida): 202 con tareaId (sin upid público), la orden queda auditada y llega TASK_FINISHED de un LXC.
 		admin := createActiveUser(t, adminToken, "admin_delete", "ADMIN")
 		adminSession := loginWithTOTP(t, admin.Email, admin.Password, admin.Secret)
 		events := listenEvents(t, adminSession.AccessToken)
@@ -305,11 +324,14 @@ func TestEtapa1(t *testing.T) {
 		if status != http.StatusAccepted {
 			t.Fatalf("DELETE de la 102 (stopped) con ADMIN: esperado 202, recibido %d: %#v", status, body)
 		}
-		upid := requiredString(t, body, "upid")
+		if _, expuesto := body["upid"]; expuesto {
+			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+		}
 		tareaID := requiredString(t, body, "tareaId")
 		if stubDeletes(t, 102) != before[102]+1 {
 			t.Errorf("el DELETE aceptado no llegó a Proxmox (DELETE /nodes/pve/lxc/102)")
 		}
+		upid := queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID))
 		audit := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE detalles::text LIKE '%%%s%%';", strings.ReplaceAll(upid, "'", "''"))
 		if queryDatabase(t, audit) == "0" {
 			t.Errorf("la orden de borrado no quedó en auditoria con su upid")
@@ -386,7 +408,7 @@ func stubWrites(t *testing.T, vmid int) int {
 }
 
 func stubDeletes(t *testing.T, vmid int) int {
-	return stubLogCount(t, fmt.Sprintf(`"DELETE /api2/json/nodes/[^/]+/(qemu|lxc)/%d `, vmid))
+	return stubLogCount(t, fmt.Sprintf(`"DELETE /api2/json/nodes/[^/]+/(qemu|lxc)/%d[ ?]`, vmid))
 }
 
 func stubLogCount(t *testing.T, expression string) int {

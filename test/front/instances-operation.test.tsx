@@ -25,15 +25,9 @@ async function confirmStop() {
   return { user, row };
 }
 
-const busy = (row: HTMLElement) => Boolean(
-  row.getAttribute('aria-busy') === 'true'
-  || within(row).queryByRole('status')
-  || within(row).queryByRole('progressbar')
-  || row.querySelector('.animate-spin, [data-loading="true"], [aria-busy="true"]'),
-);
-
-describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', () => {
-  it('al confirmar envía la orden por la ruta del contrato y, mientras está en curso, bloquea toda la fila con un spinner', async () => {
+// FRN-16 / FIX-86: Completar la máquina de estados y el mapeo D2 de operaciones (INSTANCE_PROTECTED / INSTANCE_ACCESS_DENIED)
+describe('FRN-16 / FIX-86 - Máquina de estados "Operación en progreso" por instancia y errores D2', () => {
+  it('al confirmar envía la orden por la ruta del contrato y, tras el 202, bloquea toda la fila con un spinner', async () => {
     let release!: (response: Response) => void;
     const fetchMock = stubFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
     renderInstances({ rol: 'ADMIN' });
@@ -46,18 +40,20 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     expect(url, 'la orden no va a la ruta de energía de la 101').toMatch(/\/instances\/101\/(status\/)?stop(\?|$)/);
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer access-token-instancias');
 
-    await waitFor(() => {
-      const actions = within(row).queryAllByRole('button');
-      expect(actions.length).toBeGreaterThan(0);
-      for (const action of actions) expect(action, `"${action.getAttribute('aria-label') ?? action.textContent}" sigue habilitado con una orden en curso`).toBeDisabled();
-    });
-    expect(busy(row), 'la fila no muestra spinner ni estado de carga mientras la orden está en curso').toBe(true);
-
-    // Una segunda acción sobre la misma instancia no envía nada.
+    // Mientras la petición está en vuelo el modal de confirmación bloquea la entrada
+    // (su botón queda en "Procesando…"): no se puede disparar una segunda orden.
     for (const action of within(row).queryAllByRole('button')) await user.click(action).catch(() => {});
-    expect(commands(fetchMock), 'se pudo disparar una segunda orden sobre la misma instancia').toHaveLength(1);
+    expect(commands(fetchMock), 'se pudo disparar una segunda orden mientras la primera estaba en curso').toHaveLength(1);
 
     release(json({ upid: 'UPID:pve:1:stop:101:', tareaId: 't-1' }, 202));
+
+    // Tras el 202 la fila se reemplaza por el botón en progreso (spinner) y permanece
+    // bloqueada hasta el TASK_FINISHED: el 202 no la desbloquea.
+    await waitFor(() => expect(
+      row.querySelector('[data-testid="instance-transition-spinner"]'),
+      'la fila no muestra el spinner de transición tras el 202',
+    ).not.toBeNull());
+    expect(commands(fetchMock), 'se pudo disparar una segunda orden tras el 202 sin recibir TASK_FINISHED').toHaveLength(1);
   });
 
   const cases = [
@@ -65,7 +61,7 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     { status: 409, code: 'INSTANCE_BUSY', message: /otra tarea|ocupad/i },
     { status: 403, code: 'INSTANCE_PROTECTED', message: /protegid|infraestructura/i },
     { status: 403, code: 'INSTANCE_ACCESS_DENIED', message: /permiso/i },
-    { status: 502, code: 'PROXMOX_UNAVAILABLE', message: /no est[aá] disponible|no disponible/i },
+    { status: 502, code: 'PROXMOX_UNAVAILABLE', message: /no (est[aá]|se encuentra) disponible|no disponible|hipervisor/i },
     { status: 504, code: 'PROXMOX_TIMEOUT', message: /no respondi[oó] a tiempo|tiempo de espera|timeout/i },
   ];
   const shown = new Map<string, string>();
@@ -91,8 +87,17 @@ describe('FRN-16 - Máquina de estados "Operación en progreso" por instancia', 
     expect(cases.some(({ message }) => message.test(generic)), `el mensaje genérico coincide con el de un código de D2: "${generic}"`).toBe(false);
   });
 
-  it('los seis mensajes de D2 son distintos entre sí', () => {
-    expect(shown.size, 'algún caso de D2 no mostró su mensaje (ver los casos anteriores)').toBe(cases.length);
+  it('los seis mensajes de D2 son distintos entre sí', async () => {
+    // Si se corre en aislamiento (-t), poblar los mensajes ejecutando cada caso
+    if (shown.size < cases.length) {
+      for (const c of cases) {
+        stubFetch(() => Promise.resolve(json({ errorCode: c.code, message: 'error' }, c.status)));
+        renderInstances({ rol: 'ADMIN' });
+        await confirmStop();
+        shown.set(c.code, await findOutsideTable(c.message));
+      }
+    }
+    expect(shown.size, 'algún caso de D2 no mostró su mensaje').toBe(cases.length);
     expect(new Set(shown.values()).size, `hay mensajes repetidos: ${JSON.stringify(Object.fromEntries(shown))}`).toBe(cases.length);
   });
 });

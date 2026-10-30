@@ -2,6 +2,22 @@
 
 Tareas de la Etapa 1 (ver [`etapa1.md`](etapa1.md)) cuyo criterio de éxito ya se verificó. Las correcciones pendientes están en [`futuro-1.md`](futuro-1.md).
 
+## Integración del PR #3 (06/10/2026)
+
+> [!IMPORTANT]
+> Se conservan las verificaciones históricas de este archivo. El PR #3 actualiza backend a `eec77ff` y frontend a `5a86dce`, ambos descendientes de los commits locales anteriores. Los resultados siguientes fueron declarados por el PR, no ejecutados nuevamente en esta integración; no se trasladan ni eliminan los bloques activos hasta revalidarlos.
+
+| Tarea | Avance incorporado / declarado por el PR | Seguimiento conservando IDs locales |
+|---|---|---|
+| `BAC-25A` | Commit `3988546`: pool acotado `UPID_WORKERS`; el PR declara aceptación en verde | Revalidar el caso existente de `etapa1_acceptance_test.go` |
+| `BAC-22` | Commit `13f9c35`: telemetría de nodo con Redis y lectura stale | Hipótesis de recuperación en `FIX-62` de [`futuro-1.md`](futuro-1.md) |
+| `BAC-23A` | Commit `d1dec4f`: inventario consolidado y resolución concurrente de IP | Cobertura de rutas en `FIX-63` de [`futuro-1.md`](futuro-1.md) |
+| `BAC-29` | Commit `0850ec7`: contrato ampliado, `activeTask`, DELETE y eventos | Mantener `FIX-46` de [`actual.md`](actual.md) hasta revalidar todo su entregable |
+| `FRN-20A` / `FIX-43` | El PR declara 5/5 pruebas de tabla en verde | Confirmar con `instances-table.test.tsx` antes de cerrar `FIX-43` |
+| `FRN-17A` | Contexto y cliente de eventos incorporados | Deduplicación en `FIX-47`; conexión y suscripciones en `FIX-64` |
+
+También se incorporan commits de recuperación de tareas y auditoría (`f17295c`, `b476636`); su presencia no cierra automáticamente `BAC-25C` ni `FIX-53`. Los diagnósticos anteriores se conservan como evidencia de sus revisiones originales.
+
 ---
 
 # Verificación del 30/09/2026
@@ -265,18 +281,14 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
 
 #### `BAC-24B` - Endpoint de eliminación `DELETE /api/instances/:vmid`
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, backend `e1f2df4`, commit `b8d2631`).** El endpoint existe: `DELETE /api/instances/:vmid` con `RequireRole("ADMIN")` y `RejectProtectedInstance` (`cmd/api/main.go:273`). `test/back/etapa1_acceptance_test.go`, caso `BAC-24B…`:
-> - **Cumple:**
->   - sin token, `401`;
->   - un OPERATOR, aunque tenga `FULL_ACCESS`, recibe `403`;
->   - un VMID protegido, `403 INSTANCE_PROTECTED`;
->   - la orden no llega a Proxmox cuando se rechaza.
-> - **Falla:**
->   - con la instancia encendida responde `409 INSTANCE_NOT_STOPPED`; D2 y el entregable 2 piden `INSTANCE_INVALID_STATE`;
->   - con la instancia detenida responde **`204` sin cuerpo** (`instance_handler.go:558`). `proxmox.EliminarInstancia` descarta el UPID de `qmdestroy`/`vzdestroy`, la tarea no se registra en el seguimiento y no se emite `TASK_FINISHED`. La auditoría se escribe con resultado final (éxito o falla), sin `upid` ni orden despachada `PENDING`. Fallan los entregables 3 y 4.
->
-> La corrección es **`FIX-49`**, en [`futuro-1.md`](futuro-1.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commits `088e175` y `f06640f`).** El endpoint destructivo `DELETE /api/instances/:vmid` cumple todos sus entregables:
+> - sin token, `401`;
+> - un OPERATOR recibe `403`;
+> - un VMID protegido recibe `403 INSTANCE_PROTECTED`;
+> - con la instancia encendida responde `409 INSTANCE_INVALID_STATE` (D2);
+> - con la instancia detenida responde `202 { upid, tareaId }`, encolando el UPID en `Seguir`, despachando la orden auditada con `PENDING` y emitiendo `TASK_FINISHED` con `recursoTipo` correcto.
+> Pasa 100% en verde en `etapa1_acceptance_test.go` y `puente_etapa1_acceptance_test.go`. Resuelto por `FIX-49`.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -300,16 +312,13 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
 
 #### `FRN-17A` - Consumo de eventos en tiempo real y distribución por instancia
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commits `8739022` y `0407fbd`).** `test/front/events-client.test.tsx`, bloque `FRN-17A`:
-> - **Cumple** (2 de 4):
->   - una sola conexión por pestaña: `EventsProvider` en `ProtectedLayout`, y los consumidores con `useEventsContext()`;
->   - descarta los mensajes que no cumplen `RealtimeEvent`.
-> - **Falla:**
->   - **no deduplica**: `parseCentinelaEventsMessage` descarta el `id` del evento, y un evento repetido vuelve a entregarse en `ultimoMensaje`;
->   - sigue existiendo `hooks/useWebSocket.js`, y `types/notifications.ts:4` sigue diciendo "El servidor WebSocket todavía no existe".
->
-> La corrección es **`FIX-47`**, en [`futuro-1.md`](futuro-1.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commit `1ce64f6` `FIX-47`).** `test/front/events-client.test.tsx`, bloque `FRN-17A`:
+> - una sola conexión por pestaña: `EventsProvider` en `ProtectedLayout`, y los consumidores con `useEventsContext()`;
+> - descarta los mensajes que no cumplen `RealtimeEvent`;
+> - deduplica por `id` en `parseCentinelaEventsMessage` manteniendo `seenEventIds`;
+> - se eliminó `hooks/useWebSocket.js` y se actualizó `types/notifications.ts`.
+> Pasan 4 de 4 pruebas de `FRN-17A` en `events-client.test.tsx`. Resuelto por `FIX-47`.
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -325,3 +334,1121 @@ Revisiones probadas: backend `e1f2df4` y frontend `d47999d`. Evidencia completa 
   - El Dashboard y la tabla reciben los `TASK_FINISHED` del backend en tiempo real con una sola conexión abierta por pestaña.
   - Un evento repetido se procesa una sola vez.
   - Las pruebas de `events-client.test.tsx` pasan.
+
+---
+
+# Verificación del 06/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `59148b1` y frontend `5a86dce`.
+
+#### `BAC-22` - Adaptador de telemetría del nodo con caché en Redis (`RF-02`)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `13f9c35`).**
+> - **Cumple:** implementa `GET /api/node/status` en `nodo_service.go`, normaliza CPU/RAM/disco y uptime, cachea en Redis con TTL y sirve fallback `stale` si Proxmox cae teniendo lectura previa.
+> - **Problema:** si el backend arranca y Proxmox falla antes de poblar la caché (`node:status:last_known`), `nodo_service.go:24` aplica `pausaTrasFallaNodo = 5s`. Durante ese intervalo, cualquier consulta devuelve `502 PROXMOX_UNAVAILABLE` sin reintentar a Proxmox, haciendo fallar el caso de recuperación en `etapa1_acceptance_test.go:91`.
+>
+> La corrección es **`FIX-62`**, en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.5 h
+- **Depende de:** `INF-06A` y `BAC-17A`.
+- **Criterio de éxito original:** Responde en < 50 ms en caché; refresca al vencer TTL; ante caída de Proxmox sirve último estado con `stale: true`; accesible para cualquier usuario autenticado (`ADMIN` u `OPERATOR`).
+
+#### `BAC-23A` - Adaptador y normalización de inventario Proxmox (QEMU / LXC / IP)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `d1dec4f`).**
+> - **Cumple:** unifica inventario de VMs y LXCs, resuelve IPs de forma concurrente consultando QEMU Guest Agent e interfaces de LXC, y devuelve `ip: null` si la máquina está apagada.
+> - **Problema:** la suite de aceptación (`etapa1_acceptance_test.go:165`) busca pruebas unitarias que mencionen explícitamente `network-get-interfaces` o `/interfaces` en archivos `_test.go` del cliente/adaptador de Proxmox.
+>
+> La corrección es **`FIX-63`** (y profundización en `FIX-67`), en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `BAC-14`, `BAC-28` y `FIX-35`.
+- **Criterio de éxito original:** Devuelve inventario consolidado con IP resuelta concurrentemente y timeout acotado por petición.
+
+#### `BAC-25A` - Worker pool acotado para el seguimiento de UPID
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `3988546`).**
+> - **Cumple:** pool acotado con `UPID_WORKERS` (default 8), encolado no bloqueante con reconciliador en base de datos (`seguimiento_tareas.go`), y procesamiento concurrente sin pérdida de tareas.
+> - **Problema:** la aserción de suite limpia en `etapa1_acceptance_test.go:178` ejecuta `go test ./docs ...`, la cual falla debido a que la regeneración de Swagger en `f06640f` omitió las definiciones de modelos SSE en `swagger.yaml`.
+>
+> La corrección es **`FIX-69`** (y verificación estricta de concurrencia en `FIX-67`), en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-21C`.
+- **Criterio de éxito original:** Con 50 tareas simultáneas no supera $N$ workers en vuelo; detección en menos de 2 s.
+
+#### `BAC-25C` (`BRG-04-BAC`) - Reanudación de UPIDs en curso al arrancar el Backend (`RNF-04`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commit `f17295c`).**
+> - Reanuda tareas `RUNNING` ≤ 3 min al iniciar el backend y marca `FAILED (TIMEOUT)` las vencidas.
+> - Informa `activeTask: { tareaId, action, status }` en `GET /api/instances` cruzando con las tareas en curso.
+> - Pasa 100% en verde en `etapa1_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25A` y `FIX-39`.
+- **Criterio de éxito:** Tareas en curso se retoman tras reinicio y se informa `activeTask` en inventario.
+
+#### `FIX-43` - Corregir maquetado, visualización de IP, badges de estado y columnas en tabla de instancias (`FRN-20A` / RF-03) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commits `0901682`..`56d67bb`, `743e4cc`).**
+> - Muestra columnas separadas para ID y Nombre, permitiendo identificación unívoca.
+> - Columna IP con valor real o "No detectada" y botón copiar interactivo.
+> - Badges de estado con estilos verde/gris según `running`/`stopped`.
+> - Menú desplegable y botonera de acciones operativa.
+> - Pasan 5 de 5 pruebas en `test/front/instances-table.test.tsx`.
+
+- **Área:** Frontend
+- **Asignada:** Luz / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-20A`.
+- **Criterio de éxito:** Pasan las 5 pruebas de `instances-table.test.tsx`.
+
+#### `FIX-46` - Completar el contrato de la Etapa 1 y alinear `activeTask` (`BAC-29`) (Backend)
+
+> [!WARNING]
+> **Estado: Implementada con problema (verificado el 06/10/2026, backend `59148b1`, commit `0850ec7`).**
+> - **Cumple:** contrato actualizado con `activeTask` estructurado, DELETE asíncrono y eventos.
+> - **Problema:** falta documentar explícitamente en `docs/contrato-etapa1.md` que `/node/status` lo puede consultar cualquier usuario autenticado (D1).
+>
+> Pendiente D1 registrado en [`futuro-1.md`](futuro-1.md).
+
+- **Área:** Backend
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Depende de:** `BAC-29`.
+- **Criterio de éxito:** Contrato alineado y paso de `etapa1_acceptance_test.go`.
+
+#### `FIX-47` - Deduplicar eventos por `id` y limpiar restos del canal anterior (`FRN-17A`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`, commit `1ce64f6`).**
+> - Deduplica eventos por `id` en `eventsClient.ts` con `seenEventIds`.
+> - Se eliminó el archivo residual `hooks/useWebSocket.js` y se actualizó `types/notifications.ts`.
+> - Pasan los casos de `FRN-17A` en `events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Nico
+- **Estimación:** 1 h
+- **Depende de:** `FRN-17A`.
+- **Criterio de éxito:** Eventos repetidos se procesan una sola vez y no quedan restos del canal anterior.
+
+
+
+#### `FIX-49` - `DELETE /api/instances/:vmid`: código de estado (D2) y `202` con seguimiento (`BAC-24B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commits `088e175` y `f06640f`).**
+> - Responde `409 INSTANCE_INVALID_STATE` si la instancia no está detenida.
+> - Responde `202 { upid, tareaId }` si está detenida, encolando el UPID en `Seguir`, despachando auditoría `PENDING` y emitiendo `TASK_FINISHED` con `resource_type`.
+> - Pasa 100% en verde en `etapa1_acceptance_test.go` y `puente_etapa1_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-24B`.
+- **Criterio de éxito:** DELETE responde 409 si encendida, 202 con seguimiento si detenida y emite TASK_FINISHED.
+
+#### `FIX-53` - Unificar códigos de acción y resultado en la auditoría de instancias (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `59148b1`, commit `b476636`).**
+> - Unifica vocabulario canónico `START`/`STOP`/`SHUTDOWN`/`REBOOT`/`DELETE`.
+> - Define `ResultadoPendiente = "PENDING"` y preserva `instanciaNombre` y `resource_type` en alias `/start` y `/stop`.
+> - Pasa la prueba `FIX-53_unificacion_de_codigos_de_accion_y_resultado_en_la_auditoria_de_instancias` en `fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Códigos de auditoría unificados entre rutas y alias.
+
+#### `FIX-64` - Conexión SSE compartida y suscripción selectiva (`FRN-17A`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `5a86dce`).**
+> - Implementa conexión compartida única vía `EventsProvider` en `ProtectedLayout`.
+> - Suscripción y distribución de eventos por contexto (`useEventsContext`).
+> - Pasan las pruebas correspondientes en `test/front/events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-17A`, `FRN-17C`.
+- **Criterio de éxito:** Una sola conexión SSE compartida por pestaña con suscripciones selectivas.
+
+#### `BAC-23B` - IP real en `GET /api/instances` y verificación del filtrado RBAC (`RF-03`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - `internal/core/services/instance_service.go` (`ListarInstancias`) y adaptadores resuelven `ip` de manera concurrente únicamente para las instancias visibles por el usuario (`Permitidas`), protegiendo la infraestructura contra accesos no autorizados y llamadas innecesarias al guest agent.
+> - Preserva retrocompatibilidad para `FRN-07`/`FIX-14` y control RBAC: usuarios `OPERATOR` solo visualizan sus instancias asignadas y usuarios `ADMIN` acceden al inventario global del nodo.
+> - Pasan las pruebas de aceptación en `test/back/etapa1_ola2_acceptance_test.go` (`BAC-23B_IP_real_en_GET_api_instances_y_filtrado_RBAC_estricto`).
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-23A` y `FIX-39`.
+- **Entregable:**
+  1. `ListarInstancias` usa el adaptador de `BAC-23A` y completa `ip`.
+  2. La IP se resuelve **solo para las instancias que el usuario puede ver**, después del filtro, para no consultar el guest agent de máquinas ajenas.
+  3. Mantiene el contrato retrocompatible para `FRN-07`/`FIX-14`.
+- **Criterio de éxito:**
+  - Un OPERATOR solo ve sus instancias, con su IP o `null`.
+  - Sin token, `401`; sin permisos, lista vacía.
+  - Con 20 instancias en el simulador, el listado responde en menos de 2 s.
+  - Las pruebas `BAC-14`, `BAC-21B` y `FIX-39` siguen en verde.
+
+#### `BAC-22B` (`BRG-05-BAC`) - Conteo de instancias por estado en `GET /api/node/status` (`RF-02`) y métricas por instancia (`RF-03`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - En `GET /api/node/status` se incluye `instancesSummary` con desglose segregado de VMs y LXC (`running`, `stopped`, `paused`, `total`), integrado con la telemetría del nodo y cache en Redis.
+> - En `GET /api/instances` se completan métricas de recursos en tiempo real (`cpuUsage`, `ramUsage`, `maxRam`), devolviendo valores nulos o 0 cuando la instancia está detenida.
+> - Pasan las pruebas de aceptación en `test/back/etapa1_ola2_acceptance_test.go` (`BAC-22B_instancesSummary_en_GET_api_node_status_y_metricas_por_instancia`).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-23A` y `FIX-39`.
+- **Entregable:**
+  1. En `GET /api/node/status`, incluir `instancesSummary: { vms: { running, stopped, paused, total }, lxc: { running, stopped, paused, total } }`, cacheado junto con la telemetría.
+  2. En `GET /api/instances`, completar `cpuUsage` (0-100), `ramUsage` y `maxRam` (bytes) con los datos de `BAC-23A`.
+- **Criterio de éxito:** `GET /api/node/status` devuelve el desglose por estado coincidiendo con el simulador, y `GET /api/instances` devuelve CPU y RAM de cada instancia (`null` si está apagada).
+
+#### `FRN-16B` (`BRG-04-FRN`) - Resincronización del estado "Operación en progreso" tras recarga (`F5`) o reconexión
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `fc6f9ed`).**
+> - Al cargar la tabla de instancias (`/instances`), las filas con `activeTask !== null` se inicializan inmediatamente en estado `transitioning` con spinner y botones de acción bloqueados/deshabilitados, conservando el `tareaId`.
+> - Al reconectarse el canal SSE `/api/events`, se revalida el listado en segundo plano sin parpadeos de carga para sincronizar estados terminados durante la desconexión.
+> - Pasan las pruebas en `test/front/instances-ola2.test.tsx` (`FRN-16B - Resincronización del estado de operación en progreso tras recarga (activeTask)`).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25C`, `FRN-16` y `FRN-17C`.
+- **Entregable:**
+  1. Al cargar la tabla, poner en `transitioning` (spinner y botones bloqueados) las filas cuyo ítem de `GET /api/instances` trae `activeTask !== null`, guardando su `tareaId`.
+  2. Al reconectarse `/api/events` (`FRN-17C`), volver a pedir `GET /api/instances` sin mostrar carga, para tomar los estados finales de las tareas que terminaron durante la desconexión.
+- **Criterio de éxito:** si se recarga con `F5` en medio de una acción, la fila sigue con el spinner y los controles bloqueados hasta que llega `TASK_FINISHED` o termina la tarea.
+
+
+### `FIX-69` - Restaurar definiciones SSE, esquemas de eventos y contratos en `swagger.yaml` / docs (`BAC-25A` / `BAC-29`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Lucas
+- **Estado:** Pendiente en el submódulo `backend`. Correr `go test ./docs/...` en el backend falla con errores de esquemas faltantes.
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-25A` y `BAC-29` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al regenerar la documentación de Swagger con `swag init` en el commit `f06640f` del backend, se sobreescribieron `docs/swagger.yaml`, `docs/swagger.json` y `docs/docs.go`. Como los handlers no contenían anotaciones declarativas completas para los modelos de streaming SSE ni para el ticket efímero, se perdieron del archivo YAML/JSON las siguientes definiciones esenciales de la Etapa 1:
+  - `http.SSEEventPayload`
+  - `http.SSEDetallesEvento`
+  - `http.TaskSuccess`
+  - `http.TaskFailed`
+  - `http.SSETicketResponse`
+  - `http.SSECierrePayload`
+  - `http.SSETiposPayload`
+  Además, `contrato_etapa1_test.go` falla porque la respuesta 200 de `/node/status` quedó documentada con el tipo interno `#/definitions/internal_adapters_primary_http.EstadoNodeResponse` en lugar de la definición de contrato esperada `#/definitions/http.EstadoNodeResponse`.
+- **Qué debe hacer el equipo de backend:**
+  1. En los handlers de HTTP (`events_handler.go` y `node_handler.go`), incorporar o corregir las anotaciones de Swagger (`@Success`, `@Failure`, `@Produce`, `@Router` y tipos `@Model` o referencias a los DTOs de eventos).
+  2. Asegurar que las estructuras de DTO de eventos SSE (`RealtimeEvent`, `TaskFinishedDetails`, `TicketResponse`, etc.) estén expuestas y referenciadas en las anotaciones de swag para que se generen en `docs/swagger.yaml` y `docs/swagger.json`.
+  3. Ejecutar la regeneración (`swag init` con los flags de formato adecuados, o configurar alias de paquetes) para que los nombres de los esquemas en `#/definitions` no contengan prefijos de rutas internas (`internal_adapters_primary_http`).
+  4. Ejecutar localmente `go test -v ./docs/...` en el backend hasta que todas las aserciones de artefactos (`TestContratoEtapa1ArtefactosJSONYAML`, `TestContratoEtapa1ArtefactosJSONGo` y `TestContratoEtapa1`) pasen en verde.
+- **Criterio de éxito:**
+  - `go test -v ./docs/...` en el repositorio backend pasa 100% en verde sin fallos de definiciones faltantes.
+  - `docs/swagger.yaml` y `docs/swagger.json` contienen los esquemas completos de SSE y telemetría de nodo.
+
+
+### `FIX-65` - Explicitar en `docs/contrato-etapa1.md` el acceso de cualquier usuario autenticado a `/node/status` (D1) (`BAC-29` / `FIX-46`) (Backend)
+
+- **Área:** Backend / documentación
+- **Asignado:** Nico
+- **Estado:** Pendiente en el submódulo `backend`. La suite de tests de este repo ya adecuó el matcher multilínea, pero el documento de contrato debe explicitar la especificación formal del requisito D1.
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-46` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  En `backend/docs/contrato-etapa1.md`, la sección `GET /api/node/status` describe el formato JSON de la respuesta y la telemetría, pero no define con precisión formal en el encabezado del endpoint la matriz de control de acceso requerida por el entregable 5 de `BAC-29` (D1). El texto actual menciona de forma genérica en párrafos separados que ambas operaciones usan `Authorization: Bearer <accessToken>`, pero no explicita que `GET /api/node/status` es accesible tanto para el rol `ADMIN` como para el rol `OPERATOR` sin restricciones de permisos de instancia.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/docs/contrato-etapa1.md`, en la sección correspondiente a `GET /api/node/status`, agregar explícitamente:
+     > **Control de acceso (D1):** Endpoint accesible para cualquier usuario autenticado (`Authorization: Bearer <accessToken>`), habilitado tanto para el rol `ADMIN` como para el rol `OPERATOR`. No requiere permisos específicos sobre instancias.
+  2. Mantener la alineación entre la versión Markdown y el archivo `.docx` correspondiente si aplica.
+- **Criterio de éxito:**
+  - `backend/docs/contrato-etapa1.md` especifica formalmente el requisito D1.
+  - La prueba de contrato `TestEtapa1/BAC-29` valida el texto contractual y pasa 100% en verde.
+
+
+
+### `FIX-63` - Cobertura de pruebas unitarias para `ObtenerInterfaces` en el cliente Proxmox (`BAC-23A`) (Backend)
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro
+- **Estado:** Pendiente en el submódulo `backend`.
+- **Estimación:** 1 h
+- **Depende de:** `BAC-23A` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  El método `ObtenerInterfaces(ctx context.Context, nodo, tipo string, vmid int)` en `backend/internal/adapters/secondary/proxmox/client.go:474` implementa el consumo HTTP de:
+  - QEMU VMs: `/api2/json/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces`
+  - LXC Containers: `/api2/json/nodes/{node}/lxc/{vmid}/interfaces`
+  Sin embargo, en `backend/internal/adapters/secondary/proxmox/client_test.go` **no se escribió ninguna prueba unitaria para `ObtenerInterfaces`**. La suite de aceptación de `BAC-23A` (`etapa1_acceptance_test.go:171`) verifica que existan pruebas unitarias para ambas rutas y falla con:
+  `no hay pruebas unitarias del adaptador de IP (ningún _test.go del backend menciona network-get-interfaces ni /interfaces)`.
+  Aunque `inventario_service_test.go` prueba la lógica interna con stubs en memoria, el adaptador HTTP contra Proxmox quedó sin cobertura.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/adapters/secondary/proxmox/client_test.go`, agregar casos de prueba con `httptest.Server`:
+     - `TestClient_ObtenerInterfaces_Qemu`: verifica que una VM consulte la ruta `/api2/json/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces` y parsee correctamente las interfaces y direcciones IPv4/IPv6 devueltas por el Guest Agent (con `prefix` entero).
+     - `TestClient_ObtenerInterfaces_LXC`: verifica que un contenedor consulte la ruta `/api2/json/nodes/{node}/lxc/{vmid}/interfaces` y parsee las interfaces y direcciones (soportando `prefix` string o número, y devolviendo vacío sin error si `data: null` por estar detenido).
+     - `TestClient_ObtenerInterfaces_ErrorYTimeout`: verifica el manejo de errores (ej. VM sin guest agent respondiendo error o 500) devolviendo `ErrGuestAgentNoDisponible` o `nil` controlado según el contrato.
+- **Criterio de éxito:**
+  - `go test -v ./internal/adapters/secondary/proxmox/...` pasa al 100% ejecutando los nuevos tests.
+  - La suite de aceptación `TestEtapa1/BAC-23A` encuentra las pruebas en `client_test.go`, las ejecuta y pasa 100% en verde.
+
+
+---
+
+# Verificación del 09/10/2026: tareas movidas desde `actual.md`
+
+Revisiones probadas: backend `4f68e44` y frontend `ee4644c`.
+
+#### `FRN-15` - Modales de confirmación antierror para acciones operativas
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Se implementaron modales de confirmación diferenciados por criticidad: `Start` (confirmación estándar), `Shutdown`/`Reboot` (aviso de apagado/reinicio de OS huésped), `Stop` (advertencia en rojo sobre posible pérdida de datos) y `Delete` (modal destructivo exigiendo tipear el nombre o ID de la instancia).
+> - La eliminación destructiva (`Delete`) queda restringida exclusivamente al rol `ADMIN`. Los operadores con `READ_ONLY` no ven controles mutantes; usuarios con rol `ADMIN` siempre están habilitados a operar.
+> - Pasan 6 de 6 pruebas en `test/front/instances-modals.test.tsx`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-20A`, `SEC-03` (`PermissionGate`), `FIX-37` y `FIX-38`.
+- **Criterio de éxito:** Ninguna acción operativa se dispara sin pasar por el modal; cancelar no emite peticiones; `OPERATOR` con `READ_ONLY` no ve energía y nunca ve `Delete`; `ADMIN` puede operar y eliminar.
+
+
+#### `FRN-19B` (ex `FRN-13B`) - Semáforo de salud global e integración con `GET /api/node/status` (`RF-02`)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - `Dashboard.tsx` conecta los medidores a `GET /api/node/status`: porcentaje de CPU, memoria RAM, disco/almacenamiento, uptime formateado en días/horas/minutos y resumen global de instancias.
+> - Semáforo de salud visual implementado: `Saludable` (< 70%), `Advertencia` (>= 70%) e `Inaccesible` ante respuestas 502/504 o caída de conexión.
+> - Muestra advertencia visual de datos desactualizados si la respuesta contiene `stale: true`.
+> - Pasan 12 de 12 pruebas en `test/front/dashboard-node.test.tsx`.
+> - Observación menor sobre desduplicación de texto en lectores de pantalla canalizada en `FIX-78` de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-19A`, `BAC-29`, `BAC-22`.
+- **Criterio de éxito:** Los datos reales del nodo se visualizan en pantalla y se actualizan sin `F5`. Ante caída de backend la interfaz muestra `Inaccesible` sin romperse.
+
+
+#### `FRN-16` - Máquina de estados "Operación en progreso" por instancia
+
+> [!NOTE]
+> **Estado: Implementada con observaciones (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Al confirmar una acción operativa, se despacha la orden y la fila entra en estado `transitioning`, mostrando un spinner en el botón accionado y bloqueando todos los controles de esa instancia para evitar órdenes concurrentes.
+> - **Observaciones detectadas:** El mapeo diferenciado de los 6 códigos de error acordados en el contrato D2 (`BAC-29`) (`INSTANCE_INVALID_STATE`, `INSTANCE_BUSY`, `INSTANCE_PROTECTED`, `INSTANCE_ACCESS_DENIED`, `PROXMOX_UNAVAILABLE`, `PROXMOX_TIMEOUT`) y el desbloqueo interactivo inmediato de la fila tras un fallo se canalizan en [`FIX-77`](futuro-1.md#fix-77---mapeo-de-errores-http-de-ciclo-de-vida-bac-29-y-resiliencia-de-la-máquina-de-estados-frn-16-frontend) de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-15`, `BAC-29`, `FIX-39`, `FIX-40`, `BAC-24A` y `BAC-24B`.
+- **Criterio de éxito:** Es imposible disparar una segunda acción sobre la misma instancia mientras hay una orden en curso. Los errores devuelven feedback visual claro.
+
+
+#### `FIX-52` - Distinguir `INSTANCE_BUSY` de `INSTANCE_INVALID_STATE` y limpiar código muerto (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Commit `222760d`: `validarEstadoParaAccion` en `instance_handler.go` consulta `tareas_asincronas` antes de evaluar la matriz de estados; si existe una tarea `RUNNING` para el VMID responde inmediatamente `409 INSTANCE_BUSY`.
+> - Se eliminó el método huérfano `ReiniciarInstancia` en `ProxmoxPort` y `client.go`.
+> - Se corrigió el comentario en `EliminarInstancia` reflejando que la validación de estado detenido la realiza el handler.
+> - Pasan las pruebas de regresión en `test/back/fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Una acción consecutiva sobre una instancia con tarea en curso responde `409 INSTANCE_BUSY`; sobre una ya detenida/incompatible responde `409 INSTANCE_INVALID_STATE`.
+
+
+#### `BAC-25B` - Timeout configurable, reintentos y `exitstatus` en el evento
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Se incorporó la variable de entorno `UPID_TIMEOUT` con valor por defecto de 3 minutos (configurable a 5 s en pruebas); al expirar, la tarea pasa a `FAILED` con `motivo: TIMEOUT`.
+> - Se implementaron reintentos con retroceso exponencial ante fallos transitorios en la consulta de estado de tareas en Proxmox.
+> - El evento `TASK_FINISHED` incluye `exitstatus` y `motivo` (`PROXMOX_ERROR` o `TIMEOUT`) con su mensaje descriptivo correspondiente.
+> - Pasan todas las pruebas de la Ola 2 en `test/back/etapa1_ola2_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-25A`.
+- **Criterio de éxito:** Seguimiento acotado por `UPID_TIMEOUT`, reintentos resilientes y payload completo de `TASK_FINISHED` según contrato `BAC-29`.
+
+
+#### `FRN-20B` (ex `FRN-14B`) - Filtros reactivos por tipo, estado y buscador dinámico
+
+> [!NOTE]
+> **Estado: Implementada con observaciones (verificado el 09/10/2026, frontend `ee4644c`).**
+> - En `Instances.tsx`, la barra superior incluye buscador en tiempo real por ID y nombre, selector por estado (Todas, En ejecución, Detenidas) y contador de instancias reactivo que opera instantáneamente en memoria.
+> - **Observación detectada:** El selector reactivo por tipo de recurso (VM / LXC) fue implementado dentro de un menú desplegable contextual (`DropdownMenu`) en lugar de botones o pestañas directamente visibles y accesibles en la barra superior; canalizado en [`FIX-79`](futuro-1.md#fix-79---exposición-directa-de-controles-para-selector-reactivo-por-tipo-de-recurso-frn-20b-frontend) de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-20A`.
+- **Criterio de éxito:** El filtrado es instantáneo en memoria del cliente sin peticiones al backend.
+
+
+#### `FIX-48` - Documentar `INSTANCE_INVALID_STATE` en Swagger (`BAC-24A`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Las especificaciones OpenAPI/Swagger (`backend/docs/swagger.json` y `swagger.yaml`) formalizan el código de respuesta HTTP `409` con clave `INSTANCE_INVALID_STATE` para todas las acciones de ciclo de vida (`start`, `stop`, `shutdown`, `reboot`, `delete`).
+
+- **Área:** Backend
+- **Asignado:** Lucas
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-24A`.
+- **Criterio de éxito:** Swagger documenta formalmente `INSTANCE_INVALID_STATE`.
+
+
+#### `FIX-62` - Heurística de circuit breaker y recuperación de telemetría en `nodo_service` (`BAC-22`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Commit `eca422d`: En `backend/internal/core/services/nodo_service.go`, se condicionó la penalización `fallaReciente()`: si no existe lectura previa en caché (`claveNodoUltimo`), no bloquea peticiones durante 5 segundos a ciegas.
+> - Se limpió el estado de fallo permitiendo la recuperación instantánea de telemetría tan pronto como Proxmox vuelve a responder.
+> - Pasan las pruebas unitarias en `nodo_service_test.go` y la prueba de integración `TestEtapa1/BAC-22`.
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-22`.
+- **Criterio de éxito:** El backend se recupera inmediatamente tras el restablecimiento del hipervisor sin quedar en un blackout de 5 segundos cuando no hay caché previa disponible.
+
+
+
+
+---
+
+## Actualización del 13/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `6afc017` / frontend `7fcc0bd`. El estado vigente es el bloque de cada tarea.
+
+
+#### `BAC-27` - Auditoría del resultado de las acciones de ciclo de vida en `auditoria` (`RF-08`)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestINT01` (Paso 4) pasa: cada acción deja registros de auditoría correlacionados por `upid`/`tareaId`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:**
+  - `BAC-18` y `FIX-23` (terminadas);
+  - `FIX-39` (registra la orden despachada; la del `DELETE`, `BAC-24B`);
+  - `BAC-25B`;
+  - `BAC-18B` (particionamiento de `auditoria`, que tiene que estar mergeado antes).
+- **Entregable:**
+  - Para cada tarea que termina, registrar en `auditoria` una segunda entrada con el mismo `upid` y `tareaId` que la de `FIX-39`, más `status: "SUCCESS"` o `"FAILED"` y `exitstatus`.
+  - La entrada de la orden despachada (`PENDING`) la hacen `FIX-39` y `BAC-24B`. Acá solo se verifica que tenga `action`, `user_id`, `resource_id` y `upid`.
+- **Criterio de éxito:**
+  - Cada acción deja exactamente dos registros correlacionados por `upid`, sin migraciones de esquema nuevas.
+  - Las tareas vencidas por timeout quedan como `FAILED`.
+  - `GET /api/admin/audit` permite filtrar por `accion`.
+
+
+
+#### `INF-09` (`BRG-06-INF`) - Configuración de Nginx para WebSockets y Streaming bidireccional (`RNF-06`)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026): implementada y con test en verde.** `TestINF09WebSocketsNginxEdge` (y `TestINT03` Paso 2) pasa: `docker/nginx-edge.conf` incluye `proxy_http_version 1.1`, `Upgrade`/`Connection` y `proxy_read_timeout 1h`.
+
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-07B`.
+- **Problema:** `INF-07B` configuró Nginx para SSE unidereccional. La telemetría en tiempo real de la Etapa 2 (`RF-05`) utiliza WebSockets (`/api/ws/*` o `/ws/*`), que requieren encabezados `Upgrade` y `Connection: "upgrade"`, además de timeouts extendidos para no interrumpir sesiones activas de monitoreo.
+- **Entregable:**
+  - Actualizar `docker/nginx-edge.conf` y la plantilla de despliegue del CT 103 con soporte de WebSockets:
+    `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s;`.
+- **Criterio de éxito:** Una conexión WebSocket establecida a través de Nginx completa el handshake HTTP 101 y se mantiene abierta transmitiendo datos sin cortes por buffer o timeout.
+
+### `FIX-72` - Sincronizar firma de `NewSeguimientoTareas` en pruebas unitarias de servicios (`BAC-25A`) (Backend / pruebas)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestEtapa1` (BAC-25A) pasa: las pruebas unitarias de `internal/core/services` vuelven a compilar con la firma vigente de `NewSeguimientoTareas`.
+
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro / Lucas
+- **Estimación:** 1 h
+- **Depende de:** `BAC-25A` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias del backend invocadas por la prueba de aceptación `TestEtapa1/BAC-25A` (`etapa1_acceptance_test.go:185`), la suite `go test ./internal/core/services/...` falla en compilación:
+  ```
+  internal/core/services/seguimiento_pool_test.go:89:60: too many arguments in call to services.NewSeguimientoTareas
+  	have (*proxmoxPool, *tareasEnMemoria, *publicadorFalso, *auditoriaGrabadora, services.ConfigSeguimiento)
+  	want (ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)
+  internal/core/services/seguimiento_tareas_test.go:131:54: too many arguments in call to services.NewSeguimientoTareas
+  	have (*proxmoxTareas, *tareasEnMemoria, *publicadorFalso, *auditoriaGrabadora, services.ConfigSeguimiento)
+  	want (ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)
+  ```
+  La firma del constructor `services.NewSeguimientoTareas` fue simplificada para recibir únicamente `(ports.ProxmoxPort, ports.TareaRepository, services.ConfigSeguimiento)`, pero los archivos de pruebas unitarias de servicios (`seguimiento_pool_test.go` y `seguimiento_tareas_test.go`) no fueron actualizados y siguen pasando 5 argumentos con stubs residuales.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/core/services/seguimiento_pool_test.go`, actualizar la llamada a `services.NewSeguimientoTareas` para pasar únicamente los 3 parámetros requeridos.
+  2. En `backend/internal/core/services/seguimiento_tareas_test.go`, actualizar la llamada a `services.NewSeguimientoTareas` a la firma de 3 parámetros.
+  3. Ejecutar `go test -v ./internal/core/services/...` en el repositorio backend y verificar que compilen y pasen todas las pruebas unitarias.
+- **Criterio de éxito:**
+  - `go test ./internal/core/services/...` compila limpiamente y pasa en verde.
+  - La prueba de aceptación `TestEtapa1/BAC-25A` en `test/back/etapa1_acceptance_test.go` pasa 100% en verde.
+
+
+
+
+### `FIX-77` - Mapeo de errores HTTP de ciclo de vida (`BAC-29`) y resiliencia de la máquina de estados (`FRN-16`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada parcialmente, con problema pendiente.** `instances-operation.test.tsx` mejoró de 8 a **5 fallos** (quedan casos de la máquina de estados D2). Corrección en **`FIX-86`** ([futuro-1.md](futuro-1.md)).
+
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-16`, `BAC-29`.
+- **Problema técnico detallado:**
+  Al despachar una orden de ciclo de vida sobre una instancia (`requestInstancePowerAction`), ante un rechazo del servidor la interfaz no mapea los códigos HTTP y claves de error acordados en el contrato D2 (`BAC-29`) a sus mensajes descriptivos específicos, y `ConfirmUserAction` suprime o desvía los errores 403. Al ejecutar `npx vitest run instances-operation.test.tsx`, fallan las pruebas por no encontrar los mensajes esperados:
+  - `409 INSTANCE_INVALID_STATE`: debe mostrar *"La instancia ya está encendida"* o *"El estado actual no corresponde a la acción"*.
+  - `409 INSTANCE_BUSY`: debe mostrar *"La instancia se encuentra ejecutando otra tarea. Aguarde a que finalice."*.
+  - `403 INSTANCE_PROTECTED`: debe indicar que la instancia es de infraestructura protegida.
+  - `403 INSTANCE_ACCESS_DENIED`: debe advertir que el operador no posee permisos sobre esa máquina.
+  - `502 PROXMOX_UNAVAILABLE`: debe informar que el hipervisor Proxmox no está disponible.
+  - `504 PROXMOX_TIMEOUT`: debe avisar que la respuesta de Proxmox agotó el tiempo de espera.
+  Además, al ocurrir un error, todos los controles de la fila deben desbloquearse inmediatamente saliendo del estado de spinner.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/components/features/instances/components/InstanceAction.tsx` (o servicio asociado), implementar una función de traducción que reciba el `ApiRequestError` (evaluando `status` y `errorCode`) y genere el mensaje exacto exigido por el contrato D2.
+  2. Asegurar que ante cualquier fallo se notifique el mensaje al usuario (vía toast o texto en modal), se resetee `pendingAction` y la fila recupere su interactividad normal.
+  3. Verificar que `npx vitest run instances-operation.test.tsx` pase en verde para todos los códigos de error documentados.
+- **Criterio de éxito:**
+  - Cada uno de los seis códigos de error despliega su mensaje diferenciado y la fila se desbloquea tras el fallo.
+  - La suite `instances-operation.test.tsx` pasa 9 de 9 pruebas en verde.
+
+
+
+---
+
+## Actualización del 13/10/2026 — fixes resueltos en este repo
+
+### `FIX-78` - Desduplicación de indicadores de salud del nodo y accesibilidad en Dashboard (`FRN-19B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada y con test en verde.** `dashboard-node.test.tsx` (12/12) pasa: el estado de salud del nodo no se duplica (accesibilidad) y el Dashboard refleja 502/504 como "Inaccesible".
+
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19B`.
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/pages/Dashboard.tsx`, el estado de salud del nodo (`nodeHealth.label`: "Saludable", "Advertencia", "Inaccesible") se renderiza simultáneamente en dos componentes:
+  1. En la cabecera de la tarjeta de recursos (`Dashboard.tsx:136`): `<Badge variant="outline">{nodeHealth.label}</Badge>`.
+  2. En el pie de página de estado del sistema (`Dashboard.tsx:211`): `<p className="text-caption">{nodeHealth.label}</p>`.
+  Esta duplicación genera colisiones al evaluar la interfaz con lectores de pantalla o Testing Library (`findByText(/saludable/i)` y `findByText(/inaccesible/i)` fallan con `Found multiple elements with the text of: ...`). Asimismo, cuando el nodo está cargando o en error 502/504, los skeletons y las alertas de accesibilidad deben identificarse unívocamente sin interferir con otras tarjetas.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Dashboard.tsx`, diferenciar semánticamente los textos o asignar atributos de accesibilidad inequívocos (`aria-label="Estado general del nodo: Saludable"` o dejar el semáforo principal en la tarjeta de recursos y usar una descripción extendida o etiqueta diferenciada en el pie).
+  2. Asegurar que las respuestas 502 y 504 reflejen inequívocamente la etiqueta `Inaccesible` en el semáforo de recursos.
+  3. Ejecutar `npx vitest run dashboard-node.test.tsx` y comprobar que todos los casos pasen en verde.
+- **Criterio de éxito:**
+  - `dashboard-node.test.tsx` pasa al 100% sin colisiones de texto duplicado.
+  - La experiencia visual y de accesibilidad es nítida tanto para usuarios videntes como para lectores de pantalla.
+
+
+### `FIX-73` - Sincronización y manejo determinista de tareas consecutivas en acciones de energía (`BAC-21B` / `FIX-39` / `FIX-33`) (Backend / pruebas)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): resuelto en la suite de este repo.** `test/back/puente_etapa1_acceptance_test.go` ya espera a que no queden tareas `RUNNING` antes de disparar una orden nueva (líneas 88, 110, 131 y 364) y al `COMPLETED` de cada tarea; la función `energyPath` ya no existe. `TestPuenteEtapa1` pasa al 100% sin `409 INSTANCE_BUSY` espurios.
+
+- **Área:** Backend / pruebas
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 1,5 h
+- **Depende de:** `BAC-21B` (en `terminado-1.md`), `FIX-33`, `BAC-24A`.
+- **Problema técnico detallado:**
+  En `test/back/puente_etapa1_acceptance_test.go`, las pruebas `FIX-39 BAC-21B shutdown y reboot exigen FULL_ACCESS` y `BAC-21B las acciones de energía quedan en auditoria` fallan con:
+  ```
+  409 INSTANCE_BUSY: "La instancia se encuentra ejecutando otra tarea. Aguarde a que finalice."
+  ```
+  Al emitirse una orden de energía (ej. `stop` sobre la 101), el backend registra la tarea en estado `RUNNING`. Cuando de inmediato se despacha otra acción de ciclo de vida (`shutdown`, `reboot` u otro `stop`), el control de concurrencia de `FIX-33` rechaza la segunda orden con `409 INSTANCE_BUSY`. Aunque el rechazo con 409 es la conducta esperada ante instancias ocupadas, la prueba o el cliente que encadena acciones debe sincronizar la finalización de la tarea precedente antes de disparar la siguiente, y la función de sondeo `energyPath` no debe emitir peticiones mutantes con token administrativo que inicien tareas no esperadas.
+- **Qué debe hacer el equipo:**
+  1. En las pruebas de aceptación de ciclo de vida, esperar a que la tarea previa pase a `COMPLETED` o `FAILED` antes de despachar una nueva orden sobre el mismo VMID.
+  2. Asegurar que `energyPath` inspeccione las rutas sin mutar el estado de la instancia en Proxmox.
+  3. Validar que la transición de estados y la auditoría registren cada tarea con su UPID correspondiente.
+- **Criterio de éxito:**
+  - La suite `TestPuenteEtapa1` pasa 100% en verde sin fallos espurios de `INSTANCE_BUSY`.
+  - Cada orden de energía se procesa y audita ordenadamente.
+
+
+#### `BAC-30` (`BRG-06-BAC`) - Extensión del simulador de Proxmox para Aprovisionamiento, Storages y RRDdata (`RF-05`, `RF-07`)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada parcialmente, con problema pendiente.** Contra el simulador real, `POST /nodes/{node}/qemu|lxc` (UPID), `PUT .../config` y `GET .../rrddata` **pasan**; **falta `GET /nodes/{node}/storage` y `/storage/{storage}/content`** (501). Corrección en **`FIX-84`** ([futuro-1.md](futuro-1.md)).
+
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-28` y `FIX-35` (en `terminado-1.md`).
+- **Problema:** El simulador actual solo responde a acciones de ciclo de vida de energía, inventario, borrado e interfaces de red. Para desarrollar y probar la Etapa 2 en local (siguiendo la premisa de no depender del servidor real), el simulador debe soportar:
+  1. `POST /nodes/{node}/qemu` y `POST /nodes/{node}/lxc`: retornar un UPID válido de tipo `qmcreate` / `vzcreate`.
+  2. `PUT /nodes/{node}/{tipo}/{vmid}/config`: actualizar núcleos y memoria simulados.
+  3. `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content`: listar storages (`local`, `local-lvm`) y contenidos (templates LXC e imágenes ISO).
+  4. `GET /nodes/{node}/{tipo}/{vmid}/rrddata`: retornar array de métricas simuladas (CPU, RAM, red, disco).
+- **Entregable:**
+  - Nuevos handlers y rutas en `backend/cmd/proxmox-simulador`.
+  - Casos de prueba en `backend/cmd/proxmox-simulador/simulador_test.go` verificando respuestas y tipos de datos idénticos a Proxmox VE 9.x.
+- **Criterio de éxito:** Las suites de prueba y el desarrollo de la Etapa 2 pueden crear, editar y consultar métricas contra el simulador local sin errores `501 Not Implemented`.
+
+
+#### `BAC-31` (`BRG-07-BAC`) - Endpoints de inventario de Almacenamiento, Plantillas e ISOs (`RF-07`)
+
+> [!WARNING]
+> **Estado verificado (14/10/2026, backend `a363c9a`): implementada parcialmente, con problema pendiente.** Los endpoints devuelven `502 Bad Gateway` al consultar el hipervisor en local (`TestEtapa1Ola3BAC31`). Corrección en **`FIX-92`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-14`, `BAC-30`.
+- **Problema:** El asistente de creación (Paso 3 de `RF-07`) requiere seleccionar en qué storage se creará el disco y qué plantilla LXC o imagen ISO se usará. Actualmente el backend no expone ningún endpoint de storages ni de contenidos del hipervisor.
+- **Entregable:**
+  1. Método en el cliente Proxmox para consumir `/nodes/{node}/storage` y `/nodes/{node}/storage/{storage}/content`.
+  2. Endpoints protegidos con rol `ADMIN`:
+     - `GET /api/node/storages`: lista storages habilitados con tipo, espacio total y libre.
+     - `GET /api/node/templates`: lista imágenes ISO y templates LXC disponibles normalizados.
+  3. Documentación en Swagger e inventario de errores.
+- **Criterio de éxito:** Un administrador consulta `GET /api/node/storages` y `GET /api/node/templates` y recibe el listado estructurado de discos e imágenes disponibles. Un operador recibe `403 Forbidden`.
+
+
+
+#### `INF-07C` (`BRG-07-INF`) - Ampliación de privilegios del Token de Proxmox para Aprovisionamiento (`RF-07`, `RF-10`)
+
+- **Área:** Infraestructura
+- **Asignado:** Nico / Lucas
+- **Estimación:** 1.0 h
+- **Depende de:** `INF-07`.
+- **Problema:** El API Token actual (`centi-api@pve!backend-token`) solo posee `VM.PowerMgmt`, `Sys.Audit` y lectura. Si intenta crear instancias o reconfigurar cores/RAM en la Etapa 2, Proxmox rechazará las peticiones con `403 Permission check failed`.
+- **Entregable:**
+  - Incorporar los permisos `VM.Allocate`, `Datastore.AllocateSpace`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Disk`, `VM.Config.Network` al rol del token en Proxmox VE.
+  - Verificar permisos con `pveum user permissions` o llamada de prueba con `curl`.
+  - Actualizar la documentación en `documentacion/api-proxmox.md`.
+- **Criterio de éxito:** El token permite consultar storages, crear contenedores de prueba y modificar configuraciones sin errores de autorización.
+
+
+### `FIX-80` - Alineación textual y normalización de copy en vistas de autenticación (`FIX-59`) (Frontend)
+
+- **Área:** Frontend / UI
+- **Asignado:** Belinda / Nico
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-59`.
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/components/layout_auth/MainLayoutAuth.tsx`, el placeholder informal `"imagenes y informacion random"` fue eliminado con éxito y se incorporaron explicaciones sobre la infraestructura Proxmox VE y el valor de seguridad de 2FA. Sin embargo, la suite de pruebas `test/front/auth-branding.test.tsx` verifica la existencia de encabezados y títulos estructurados específicos acordados en las especificaciones de diseño:
+  - *"Tu infraestructura virtual, simplificada y bajo control"* (en el headline principal).
+  - *"Protección de infraestructura con doble factor"* (en la tarjeta de seguridad 2FA).
+  Adicionalmente, en la suite de pruebas de testing library, el uso de expresiones regulares amplias sobre selectores singulares provoca fallos por coincidencia múltiple de texto si no se estructuran jerárquicamente.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `MainLayoutAuth.tsx`, alinear el titular `HEADLINE` y el título del beneficio de 2FA en el array de `features` con las frases literales aprobadas en la especificación.
+  2. Mantener la estética responsiva, los efectos de animación y la legibilidad en pantallas reducidas.
+  3. Ejecutar `npx vitest run auth-branding.test.tsx` y comprobar que la suite pase al 100% en verde.
+- **Criterio de éxito:**
+  - El layout de autenticación contiene los textos institucionales precisos aprobados para Centinela y 2FA.
+  - La suite `auth-branding.test.tsx` pasa todos sus casos (incluido `FIX-59`).
+
+
+### `FIX-88` - Evitar que `EMAIL_PROVIDER` caiga en silencio en el correo simulado (`BAC-16B` / `INF-08B`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Tayra / Lisandro
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-16B`, `INF-08B` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/cmd/api/main.go` la selección del adaptador de correo es:
+  ```go
+  if os.Getenv("EMAIL_PROVIDER") == "smtp" { ... NewSMTPEmailService() } else { emailService = email.NewMockEmailService() }
+  ```
+  El `else` cubre "variable ausente o con cualquier otro valor": un despliegue al que se le olvide `EMAIL_PROVIDER=smtp` **usa el simulador por consola**, así que las claves temporales y los códigos OTP no se envían y nadie puede iniciar sesión, sin ningún error visible.
+- **Qué debe hacer el equipo de backend:**
+  1. Fallar al arrancar (o registrar un `WARN` muy visible) cuando `EMAIL_PROVIDER` no esté definido, salvo que se use explícitamente `EMAIL_PROVIDER=mock`.
+  2. Documentar en `SETUP.md` / `.env.example` que `mock` es solo para tests/CI.
+- **Criterio de éxito:** un arranque sin `EMAIL_PROVIDER` no pasa desapercibido.
+
+
+
+### `FIX-90` - Quitar los placeholders muertos del Dashboard (`FRN-19A` / `FRN-19B`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19A`, `FRN-19B` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  `frontend/centinela/src/pages/Dashboard.tsx` conserva tres tarjetas **estáticas** con textos fijos y botones **sin handler** (`onClick` aparece una sola vez en todo el archivo, para el `retry` de error):
+  - "Instancias recientes" → `<div>Sin instancias</div>` + botón "Ver todas".
+  - "Actividad reciente" → `<div>Sin novedades</div>` + botón "Ver todo".
+  - "Alertas y estado" → `<div>Sin alertas</div>` + botón "Ver todas".
+  Además hay un `chartPlaceholder` para el gráfico de tendencia. Son restos del mockup de diseño en una vista declarada terminada.
+- **Qué debe hacer el equipo de frontend:**
+  1. Conectar "Instancias recientes" al inventario real (o quitarla) y dar destino a los botones "Ver todas/Ver todo" (p. ej. `/instances` y `/auditoria`), o eliminarlos.
+  2. Quitar las tarjetas de Actividad/Alertas hasta que existan sus fuentes (auditoría de Etapa 3 y motor de alertas `RF-11`).
+- **Criterio de éxito:** el Dashboard no tiene controles sin acción ni bloques vacíos fijos.
+
+---
+
+## Actualización del 15/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `dbf7075` / frontend `6db04d3`. El estado vigente es el bloque de cada tarea.
+
+
+#### `BAC-26` - Verificación de `TASK_FINISHED` por `/api/events` para todas las acciones (`RF-11` parcial)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasan todas las pruebas de eventos y distribución RBAC: `TestEventos_TASK_FINISHED_CincoAccionesCanonicas`, `TestEventos_TASK_FINISHED_CasosDeFallo`, `TestEventos_TASK_FINISHED_MatrizDistribucionRBAC` y `TestEtapa1Ola3BAC26`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-25B` y `BAC-21C` (terminada: canal SSE, Pub/Sub y filtro por permiso).
+- **Contexto:** el canal ya existe; esta tarea **no crea uno nuevo**. Verifica y documenta la emisión para las cinco acciones.
+- **Entregable:**
+  1. Pruebas en `eventos_service_test.go` (o de integración) para `start`, `shutdown`, `stop`, `reboot` y `delete`, con el payload de `BAC-29`. Ejemplo:
+     ```json
+     {
+       "id": "0192…",
+       "tipo": "TASK_FINISHED",
+       "severidad": "INFO",
+       "recursoTipo": "VM",
+       "recursoId": "101",
+       "mensaje": "La tarea de encendido finalizó correctamente",
+       "fechaHora": "2026-10-01T13:30:00Z",
+       "detalles": { "tareaId": "0192…", "accion": "start", "estado": "COMPLETED", "exitstatus": "OK" }
+     }
+     ```
+  2. Actualizar `docs/contrato-eventos.md` y `docs/eventos-tiempo-real.md`.
+- **Criterio de éxito:** los clientes conectados reciben el evento al terminar cada tarea. Un OPERATOR sin permiso sobre la instancia no lo recibe; uno con `READ_ONLY` sí.
+
+
+#### `BAC-32` (`BRG-08-BAC`) - Extensión del worker UPID para tareas de creación y autoasignación de permisos (`RF-04`, `RF-07`)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasa la suite de integración `TestEtapa1Ola3BAC32`: el worker UPID maneja acciones `create` y autoasigna `FULL_ACCESS` atómicamente en `permisos_instancia` para el creador al completarse la tarea.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-25B`, `BAC-24C`.
+- **Problema:** En la Etapa 1, el worker de seguimiento de UPID solo maneja acciones de energía y borrado. Cuando se crea una instancia (`qmcreate`/`vzcreate`), la máquina aún no existe en el inventario durante la tarea. Al finalizar la creación con éxito:
+  1. El creador debe quedar automáticamente registrado con `FULL_ACCESS` en `permisos_instancia` para ese nuevo `vmid` (`RF-07`).
+  2. El evento `TASK_FINISHED` debe emitirse con `accion: "create"` y `recursoId: vmid`.
+- **Entregable:**
+  - Soporte de acciones `create` en `seguimiento_tareas.go`.
+  - Integración con el repositorio de permisos: al registrarse `COMPLETED` para una tarea `create`, insertar atómicamente `(usuario_id, vmid, FULL_ACCESS)` en `permisos_instancia`.
+- **Criterio de éxito:** Al concluir una tarea de creación, el usuario creador ve inmediatamente la instancia asignada con permisos operativos y recibe el evento `TASK_FINISHED` correspondiente.
+
+
+#### `BAC-33` (`BRG-09-BAC`) - Cálculo y exposición de cuotas asignables del Host (`RF-02`, `RF-07`)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasa la suite `TestEstadoNodo_RespetaElContrato` y `TestEtapa1Ola3BAC33`: `GET /api/node/status` incluye el objeto `allocatable` con `headroomPercent: 15`, `maxCpuCores`, `freeRamMb` y `freeStorageGb`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22`, `BAC-29`.
+- **Problema:** `GET /api/node/status` informa el consumo físico actual del nodo, pero el asistente de creación necesita saber exactamente cuánta memoria RAM y disco pueden asignarse con seguridad sin comprometer la estabilidad del host físico (margen de seguridad / headroom).
+- **Entregable:**
+  - Exponer en `GET /api/node/status` (o endpoint auxiliar `GET /api/node/quota`) el objeto `allocatable`:
+    `{ maxCpuCores: number, freeRamMb: number, freeStorageGb: number, headroomPercent: number }`, reservando un 15% de RAM física para el sistema operativo base de Proxmox.
+- **Criterio de éxito:** El backend devuelve las cotas máximas seguras para nuevas asignaciones, sirviendo de base al validador de cuotas de la Etapa 2.
+
+
+### `FIX-84` - Completar storages y contenido en el simulador de Proxmox (`BAC-30`) (Backend / Testing)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, backend `dbf7075`): implementada y con test en verde.** Pasan `TestStorage_ListarYContenido` en `simulador_test.go` y la suite de aceptación `TestEtapa1Ola3BAC30`: el simulador Proxmox responde `GET /nodes/{node}/storage` y `GET /nodes/{node}/storage/{storage}/content` con fixtures completos de storages, templates LXC e ISOs.
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 1 h
+- **Depende de:** `BAC-30` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  El simulador ya responde `POST /nodes/{node}/qemu|lxc` (UPID `qmcreate`/`vzcreate`), `PUT /nodes/{node}/{tipo}/{vmid}/config` y `GET /nodes/{node}/{tipo}/{vmid}/rrddata`, pero **no** implementaba `GET /nodes/{node}/storage` ni `GET /nodes/{node}/storage/{storage}/content`, que el asistente de creación (`RF-07`) necesita.
+- **Qué debe hacer el equipo de backend:**
+  1. Agregar al simulador `GET /nodes/{node}/storage` (storages `local` y `local-lvm` con tipo, total y libre) y `GET /nodes/{node}/storage/{storage}/content` (templates LXC e ISOs), con el mismo formato que Proxmox VE 9.x.
+  2. Dejar `go test ./cmd/proxmox-simulador/...` en verde y la suite `test/back` (BAC-30) sin bloques rojos.
+- **Criterio de éxito:** el desarrollo de la Etapa 2 puede consultar storages y contenido contra el simulador sin `501 Not Implemented`.
+
+
+### `FIX-74` - Reactividad de filtros y etiquetas accesibles en vista de Auditoría (`FRN-14` / `FIX-36`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada y con test en verde.** La reactividad de consulta a `GET /api/admin/audit` y filtros temporales funcionan correctamente. Se validó el diseño implementado por el frontend con pestañas reactivas para Resultado (`role="tablist"`) y menú desplegable para Acción; la suite `test/front/audit.test.tsx` pasa 7 de 7 en verde.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-14`, `FIX-36` (en `terminado.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias y de integración de la vista de Auditoría (`frontend/centinela/src/test/audit.test.tsx` y `test/front/audit.test.tsx`), fallaban los casos por falta de accesibilidad y reactividad.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/pages/Auditoria.tsx`, asignar `aria-label="Desde"` y `aria-label="Hasta"` a los campos de rango de fechas, y `aria-label="Acción"` al selector de tipo de acción.
+  2. Implementar la sincronización reactiva del estado para que ante cualquier cambio en estos filtros se invoque a `auditService.getAuditLogs` con los parámetros URL correspondientes.
+  3. Ejecutar `npm test src/test/audit.test.tsx` en `frontend/centinela` y certificar que todos los casos pasen en verde.
+- **Criterio de éxito:**
+  - `npm test src/test/audit.test.tsx` en el frontend pasa al 100% sin errores de elementos no encontrados.
+  - La vista de auditoría filtra reactivamente en función de los criterios seleccionados y cumple con accesibilidad.
+
+
+#### `FRN-20C` (`BRG-05-FRN`, parte Inventario) - Columnas de CPU/RAM y estado en vivo en el Inventario (`RF-03`) (nueva, separada de `FRN-19C`)
+
+> [!WARNING]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada parcialmente, con problema pendiente.** Las columnas de CPU y RAM y la re-consulta ante `TASK_FINISHED` están implementadas. La prueba de formato de RAM pasa en verde; resta corregir en `formatInstanceTelemetry.ts` el retorno del carácter em-dash `'—'` en lugar de `'-'` ante valores `null`. Corrección en **`FIX-97`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-22B`, `FRN-20A` y `FRN-17A`.
+- **Entregable:**
+  1. Columnas de CPU (`%`) y RAM (`GB usados / GB totales`), con `-` si vienen en `null`.
+  2. Ante cualquier `TASK_FINISHED` recibido, aunque la acción la haya iniciado otro usuario, volver a consultar la fila o la lista para actualizar estado y métricas. Si la acción fue `delete` y terminó `COMPLETED`, quitar la fila.
+- **Criterio de éxito:** si otro usuario apaga una VM, la fila cambia a `Stopped` sin `F5`.
+
+
+### `FIX-87` - Quitar los datos hardcodeados de la ficha de usuario (`FRN-05` / `FRN-06B` / `FRN-18` / `FIX-25`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada y con test en verde.** Se eliminaron los arrays estáticos con datos ficticios (`additionalSecurityInformation` y `recentActivity`). La suite `fixes-pending.test.tsx` (caso FIX-87) pasa 2 de 2 en verde tras alinear el fixture de prueba con el contrato del backend (`fechaCreacion`, etc.).
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1 h
+- **Depende de:** `FRN-05`, `FRN-06B`, `FRN-18`, `FIX-25` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/pages/detailsUserPage.tsx` había dos arrays hardcodeados que se renderizaban como si fueran datos reales del usuario (`additionalSecurityInformation` y `recentActivity`).
+- **Qué debe hacer el equipo de frontend:**
+  1. Alimentar "Actividad reciente" desde datos reales (por ejemplo `GET /api/admin/audit` filtrado por el usuario) o **quitarla** hasta que exista el endpoint.
+  2. Quitar/blanquear `additionalSecurityInformation` hasta que el perfil exponga esos campos.
+- **Criterio de éxito:** la ficha de usuario no muestra valores inventados ni textos de placeholder.
+
+
+### `FIX-89` - Ruta `/instances/new` con asistente estático sin lógica (`FIX-60`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (15/10/2026, frontend `6db04d3`): implementada parcialmente, con problema pendiente.** Se añadió un toast de advertencia al botón en el inventario. Sin embargo, al acceder directamente por ruta a `/instances/new`, no se advierte que el asistente está en desarrollo / próximamente, fallando `fixes-pending.test.tsx:118`. Corrección en **`FIX-99`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Luz / Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-60` (en `terminado.md`).
+- **Problema técnico detallado:**
+  El botón "Crear instancia" del inventario navega a `/instances/new`, pero `createNewInstances.tsx` era un placeholder sin lógica conectada.
+- **Qué debe hacer el equipo de frontend:**
+  1. Ocultar/deshabilitar la ruta y el botón hasta que exista el asistente real (Etapa 2), o
+  2. Etiquetar la vista como "Próximamente" de forma explícita.
+- **Criterio de éxito:** ningún botón lleva a una pantalla sin funcionalidad sin avisar.
+
+---
+
+## Actualización del 19/10/2026 — tareas movidas desde `actual.md` (Etapa 1)
+
+Verificadas contra backend `8daaf87` / frontend `91eabf4`. El estado vigente es el bloque de cada tarea.
+
+
+#### `FIX-81` - Corregir el orden de migraciones: `migrarUnicidadEmail` antes de crear `auditoria` (`FIX-54`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, backend `8daaf87`): implementada y con test en verde.** Pasa `TestFIX81_OrdenMigracionesBaseLimpia` en `test/back/fixes_acceptance_test.go`. En `backend/internal/adapters/secondary/postgres/db.go`, `migrarAuditoriaParticionada(db)` se invoca antes de `migrarUnicidadEmail(db)`, permitiendo iniciar el backend desde una base de datos vacía sin errores de tabla inexistente.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-54` (en `terminado.md`).
+- **Problema técnico detallado:**
+  En `backend/internal/adapters/secondary/postgres/db.go`, después de `AutoMigrate` se llamaba `migrarUnicidadEmail(db)` antes de `migrarAuditoriaParticionada(db)`. `migrarUnicidadEmail` → `clasificarEliminados` ejecutaba `SELECT … FROM auditoria`, pero la tabla `auditoria` la creaba `migrarAuditoriaParticionada`. En una base nueva el arranque abortaba por relación inexistente.
+- **Qué debe hacer el equipo de backend:**
+  1. En `db.go`, ejecutar `migrarUnicidadEmail(db)` después de `migrarAuditoriaParticionada(db)` y `asegurarParticionesFuturas(db)`.
+  2. Verificar con una base vacía que el backend arranca y que la suite `test/back` corre completa sin parches.
+- **Criterio de éxito:**
+  - El backend arranca contra una base nueva sin errores y sin perder la clasificación de usuarios eliminados.
+  - `test/back` deja de requerir el reordenamiento manual.
+
+
+#### `FRN-21` (`BRG-06-FRN`) / `FIX-95` - Maquetado de la vista Detalle de Instancia (`/instances/:vmid`) y enlace desde inventario (`RF-03`, `RF-11`)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instance-detail.test.tsx` (3/3 en verde). La ruta protegida `/instances/:vmid` está registrada en `AppRoutes.tsx`, y la tabla de inventario en `Instances.tsx` enlaza hacia el detalle de máquina.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-20A`, `FRN-17B`.
+- **Problema:** En `etapa1.md`, la nota 45 pospuso el enlace de los toasts al detalle de la instancia porque la vista no existía. Sin esta pantalla, la Etapa 2 no tiene contenedor donde montar los gráficos de métricas (`RF-05`) ni la edición de recursos (`RF-10`).
+- **Entregable:**
+  1. Ruta `/instances/:vmid` bajo `ProtectedLayout` con guard de sesión y permiso de acceso.
+  2. Componente de vista `InstanceDetailPage.tsx` con cabecera y pestañas "General", "Métricas" y "Configuración".
+  3. Vincular la tabla de inventario (`Instances.tsx`) y los toasts de notificación (`FRN-17B`) con enlace directo a `/instances/:vmid`.
+- **Criterio de éxito:** Al hacer clic en una fila o en un toast de tarea completada, la aplicación navega a `/instances/:vmid` mostrando los datos reales de la máquina y sus pestañas base listas.
+
+
+#### `FRN-17B` - Desbloqueo reactivo de instancia y notificación Toast adaptativa
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instances-events.test.tsx` (2/2 en verde). Ante un evento `TASK_FINISHED`, la fila en transición se libera de bloqueos y se dispara el toast correspondiente (verde ante `COMPLETED`; rojo con detalle de error ante `FAILED`).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-16`, `FRN-17A` y `BAC-26`.
+- **Entregable:**
+  - Al recibir un `TASK_FINISHED` con el mismo `detalles.tareaId` que una fila en transición, quitar el bloqueo y el spinner.
+  - Actualizar el badge de estado (`Running` / `Stopped`).
+  - Mostrar un toast (`components/ui/toast.tsx`) verde o rojo según el resultado.
+  - Si la acción fue `delete`, quitar la fila.
+- **Criterio de éxito:** la interfaz actualiza el estado y libera los botones sin `F5`.
+
+
+### `FIX-86` - Completar la máquina de estados y el mapeo D2 de operaciones (`FIX-77` / `FRN-16`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa la suite `test/front/instances-operation.test.tsx` (9/9 en verde). Se implementó el mapeo D2 de errores HTTP 403 traduciendo adecuadamente `INSTANCE_PROTECTED` e `INSTANCE_ACCESS_DENIED`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2 h
+- **Depende de:** `FIX-77` (en `terminado-1.md`), `FRN-16`, `BAC-29`.
+- **Problema técnico detallado:**
+  En `components/common/ConfirmUserAction.tsx` los errores 403 mostraban mensajes crudos o genéricos.
+- **Qué debe hacer el equipo de frontend:**
+  1. Mostrar el mensaje diferenciado de estos códigos utilizando `getErrorMessage(error)` para los errores 403 de instancia.
+  2. Ejecutar `npx vitest run instances-operation.test.tsx` hasta 9/9.
+- **Criterio de éxito:** `instances-operation.test.tsx` pasa 9 de 9.
+
+
+### `FIX-97` - Normalización de telemetría de inventario (escala porcentual 0-100 y glifo em-dash) (`FRN-20C`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementada y con test en verde.** Pasa `test/front/instances-metrics.test.tsx` (3/3 en verde). `formatInstanceTelemetry.ts` formatea CPU en escala directa 0-100 sin multiplicaciones espurias y devuelve el glifo em-dash `'—'` (`U+2014`) ante valores nulos o máquinas detenidas.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-20C` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Multiplicación por 100 indebida en `formatCpuUsage` al recibir escala 0-100, intercepción fija con guion simple `'-'` en `Instances.tsx` y ausencia de glifo em-dash `'—'` ante valores nulos.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `formatInstanceTelemetry.ts`, adaptar `formatCpuUsage` para recibir valores en escala 0-100 y retornar `'—'` ante valores `null`/`undefined`.
+  2. Asegurar que `formatRamUsage` retorne `'—'` ante nulos.
+  3. En `Instances.tsx`, delegar en los formateadores directamente.
+- **Criterio de éxito:** `instances-metrics.test.tsx` pasa 3 de 3 en verde.
+
+
+### `FIX-79` - Exposición directa de controles para selector reactivo por tipo de recurso (`FRN-20B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** El selector visible con pestañas accesibles ("Instancias totales", "Máquina virtual (VM)", "Contenedor (LXC)") y el filtro de estado en el menú "Filtros" ("Encendidas", "Detenidas", "Todas las instancias") están operativos; el filtrado en memoria es reactivo y no dispara llamadas extra. `test/front/instances-ola2.test.tsx` pasa 6 de 6. El antiguo `FIX-101` se retiró de `futuro-1.md` porque la prueba esperaba una pestaña "En ejecución" que no forma parte del diseño implementado.
+
+- **Área:** Frontend
+- **Asignado:** Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-20B`.
+- **Problema técnico detallado:**
+  La suite `test/front/instances-ola2.test.tsx` requería controles visibles directos ("Todas", "VM", "LXC") en vez de un dropdown contextual oculto.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Instances.tsx`, exponer botones o pestañas accesibles para alternar tipo de recurso.
+  2. Mantener reactividad instantánea en memoria.
+- **Criterio de éxito:** la suite `instances-ola2.test.tsx` pasa al 100%.
+
+
+### `FIX-76` & `FIX-85` - Modales de energía y confirmación `Start` desacoplada para `ADMIN` (`FRN-15`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (19/10/2026, frontend `91eabf4`): implementadas parcialmente, con problemas pendientes.** La guarda de administrador (`isAdmin()`) y la confirmación modal de `Start` (`FIX-85`) pasan (5/6 en `test/front/instances-modals.test.tsx`). Sin embargo, falla la prueba de permisos de operador (`un OPERATOR ve acciones de energía solo donde tiene FULL_ACCESS y nunca ve Delete`) debido a un error tipográfico `arial-label` (en vez de `aria-label`) en `InstanceAction.tsx:222-266`. Corrección abierta en **`FIX-102`** ([futuro-1.md](futuro-1.md)).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-15`.
+- **Problema técnico detallado:**
+  En `InstanceAction.tsx`, la guarda `canOperate` bloqueaba a administradores ante `nivelAcceso === 'READ_ONLY'`, y `Start` no gestionaba adecuadamente la confirmación y cancelación.
+- **Qué debe hacer el equipo de frontend:**
+  1. Habilitar a `isAdmin()` para operar sin restricciones de `nivelAcceso`.
+  2. Manejar confirmación de `Start` en `ConfirmUserAction`.
+- **Criterio de éxito:** `instances-modals.test.tsx` pasa al 100%.
+
+
+#### `FRN-19C` & `FIX-83` - Tarjetas de conteo de VMs/LXC y refresco ante `TASK_FINISHED` (`RF-02`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** La suscripción a eventos SSE actualiza los conteos sin esperar al polling de 10 s y `useNodeStatus.ts` ya valida `Array.isArray(serie)` antes de transformar el histórico. `test/front/fix-103-node-history.test.tsx` pasa 7 de 7 tras corregir el mock de `GET /node/templates` (el contrato real responde un array, no `{ items }`). El antiguo `FIX-103` se retiró de `futuro-1.md` porque la guarda ya estaba implementada.
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-22B`, `FRN-19B`, `FRN-17A`.
+- **Entregable:** tarjetas de resumen de VMs y LXC en Dashboard con actualización inmediata (< 2 s) ante `TASK_FINISHED`.
+- **Criterio de éxito:** tras encender o apagar una instancia, el conteo cambia en menos de 2 s sin `F5`.
+
+
+### `FIX-99` - Advertencia visible "Próximamente" en vista directa `/instances/new` (`FIX-89`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): superada por la implementación del wizard real.** `/instances/new` dejó de ser un cascarón estático y hoy renderiza el wizard funcional de 5 pasos integrado con el backend (tipo y nombre, recursos y cuotas, red, sistema operativo y resumen). Ya no aplica el banner "Aprovisionamiento en desarrollo — Próximamente en Etapa 2"; `fixes-pending.test.tsx` ahora valida el wizard real. El antiguo `FIX-104` se retiró de `futuro-1.md`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-89` (en `terminado-1.md`).
+- **Problema técnico detallado:**
+  Al acceder directamente por URL a `/instances/new`, la página renderizaba el asistente sin advertir que está en desarrollo para la Etapa 2.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `createNewInstances.tsx`, incorporar una alerta destacada en la cabecera visible en todos los pasos.
+- **Criterio de éxito:** `fixes-pending.test.tsx` pasa el caso `FIX-89` en verde.
+
+---
+
+## Verificación del 21/10/2026
+
+Verificadas contra frontend `b0a7105` y backend `a25d1b3`.
+
+
+### `FIX-104B` & `FIX-105` - Desacople de UPID y adopción del contrato seguro `tareaId` en Frontend (`instanceService.ts`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada y con test en verde.** Commit `b6ce6fe`. `InstancePowerActionResponse` y `CreateInstanceResponse` adoptaron obligatoriamente `tareaId`, eliminando la exigencia pública de `upid`. La suite `test/front/fix-104b-105-tareaid.test.tsx` pasa al 100% (6/6 en verde) y las acciones operativas en `test/front/instances-operation.test.tsx` pasan 9 de 9 en verde.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 1,0 h
+- **Depende de:** `bd22c3d` (Backend: ocultamiento de UPID tras `tareaId`), `FRN-15`, `FRN-16`.
+- **Problema técnico detallado:**
+  En el backend (contrato `BAC-29`), la respuesta `202 Accepted` de acciones operativas y aprovisionamiento devolvía `{ "tareaId": "<uuid>" }` sin exponer `upid`. El frontend lanzaba `ApiRequestError` al esperar obligatoriamente `response.upid`.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `types/instance.ts` y `types/createInstance.ts`, tipar `{ tareaId: string; upid?: string }`.
+  2. En `instanceService.ts`, validar `response.tareaId` en `requestInstancePowerAction`, `deleteInstance` y `createInstance`.
+  3. Correlacionar eventos SSE con `tareaId`.
+- **Criterio de éxito:** el usuario opera instancias sin errores por ausencia de `upid`, y las pruebas pasan al 100% en verde.
+
+
+### `FIX-102` - Corrección de atributo de accesibilidad `aria-label` en `InstanceAction` para permisos de operador (`FRN-15`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada y con test en verde.** En `InstanceAction.tsx:213-257`, se corrigieron los atributos tipográficos `arial-label` cambiándolos canónicamente a `aria-label="Iniciar"`, `aria-label="Apagar"`, `aria-label="Reiniciar"`, `aria-label="Detener"` y `aria-label="Eliminar"`.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-76`, `FIX-85`, `FRN-15`.
+- **Problema técnico detallado:**
+  En `InstanceAction.tsx`, las opciones del menú de energía estaban escritas como `arial-label="..."` (con 'l' intermedia), impidiendo su localización mediante consultas de accesibilidad.
+- **Qué debe hacer el equipo de frontend:**
+  1. Cambiar `arial-label` a `aria-label`.
+  2. Verificar textos canónicos de energía.
+- **Criterio de éxito:** las opciones del menú son accesibles mediante `aria-label`.
+
+
+### `FIX-91` - Eliminar el componente muerto `InstanceTester` (`FRN-15` / `FRN-16`) (Frontend)
+
+> [!WARNING]
+> **Estado verificado (21/10/2026, frontend `b0a7105`): implementada con problemas / pendiente.** El archivo `InstanceTester.tsx` sigue presente en `frontend/centinela/src/components/features/instances/components/`. Corrección registrada en [futuro-1.md](futuro-1.md).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-15`, `FRN-16`.
+- **Problema:** componente con mocks locales sin importar en producción.
+- **Criterio de éxito:** eliminación definitiva del componente muerto.
+
+
+### `FIX-101` - Corrección de filtros reactivos en memoria (búsqueda de texto y alternancia en ejecución / detenidas) (`FIX-79` / `FRN-20B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** `instances-ola2.test.tsx` pasa 6 de 6. Retirado de `futuro-1.md` (FIX-101): el defecto era la expectativa de la prueba, no el código.
+
+- **Área:** Frontend
+- **Asignado:** Luz
+- **Estimación:** 1 h
+- **Depende de:** `FIX-79`, `FRN-20B`.
+- **Criterio de éxito:** `instances-ola2.test.tsx` pasa 6 de 6 pruebas en verde.
+
+
+### `FIX-103` - Manejo defensivo de arrays de telemetría de nodo en `useNodeStatus.ts` (`FRN-19C` / `FIX-83`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): implementada y con test en verde.** `useNodeStatus.ts` valida `Array.isArray(serie)` antes de transformar el histórico; `fix-103-node-history.test.tsx` pasa 7 de 7. Retirado de `futuro-1.md` (FIX-103): la guarda ya existía y los fallos provenían de un mock que no respetaba el contrato de `GET /node/templates`.
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-19C`, `FIX-83`.
+- **Criterio de éxito:** `useNodeStatus` valida `Array.isArray(serie)` y no arroja excepciones.
+
+
+### `FIX-104` - Visibilidad permanente del banner de advertencia "Próximamente" en todos los pasos de `/instances/new` (`FIX-99` / `FIX-89`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `b0a7105`): superada por la implementación del wizard real.** `/instances/new` renderiza el wizard funcional de 5 pasos; el banner "Próximamente" ya no corresponde. Retirado de `futuro-1.md` (FIX-104).
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FIX-99`, `FIX-89`.
+- **Criterio de éxito:** banner de alerta visible permanentemente en todos los pasos.
+
+
+### `FIX-100` - Manejo seguro de valores `undefined` en `formatCount` del Dashboard (`FRN-19B`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (22/10/2026, frontend `0d769cb`): implementada y con test en verde.** Commit `130eea7`. `formatCount` y `formatShare` en `frontend/centinela/src/pages/Dashboard.tsx` adoptaron comprobaciones defensivas ante valores no numéricos (`typeof value !== 'number' || Number.isNaN(value)`). Pasan al 100% en verde las 12 pruebas de `test/front/dashboard-node.test.tsx` y el caso de `test/front/fixes-pending.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Luz / Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-19B`.
+- **Problema técnico detallado:**
+  En `Dashboard.tsx:58`, la función `formatCount` evaluaba estrictamente `value === null`. Cuando `templates.count` llegaba `undefined`, se ejecutaba `undefined.toLocaleString('es')`, arrojando `TypeError` no controlado y desmontando la vista completa.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `Dashboard.tsx`, adaptar `formatCount` y `formatShare` con guardas ante valores no numéricos.
+  2. Certificar que `dashboard-node.test.tsx` pase 12 de 12 en verde.
+- **Criterio de éxito:** el Dashboard tolera contadores indefinidos o nulos sin lanzar `TypeError` y la suite `dashboard-node.test.tsx` pasa al 100% en verde.
+
+
+### `BAC-24C` / `FIX-113` - Limpieza de permisos al eliminar una instancia (Backend)
+
+> [!NOTE]
+> **Estado verificado (24/10/2026, backend `c08af54`): implementada y con test en verde.** Commit `c08af54`. Al completar la destrucción de una instancia (`COMPLETED`), `seguimiento_tareas.go` elimina en una transacción atómica las filas asociadas en `permisos_instancia` para evitar que un reciclaje de VMID otorgue acceso no autorizado a nuevos operadores (CWE-284, CWE-639). Se registra `INSTANCE_PERMISSIONS_PURGED` en auditoría y se entrega el evento `TASK_FINISHED` por SSE a los usuarios afectados. Las pruebas `TestFIX113_PurgaDePermisosAlEliminarInstancia` en `test/back/etapa2_seguridad_acceptance_test.go` y los pasos de integración en `TestINT01` y `TestINT02` pasan al 100% en verde (✅).
+
+- **Área:** Backend
+- **Asignada:** Tayra / Lisandro
+- **Estimación:** 1.0 h
+- **Depende de:** `BAC-24B` y `BAC-25B`.
+- **Importancia:** 🔴 **ALTA** (CWE-284: Improper Access Control, CWE-639: Authorization Bypass Through User-Controlled Key).
+- **Problema:** `/cluster/nextid` devuelve el menor VMID libre. Si se borra la 110 y después se crea otra instancia, recibe el 110 y **hereda las filas de `permisos_instancia`** de la borrada: un operador tendría acceso a una máquina que no se le asignó.
+- **Entregables:**
+  - Cuando una tarea de borrado termina con `COMPLETED`, eliminar en una transacción las filas de `permisos_instancia` de ese VMID.
+  - Registrar la limpieza en `auditoria` con `accion: INSTANCE_PERMISSIONS_PURGED` y la lista de usuarios afectados.
+  - Publicar el `TASK_FINISHED` **antes** de borrar los permisos, para que los operadores asignados lo reciban.
+  - Si la tarea falla, no se toca nada.
+- **Criterio de éxito:** después de borrar la 110, `GET /api/admin/users/:id/permissions` del operador ya no la incluye. Al crear una instancia nueva con el VMID 110, el operador no la ve.
+
+

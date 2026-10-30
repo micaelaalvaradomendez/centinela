@@ -416,3 +416,48 @@ func envOrDefault(name, fallback string) string {
 	}
 	return fallback
 }
+
+// instanceRefsByName devuelve un mapa de nombre -> id opaco consultando GET /api/instances con token de admin.
+func instanceRefsByName(t *testing.T, adminToken string) map[string]string {
+	t.Helper()
+	status, items := requestJSONArray(t, http.MethodGet, "/instances", adminToken)
+	if status != http.StatusOK || len(items) == 0 {
+		t.Fatalf("no se pudo obtener inventario de instancias para resolver referencias (%d): %#v", status, items)
+	}
+	refs := make(map[string]string)
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := item["name"].(string)
+		id, _ := item["id"].(string)
+		if name != "" && id != "" {
+			refs[name] = id
+		}
+	}
+	return refs
+}
+
+// instanceRefByVMID traduce un VMID canónico (101 -> web-01, 102 -> db-01, 103 -> ci-runner)
+// a su referencia pública opaca (inst_...) devuelta por el backend (FIX-107).
+func instanceRefByVMID(t *testing.T, adminToken string, vmid int) string {
+	t.Helper()
+	var targetName string
+	switch vmid {
+	case 101:
+		targetName = "web-01"
+	case 102:
+		targetName = "db-01"
+	case 103:
+		targetName = "ci-runner"
+	default:
+		targetName = fmt.Sprintf("%d", vmid)
+	}
+	refs := instanceRefsByName(t, adminToken)
+	if ref, ok := refs[targetName]; ok {
+		return ref
+	}
+	t.Fatalf("referencia de instancia para VMID %d (nombre %q) no encontrada en inventario: %#v", vmid, targetName, refs)
+	return ""
+}

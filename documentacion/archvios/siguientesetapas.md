@@ -296,3 +296,107 @@ flowchart LR
  | Nginx con TLS/WSS enrutado y ensayo de demo en vivo.
 
  |
+
+
+---
+
+## 🔍 Evaluación de Cobertura Integral y Tareas Faltantes a Incorporar
+
+> **Auditoría contra requerimientos.md y centinela.md:** Esta sección evalúa la cobertura de la visión del sistema y agrega formalmente las tareas y precisiones necesarias para cerrar el 100% de los requerimientos funcionales y no funcionales sin modificar el texto histórico anterior.
+
+### 1. Matriz de Cobertura de Requerimientos del Sistema
+
+| Requerimiento | Descripción | Estado en el Proyecto | Implementación / Planificación |
+|---|---|:---:|---|
+| **RF-01** | Autenticación y Control de Acceso (JWT, RBAC `ADMIN`/`OPERATOR`, 2FA TOTP con QR y secreto manual) | ✅ **100% Cubierto** | Terminado en fase base (`BAC-01` a `BAC-04`, `BAC-08` a `BAC-10`, `LOGIN-01` a `LOGIN-04`). Revinculación/reset de 2FA asistido por Admin (`BAC-13`, `FIX-19`). Hardening con cookies `HttpOnly` en `etapa3.md` (`BAC-48`, `FRN-34`). |
+| **RF-02** | Dashboard de Estado del Nodo Host (CPU %, núcleos, RAM, Disco, Uptime, conteo VMs/LXC, semáforo, caché Redis) | ✅ **100% Cubierto** | En `terminado-1.md` (`BAC-22`, `FRN-19A`), `actual.md` (`FRN-19C`, `FIX-78`, `FIX-83`) y `etapa1.md`. |
+| **RF-03** | Inventario Unificado de Instancias (VMs/LXC, IP QEMU Agent, CPU/RAM, filtros dinámicos, RBAC estricto) | ✅ **100% Cubierto** | En `terminado-1.md` (`BAC-23A`, `FRN-20A`), `actual.md` (`FRN-20C`, `FIX-43`, `FIX-63`) y `etapa1.md`. |
+| **RF-04** | Ciclo de Vida de Instancias (Start, Shutdown, Stop, Reboot, Delete, modales antierror, worker UPID, bloqueo mutuo) | ✅ **100% Cubierto** | En `terminado-1.md` (`BAC-25A`, `BAC-29`), `actual.md` (`BAC-24C`, `FRN-15`, `FRN-16`, `FRN-17B`) y `etapa1.md`. |
+| **RF-05** | Monitor de Métricas por Instancia (WebSocket en vivo, RRDdata, CPU/RAM/Red/Disco, histórico 2h/24h) | ✅ **100% Cubierto** | En `actual.md` (`BAC-34`, `BAC-35`) y `etapa2.md` (`BAC-36`, `FRN-22`, `FRN-23`). |
+| **RF-06** | Gestión de Snapshots (Crear, listar, eliminar, rollback destructivo con tipeo de seguridad, lock `409 INSTANCE_BUSY`) | ✅ **100% Cubierto** | En `etapa3.md` (`BAC-42`, `BAC-43`, `FRN-29`, `FRN-30`). |
+| **RF-07** | Asistente de Creación de Instancias (Wizard 4 pasos VM/LXC, validación transaccional de cuotas, error 409, autoasignación) | ✅ **100% Cubierto** | En `actual.md` (`BAC-33`, `BAC-37`, `BAC-38`, `INF-10`) y `etapa2.md` (`BAC-39`, `FRN-24` a `FRN-26`). |
+| **RF-08** | Registro de Auditoría Inmutable (Append-only en `auditoria`, particionado por fecha, filtros combinados, exportación streaming CSV/JSON) | ✅ **100% Cubierto** | En `terminado.md` (`BAC-18`), `etapa2.md` (`BAC-41`) y `etapa3.md` (`BAC-44`, `BAC-45`, `FRN-31`, `FRN-32`). |
+| **RF-09** | Gestión de Usuarios y Permisos (CRUD usuarios, roles, permisos por instancia `FULL_ACCESS`/`READ_ONLY`, clave temporal y reset) | ✅ **100% Cubierto** | En `terminado.md` (`BAC-06`, `BAC-07`, `BAC-10`, `BAC-15`, `FRN-05` a `FRN-07`, `SEC-04`). |
+| **RF-10** | Edición Dinámica de Recursos (vCPU y RAM, cálculo diferencial $\Delta\text{RAM}$, hot-plug vs reinicio) | ✅ **100% Cubierto** | En `etapa2.md` (`BAC-40`, `FRN-27`, `FRN-28`). |
+| **RF-11** | Notificaciones y Alertas (Toasts reactivos, `TASK_FINISHED`, alertas por saturación con histéresis, correo y enlace a `/instances/:vmid`) | ✅ **100% Cubierto** | En `terminado.md`, `actual.md` (`BAC-26`, `FRN-21`) y `etapa3.md` (`BAC-46`, `BAC-47`, `FRN-33`). |
+| **RF-12** | Gestión de Organizaciones (Multi-tenant) | ⚠️ **Descartado del MVP** | Descarte formal acordado por el equipo (`futuro.md`). El sistema opera como **mono-organización**. |
+| **RF-13** | Recuperación de Contraseña por Usuario (OTP de 6 dígitos al correo, validación con expiración e invalidación) | ✅ **100% Cubierto** | En `terminado.md` (`BAC-16`, `BAC-17`, `FRN-12`, `FRN-13`). |
+| **RNF-01** | Seguridad (Mínimo privilegio API Proxmox, bcrypt, cifrado AES-256 de secretos TOTP, cookies HttpOnly, Rate Limiting, TLS) | ✅ **100% Cubierto** | En `terminado.md` (`BAC-02`, `BAC-10`) y `etapa3.md` (`BAC-48`, `INF-11`). |
+| **RNF-02** | Rendimiento (Respuestas $\le$ 5s, Go concurrente, caché Redis de telemetría y tickets, streaming HTTP en exportación) | ✅ **100% Cubierto** | En `terminado-1.md` (`BAC-22`), `etapa2.md` y `etapa3.md` (`BAC-45`). |
+| **RNF-03** | Usabilidad (UI moderna, abstracción de complejidad de Proxmox, catálogo D2 de errores amigables, modales antierror) | ✅ **100% Cubierto** | En `terminado.md` (`FIX-08`), `actual.md` (`FIX-77`, `FIX-86`), `etapa2.md` y `etapa3.md`. |
+| **RNF-04** | Confiabilidad (Tolerancia a caídas, UPID worker asíncrono, timeout 504 vs caído 502, auto-restart en Compose) | ✅ **100% Cubierto** | En `terminado.md` (`FIX-40`), `terminado-1.md` (`BAC-25A`), `etapa1.md` y `etapa3.md`. |
+| **RNF-05** | Mantenibilidad (Arquitectura hexagonal, código testeable, **Documentación interactiva Swagger UI / OpenAPI**) | 🔄 **Incorporado a Etapa 3** | Arquitectura cubierta; se formaliza la tarea de publicación interactiva de Swagger UI (`BAC-49`). |
+| **RNF-06** | Compatibilidad (Navegadores modernos, CORS restringido, proxy Nginx con upgrades WSS y SSE) | ✅ **100% Cubierto** | En `terminado.md`, `etapa1.md` (`FIX-31`) y `etapa3.md` (`INF-11`). |
+| **RNF-07** | Escalabilidad (Soporte multi-nodo Proxmox) | ⚠️ **Postergado post-MVP** | Alcance del MVP limitado a un **nodo físico único** (`PROXMOX_NODE`). No bloquea la entrega. |
+| **Exclusión** | Consola Remota Web (noVNC / xterm.js / SSH en navegador) | 🚫 **Exclusión de Seguridad** | Excluida formalmente en `requerimientos.md` y `centinela.md` para evitar vectores de ejecución remota. |
+
+---
+
+### 2. Precisiones y Rectificaciones sobre el Plan Original
+
+1. **Alineación del Servidor SMTP Real (`INF-08` / `BAC-16B` / `BAC-47`):**
+   - La nota preliminar de este documento indicaba el descarte de SMTP. Dicha decisión fue rectificada en `futuro.md` y `etapa3.md`:
+   - El puerto hexagonal `EmailService` utiliza `MockEmailService` únicamente para pruebas unitarias/CI.
+   - En desarrollo y producción final se activa el adaptador real `SmtpEmailService` para credenciales temporales (`BAC-06`), códigos OTP de recuperación de contraseña (`RF-13`) y despacho de alertas críticas de saturación (`RF-11` / `BAC-47`).
+2. **Modelo Oficial de Base de Datos (Sin nombres provisorios):**
+   - La tabla de auditoría no se denomina `audit_logs` sino **`auditoria`**, estructurada como *append-only* y particionada trimestralmente por rango de fechas (`PARTITION BY RANGE (fecha_hora)`).
+   - La tabla de permisos de instancia no se denomina `user_instances` sino **`permisos_instancia`**, con niveles de acceso `FULL_ACCESS` y `READ_ONLY`.
+   - Las tareas asíncronas se persisten formalmente en **`tareas_asincronas`**.
+3. **Flujo de Revinculación de 2FA (`RF-01`):**
+   - La solicitud de regeneración o revinculación de 2FA por extravío del dispositivo autenticador se resuelve mediante **restablecimiento administrativo** (`POST /api/admin/users/:id/2fa/reset` / `BAC-13` / `FIX-19`) para evitar vulnerabilidades de suplantación en endpoints públicos no autenticados.
+
+---
+
+### 3. Tareas Faltantes Agregadas para Cubrir el 100% de los Requerimientos
+
+Para cubrir los requerimientos formales de `requerimientos.md` que no contaban con una tarea técnica individual en las etapas 1, 2 y 3, se agregan formalmente al backlog de la Etapa 3:
+
+#### `BAC-49` - Publicación y Automatización de Swagger UI / OpenAPI Interactivo (`RNF-05`)
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-45`, `BAC-48`.
+- **Requerimiento:** `RNF-05` Backend (*"Configurar la generación automática de documentación interactiva de la API"*).
+- **Entregable:**
+  1. Integración de interfaz interactiva Swagger UI embebida bajo `/api/docs` o `/swagger/*`.
+  2. Regeneración automatizada de las anotaciones OpenAPI para la totalidad de endpoints del sistema (Autenticación, Nodo, Instancias, Métricas, Creación, Snapshots, Auditoría y Eventos) con sus contratos de error D2.
+  3. Capacidad de ejecutar pruebas en vivo contra el backend inyectando el token JWT o cookies de sesión.
+- **Criterio de éxito:** Cualquier evaluador puede ingresar a `/api/docs`, consultar todos los contratos vigentes y probarlos interactivamente.
+
+#### `INF-12` - Automatización de Respaldos Periódicos de Base de Datos y Script de Restauración (`RF-08` / `RNF-04`)
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `INF-03`, `INF-11`.
+- **Requerimiento:** `RF-08` Infraestructura (*"Garantizar la persistencia segura y los respaldos periódicos de la base de datos... Aislar la base de datos para evitar modificaciones externas directas"*).
+- **Entregable:**
+  1. Contenedor o cron job de respaldo programado (`centinela-db-backup`) ejecutando `pg_dump` con compresión sobre un volumen montado.
+  2. Política de retención con rotación (respaldos diarios retenidos por 7 días y respaldo semanal).
+  3. Script de prueba de restauración documentado `scripts/restore-db.sh`.
+- **Criterio de éxito:** El script de backup genera los volcados sin interrumpir la operación y `restore-db.sh` recupera íntegramente el esquema y datos (incluidas las particiones de `auditoria`) en una base limpia.
+
+#### `FRN-35` - Enlaces Contextuales Universales desde Notificaciones hacia el Detalle de Instancia (`RF-11`)
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-21`, `FRN-33`.
+- **Requerimiento:** `RF-11` Frontend (*"Cada notificación relacionada con una VM o LXC debe incluir un enlace hacia el detalle de la instancia y sus acciones disponibles"*).
+- **Entregable:**
+  1. Adaptación de las notificaciones flotantes (Toasts) y de los elementos del Centro de Notificaciones para incluir un botón o enlace directo `"Ver Instancia"` cuando la notificación tenga un `recursoId` asociado.
+  2. Navegación directa hacia `/instances/:vmid`, activando la pestaña pertinente (ej. pestaña "Snapshots" si fue un evento de rollback, o "Métricas" si fue una alerta de saturación).
+- **Criterio de éxito:** Al hacer clic en la notificación de una instancia, el usuario accede directamente a la vista de detalle correspondiente sin pasos intermedios.
+
+---
+
+### 4. Bloque Puente Consolidado (Etapa 2 $\rightarrow$ Etapa 3)
+
+Para garantizar un paso sin fricciones técnicas entre el cierre de la Etapa 2 y el inicio de la Etapa 3 (replicando la estructura del Bloque 7 de la Etapa 1), se incorporaron formalmente en [`etapa2.md`](etapa2.md) y [`etapa3.md`](etapa3.md) las siguientes tareas puente:
+
+| Tarea | Área | Responsable | Est. | Problema que resuelve y propósito como puente |
+|---|---|---|---|---|
+| `BAC-50` (`BRG-10-BAC`) | Backend / Test | Lisandro | 2.0 h | **Simulador Proxmox:** Soporte mock de endpoints de snapshots y UPIDs en memoria para permitir el desarrollo local de `BAC-42` y `BAC-43` sin depender del hipervisor físico. |
+| `BAC-51` (`BRG-11-BAC`) | Backend | Tayra | 2.0 h | **Guarda Concurrente:** Middleware de exclusión mutua por instancia (`409 INSTANCE_BUSY`) para bloquear órdenes de energía y config mientras corre un snapshot o rollback. |
+| `FRN-36` (`BRG-10-FRN`) | Frontend | Cristian | 2.0 h | **Layout Modular:** Reestructuración de `InstanceDetailPage.tsx` para admitir la pestaña de Snapshots (`FRN-29`) y badges de estados transitorios (`SNAPSHOTTING`/`ROLLING_BACK`). |
+| `BAC-52` (`BRG-12-BAC`) | Backend | Tayra | 1.5 h | **Broker SSE Global:** Generalización de `/api/events` para transmitir eventos de alerta a nivel `HOST` (`ALERT_TRIGGERED`) a todos los administradores sin requerir un VMID obligatorio. |
+| `INF-13` (`BRG-11-INF`) | Infraestructura | Nico | 1.5 h | **Storage Proxmox Real:** Verificación y habilitación de pools compatibles con snapshots nativos (`qcow2`, `lvm-thin`, `zfs`) en el Proxmox físico antes de la validación final. |
+| `BAC-53` (`BRG-13-BAC`) | Backend / DB | Lisandro | 1.5 h | **Particionado Preventivo:** Creación preventiva de particiones trimestrales e índices compuestos en `auditoria` para habilitar el partition pruning y streaming de `BAC-45`. |

@@ -5,7 +5,7 @@ Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los 
 ## Principios
 
 - **Una prueba que pasa verifica el criterio de éxito.** Se exige la llamada HTTP real (método, ruta, cabeceras, payload) y su efecto en la interfaz. No se usan patrones del tipo `if (llamada) … else expect(boton).toBeVisible()`.
-- **Los mocks de `fetch` reproducen el contrato real del backend**, tomado de `backend/internal/adapters/primary/http`. Ejemplos: `/auth/password/forgot`, `{ vmids }` en permisos, `GET /instances` con `{ id, name, type: vm|lxc }` y la ausencia de `contrasenaTemp` por BAC-16. Si el frontend espera otro contrato, la prueba falla: es un problema de integración.
+- **Los mocks de `fetch` reproducen el contrato real del backend**, tomado de `backend/internal/adapters/primary/http`. Ejemplos: `/auth/password/forgot`, `{ permisos: [{ vmid, nivelAcceso }] }` en permisos, `GET /instances` con `{ id, name, type: vm|lxc }` y la ausencia de `contrasenaTemp` por BAC-16. Si el frontend espera otro contrato, la prueba falla: es un problema de integración.
 - **La sesión se siembra donde la guarda la app.** `centinela_access` y `centinela_pending_login` van en sessionStorage; `centinela_user` va en localStorage.
 
 ## Cobertura
@@ -19,11 +19,27 @@ Estas pruebas contrastan el frontend (`frontend/centinela`, React + TS) con los 
 | `api-client.test.ts` | FIX-07 |
 | `navigation.test.tsx` | FRN-03, **SEC-03** |
 | `admin-users.test.tsx` | FRN-05, FRN-06, FRN-06B, **FIX-14/FRN-07**, FRN-08 |
+| `admin-users-deletion.test.tsx` | **FIX-56** (distinguir suspensión de eliminación) |
 | `admin-recovery.test.tsx` | **FRN-11** |
 | `recover-password.test.tsx` | **FRN-12** |
 | `password-change.test.tsx` | **FRN-10** |
 | `session-security.test.ts` | **FRN-13**, **SEC-02**, FIX-08 |
 | `audit.test.tsx` | **FRN-14** |
+| `auth-branding.test.tsx` | **FIX-58**, **FIX-59** |
+| `events-client.test.ts` | **FRN-17A**, **FRN-17C/FIX-61** |
+| `dashboard-metrics.test.tsx` | **FRN-19A** (medidores CPU/RAM/almacenamiento, bordes 69% y 70%) |
+| `dashboard-node.test.tsx` | **FRN-19B** (semáforo de salud global, 502/504, FIX-60) |
+| `instances-table.test.tsx` | **FRN-20A** (tabla de inventario, normalización y RBAC) |
+| `instances-modals.test.tsx` | **FRN-15**, **FIX-76**, **FIX-85** (modales de confirmación antierror, desacople nivelAcceso ADMIN y cierre de Start) |
+| `instances-operation.test.tsx` | **FRN-16**, **FIX-86** (máquina de estados operación en progreso, errores D2 y mapeo 403) |
+| `instances-ola2.test.tsx` | **FRN-20B**, **FIX-79** (filtros reactivos, selector visible Todas/VM/LXC, buscador dinámico) |
+| `instances-metrics.test.tsx` | **FRN-20C**, **FIX-97** (columnas de CPU en porcentaje 0-100, RAM y em-dash '—' en nulos) |
+| `instances-events.test.tsx` | **FRN-17B** (desbloqueo reactivo y toast adaptativo ante TASK_FINISHED) |
+| `dashboard-summary.test.tsx` | **FRN-19C**, **FIX-83** (tarjetas de resumen VMs/LXC y refresco por evento) |
+| `instance-detail.test.tsx` | **FRN-21**, **FIX-95** (vista Detalle de Instancia, registro en AppRoutes y enlace desde inventario) |
+| `fixes-pending.test.tsx` | **FIX-87**, **FIX-89 / FIX-99** (wizard real de `/instances/new`, ya no cascarón estático), **FIX-90**, **FIX-91**, **FIX-100** (placeholders de usuario, limpieza dashboard, InstanceTester, manejo seguro undefined formatCount) |
+| `adversarial-security.test.ts` | **Seguridad adversarial** (prevención de XSS en errores, inyección de rutas en API client, resiliencia a JSON corrupto, prototype pollution) |
+| `int02-e2e.test.ts` | **INT-02** (Smoke test integral de 7 pasos con código real de frontend contra el backend real) |
 
 ## Ejecutar
 

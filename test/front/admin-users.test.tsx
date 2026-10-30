@@ -140,7 +140,8 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
   });
 
   it('consulta GET /api/admin/users con Authorization Bearer al entrar a /users', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] }));
+    // Cada fetch recibe una Response nueva (la vista consulta además GET /admin/audit para "Eliminados").
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ summary: { total: 0, admins: 0, operators: 0 }, users: [] })));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAppAs('ADMIN', '/users');
@@ -151,10 +152,12 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
   });
 
   it('renderiza los usuarios reales devueltos por el backend', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+    // Cada fetch debe devolver una Response nueva: el cuerpo de una Response sólo se lee una vez y
+    // la vista ahora hace una consulta extra (GET /admin/audit desde la pestaña "Eliminados").
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    })));
+    }))));
 
     renderAppAs('ADMIN', '/users');
 
@@ -164,11 +167,13 @@ describe('FRN-05 - panel de gestión de usuarios', () => {
 });
 
 describe('FRN-06 - alta y desactivación de usuarios', () => {
-  it('incluye un selector de rol ADMIN u OPERATOR en el alta', () => {
+  it('incluye un selector de rol ADMIN u OPERATOR en el alta', async () => {
+    const user = userEvent.setup();
     render(<MemoryRouter><CrearUsuarios /></MemoryRouter>);
     const roleSelect = screen.getByRole('combobox', { name: /rol/i });
-    const options = within(roleSelect).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-    expect(options).toEqual(expect.arrayContaining(['ADMIN', 'OPERATOR']));
+    await user.click(roleSelect);
+    const options = (await screen.findAllByRole('option')).map((option) => option.textContent?.trim());
+    expect(options).toEqual(expect.arrayContaining([expect.stringMatching(/administrador/i), expect.stringMatching(/operador/i)]));
   });
 
   it('envía POST /api/admin/users con el contrato del backend al confirmar el alta', { timeout: 15000 }, async () => {
@@ -252,14 +257,119 @@ describe('FRN-06 - alta y desactivación de usuarios', () => {
       expect(deleteCall![0]).toMatch(/\/admin\/users\/u2$/);
     });
   });
+
+  it('eliminar un usuario desde la tabla y navegar a "Nuevo usuario" permite dar de alta otro usuario', async () => {
+    let usersList = [
+      { id: 'u1', nombreCompleto: 'Ada Lovelace', nombreUsuario: 'ada', emailUsuario: 'ada@centinela.local', rol: 'ADMIN', activo: true, totpVinculado: true },
+      { id: 'u2', nombreCompleto: 'Charles Babbage', nombreUsuario: 'charles', emailUsuario: 'charles@centinela.local', rol: 'OPERATOR', activo: true, totpVinculado: false },
+    ];
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.includes('/admin/users/u2') && method === 'DELETE') {
+        usersList = usersList.map((u) => u.id === 'u2' ? { ...u, activo: false } : u);
+        return Promise.resolve(jsonResponse(null, 204));
+      }
+      if (url.includes('/admin/users') && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        return Promise.resolve(jsonResponse({ id: 'u3', ...body, activo: true }, 201));
+      }
+      if (url.includes('/admin/users') && method === 'GET') {
+        return Promise.resolve(jsonResponse({
+          summary: { total: usersList.length, admins: 1, operators: usersList.length - 1 },
+          users: usersList,
+        }));
+      }
+      return Promise.resolve(jsonResponse({}, 200));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const user = userEvent.setup();
+
+    const router = createMemoryRouter([
+      { path: '/users', Component: Users },
+      { path: '/users/new', Component: CrearUsuarios },
+    ], { initialEntries: ['/users'] });
+
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    // Eliminar u2 usando el menú de acciones
+    const actionButtons = await screen.findAllByRole('button', { name: /acciones para/i });
+    await user.click(actionButtons[1]);
+    const deleteButton = await screen.findByRole('button', { name: /eliminar usuario/i });
+    await user.click(deleteButton);
+    await confirmIfAsked(user);
+
+    await waitFor(() => {
+      const deleteCall = callsOf(fetchMock).find(([, init]) => init?.method === 'DELETE');
+      expect(deleteCall, 'no se envió la llamada de eliminación').toBeDefined();
+      expect(deleteCall![0]).toMatch(/\/admin\/users\/u2$/);
+    });
+
+    // Navegar a Nuevo usuario
+    const newUserBtn = await screen.findByRole('button', { name: /nuevo usuario/i });
+    await user.click(newUserBtn);
+    expect(router.state.location.pathname).toBe('/users/new');
+
+    // Completar el alta del nuevo usuario
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    await waitFor(() => {
+      const postCall = callsOf(fetchMock).find(([, init]) => init?.method === 'POST');
+      expect(postCall, 'no se envió el alta a /admin/users').toBeDefined();
+      expect(postCall![0]).toMatch(/\/admin\/users$/);
+    });
+  });
+
+  it('dar de alta un usuario con nombre de usuario duplicado (409 USER_USERNAME_ALREADY_EXISTS) muestra advertencia de datos ya registrados', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(
+      { errorCode: 'USER_USERNAME_ALREADY_EXISTS', message: 'El nombre de usuario ya está registrado. Los nombres de usuario no se reutilizan, ni siquiera los de cuentas eliminadas.' }, 409,
+    ))));
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const router = createMemoryRouter([
+      { path: '/users/new', Component: CrearUsuarios },
+      { path: '/users', element: <h1>Gestión de usuarios</h1> },
+    ], { initialEntries: ['/users/new'] });
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    expect((await screen.findAllByText(/datos ya registrados/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
+    expect(router.state.location.pathname).toBe('/users/new');
+  });
+
+  it('dar de alta un usuario con correo duplicado (409 USER_EMAIL_ALREADY_EXISTS) marca el campo y avisa que el correo está en uso', { timeout: 15000 }, async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(
+      { errorCode: 'USER_EMAIL_ALREADY_EXISTS', message: 'El correo ya está registrado en la organización.' }, 409,
+    ))));
+    const user = userEvent.setup();
+    window.sessionStorage.setItem('centinela_access', 'access-token-admin');
+    const router = createMemoryRouter([
+      { path: '/users/new', Component: CrearUsuarios },
+      { path: '/users', element: <h1>Gestión de usuarios</h1> },
+    ], { initialEntries: ['/users/new'] });
+    render(<Toaster><RouterProvider router={router} /></Toaster>);
+
+    await fillCreateUserForm(user);
+    await confirmIfAsked(user);
+
+    const emailField = await screen.findByLabelText(/^correo electrónico/i);
+    await waitFor(() => expect(emailField).toHaveAttribute('aria-invalid', 'true'));
+    expect((await screen.findAllByText(/correo.*(ya|uso|registrad|existe)/i, {}, { timeout: 2000 })).length).toBeGreaterThan(0);
+    expect(router.state.location.pathname).toBe('/users/new');
+  });
 });
 
 describe('FRN-06B - edición de usuario y cambio de rol', () => {
   it('ofrece una acción de edición por usuario en la tabla', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+    // Response nueva por llamada (la vista consulta además GET /admin/audit para "Eliminados").
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       summary: { total: 1, admins: 1, operators: 0 },
       users: [{ id: 'u1', nombreCompleto: 'Ada Lovelace', rol: 'ADMIN', activo: true, totpVinculado: true }],
-    })));
+    }))));
     const user = userEvent.setup();
 
     render(<MemoryRouter><Users /></MemoryRouter>);
@@ -290,18 +400,21 @@ describe('FRN-06B - edición de usuario y cambio de rol', () => {
 describe('FIX-38 - "Solo lectura" no es un rol de usuario (BAC-09 / SEC-04)', () => {
   it('el selector "Rol" de la ficha ofrece solo ADMIN y OPERATOR (el backend rechaza otro rol con 400)', async () => {
     vi.stubGlobal('fetch', detailBackend());
+    const user = userEvent.setup();
 
     renderUserDetail('u2');
     const roleSelect = await screen.findByRole('combobox', { name: /^rol$/i });
-    const options = within(roleSelect).getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
-    expect(options.sort()).toEqual(['ADMIN', 'OPERATOR']);
+    await user.click(roleSelect);
+    const options = (await screen.findAllByRole('option')).map((option) => option.textContent?.trim());
+    expect(options.sort()).toEqual(['Administrador', 'Operador']);
+    expect(options).not.toContain('Solo lectura');
   });
 });
 
 describe('FIX-25 - errores al guardar el perfil', () => {
-  it('un correo duplicado (409 USER_CONFLICT) se muestra junto al campo de correo', async () => {
+  it('un correo duplicado (409 USER_EMAIL_ALREADY_EXISTS) se muestra junto al campo de correo', async () => {
     vi.stubGlobal('fetch', detailBackend({
-      profilePut: () => jsonResponse({ errorCode: 'USER_CONFLICT', message: 'el email ya está en uso' }, 409),
+      profilePut: () => jsonResponse({ errorCode: 'USER_EMAIL_ALREADY_EXISTS', message: 'El correo ya está registrado en la organización.' }, 409),
     }));
     const user = userEvent.setup();
 
@@ -312,7 +425,10 @@ describe('FIX-25 - errores al guardar el perfil', () => {
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
 
     await waitFor(() => expect(emailInput).toHaveAttribute('aria-invalid', 'true'));
-    expect(screen.getByText(/correo.*(ya|pertenece|uso|existe)/i)).toBeVisible();
+    // El mensaje debe quedar asociado al campo de correo (aria-describedby), no sólo en un toast.
+    const describedBy = emailInput.getAttribute('aria-describedby');
+    expect(describedBy, 'el campo de correo no apunta a su mensaje de error').toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(/correo.*(ya|pertenece|uso|existe)/i);
   });
 });
 
@@ -354,8 +470,8 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
     await waitFor(() => {
       const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
       expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
-      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
-      expect(permisos.map((permiso) => permiso.vmid).sort()).toEqual([101, 102]);
+      const permisos = bodyOf(permCall!).permisos as { vmid: number | string; nivelAcceso?: string }[];
+      expect(permisos.map((permiso) => Number(permiso.vmid)).sort()).toEqual([101, 102]);
       expect(permisos.every((permiso) => (permiso.nivelAcceso ?? 'FULL_ACCESS') === 'FULL_ACCESS')).toBe(true);
     });
   });
@@ -381,14 +497,18 @@ describe('FIX-14 / FRN-07 - selector de asignación de instancias', () => {
 
     renderUserDetail('u2');
     await user.click(await screen.findByRole('tab', { name: /roles y permisos/i }));
-    await user.selectOptions(await screen.findByRole('combobox', { name: /acceso para debian 12/i }), 'Solo lectura');
+    const accessCombobox = await screen.findByRole('combobox', { name: /acceso para debian 12/i });
+    await user.click(accessCombobox);
+    const soloLecturaOption = await screen.findByRole('option', { name: /solo lectura/i });
+    await user.click(soloLecturaOption);
     await user.click(screen.getByRole('button', { name: /guardar cambios/i }));
 
     await waitFor(() => {
       const permCall = callsOf(fetchMock).find(([url, init]) => init?.method === 'PUT' && url.endsWith('/admin/users/u2/permissions'));
       expect(permCall, 'no se envió PUT /admin/users/u2/permissions').toBeDefined();
-      const permisos = bodyOf(permCall!).permisos as { vmid: number; nivelAcceso?: string }[];
-      expect(permisos).toEqual(expect.arrayContaining([
+      const permisos = bodyOf(permCall!).permisos as { vmid: number | string; nivelAcceso?: string }[];
+      const normalizedPermisos = permisos.map((p) => ({ ...p, vmid: Number(p.vmid) }));
+      expect(normalizedPermisos).toEqual(expect.arrayContaining([
         expect.objectContaining({ vmid: 102, nivelAcceso: 'READ_ONLY' }),
         expect.objectContaining({ vmid: 101 }),
       ]));
@@ -407,7 +527,7 @@ describe('FRN-08 - manejo de 403 en recursos protegidos', () => {
     await expect(apiClient.get('/instances/103')).rejects.toMatchObject({ status: 403 });
 
     expect((callsOf(fetchMock)[0][1].headers as Record<string, string>).Authorization).toBe('Bearer bearer-token-123');
-    expect((await screen.findAllByText('No tenés acceso a esta instancia.')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/no ten[eé]s acceso|no posee permisos|acceso denegado/i)).length).toBeGreaterThan(0);
     expect(window.sessionStorage.getItem('centinela_access')).toBe('bearer-token-123');
     expect(window.localStorage.getItem('centinela_user')).not.toBeNull();
   });

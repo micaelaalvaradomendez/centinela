@@ -38,8 +38,10 @@ async function cancel(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElem
   expect(commands(fetchMock), 'cancelar el modal envió una petición').toHaveLength(0);
 }
 
-describe('FRN-15 - Modales de confirmación antierror para acciones operativas', () => {
-  it('Start pide confirmación y cancelar no envía ninguna petición', async () => {
+describe('FRN-15 - Modales de confirmación antierror para acciones operativas (FIX-76 / FIX-85)', () => {
+  // FIX-76: Desacoplar guarda nivelAcceso para ADMIN en modales de energía.
+  // FIX-85: Cerrar la confirmación de Start en los modales de energía.
+  it('Start pide confirmación y cancelar no envía ninguna petición (FIX-76 / FIX-85)', async () => {
     renderInstances({ rol: 'ADMIN' });
     const { user, dialog } = await openAndCancel('base-datos', 'start');
     expect(within(dialog).getByRole('button', { name: /confirmar|iniciar|encender|aceptar/i })).toBeInTheDocument();

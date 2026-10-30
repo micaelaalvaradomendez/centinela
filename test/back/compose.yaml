@@ -46,6 +46,10 @@ services:
       ALLOWED_ORIGINS: http://front.centinela.test
       # BAC-16B: este backend usa el correo simulado por consola (lo leen las pruebas).
       EMAIL_PROVIDER: mock
+      # BAC-25B: timeout configurable para seguimiento de UPID (default 3m)
+      UPID_TIMEOUT: ${UPID_TIMEOUT:-3m}
+      # FIX-107: sal para derivar la clave de ofuscación de VMIDs (>=32 chars)
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
     image: centinela-back-tests-backend:local
     # Sin el dominio de búsqueda del host: si un nombre de servicio no resuelve, no tiene que poder
     # llegar a la red real por Tailscale (proxmox.<tailnet>.ts.net es el Proxmox real).
@@ -92,6 +96,7 @@ services:
       REDIS_PASSWORD: redis-test
       ALLOWED_ORIGINS: http://front.centinela.test
       EMAIL_PROVIDER: smtp
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SMTP_USER: centinela
@@ -138,6 +143,7 @@ services:
       REDIS_PASSWORD: redis-test
       ALLOWED_ORIGINS: http://front.centinela.test
       EMAIL_PROVIDER: mock
+      INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-test-instance-id-salt-at-least-32-chars-long}
     ports:
       - "127.0.0.1:${BACKEND_TEST_SLOW_API_PORT:-18082}:8080"
     depends_on:
@@ -154,7 +160,7 @@ services:
   # Proxmox que no responde: acepta cada conexión TCP y nunca contesta (FIX-40).
   proxmox-lento:
     image: busybox:1.36
-    command: ["sh", "-c", "while true; do sleep 3600 | nc -l -p 80 > /dev/null; done"]
+    command: ["nc", "-lk", "-p", "80", "-e", "sleep", "3600"]
 
   # INF-05 / FIX-31: Nginx del borde con TLS (docker/nginx-edge.conf, versionado en el repo
   # integrador) delante del backend real. Certificado de prueba firmado por edge-tls/ca.crt.
@@ -193,6 +199,22 @@ services:
     image: nginx:1.27-alpine
     volumes:
       - ./proxmox-stub/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # BAC-30: simulador real de Proxmox VE (backend/cmd/proxmox-simulador) para verificar
+  # creación (qmcreate/vzcreate), edición de config y rrddata sin el hipervisor físico.
+  # PROXMOX_SIM_DURACION_TAREA=0 hace que las tareas terminen de inmediato.
+  proxmox-sim:
+    build:
+      context: ${CENTINELA_ROOT:-../..}
+      dockerfile: test/back/proxmox-sim.Dockerfile
+    environment:
+      PROXMOX_NODE: pve
+      PROXMOX_TOKEN_ID: stub@pve!tests
+      PROXMOX_TOKEN_SECRET: stub-secret
+      PROXMOX_SIM_PORT: "8081"
+      PROXMOX_SIM_DURACION_TAREA: "0"
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_SIM_PORT:-18083}:8081"
 
 volumes:
   backend_test_postgres:

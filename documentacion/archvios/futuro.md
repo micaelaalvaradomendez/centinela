@@ -293,3 +293,86 @@ FIX DEL 21 AL 25 (en actual.md)
 
 ## 🛠️ Fixes detectados en la verificación del 05/10/2026
 
+---
+
+## Revisión estática del 06/10/2026: reutilizar correo sin perder identidad histórica
+
+> [!WARNING]
+> **Estado: propuesta y tareas pendientes, NO implementadas ni verificadas con pruebas ejecutadas.** Se revisaron documentos y código; no se ejecutaron suites ni se verificó el esquema desplegado. Las referencias al esquema son evidencia de su definición en código, no del estado de una base real.
+
+### Alcance y referencias
+
+- Superproyecto analizado: `b91a410d332d19ad145d3062e65f11772b6dd023`; el HEAD inicial de este PR, `70b905a89d04631f0ffb88cb21fa368b462e5fe6` (“Initial plan”), tiene ese commit como padre y no cambia sus documentos ni gitlinks.
+- Backend `tayraag/centinela-back`, ruta `/home/runner/work/centinela/centinela/backend`, fijado en `e1f2df436c33ea42fc414e78e3f0d8047a14ae97`.
+- Frontend `luzpacello/centinela-front`, ruta `/home/runner/work/centinela/centinela/frontend`, fijado en `d47999da48fd31fff419e5c8e03ce9ec96b6a14c`.
+- Documentos contrastados: `/home/runner/work/centinela/centinela/documentacion/terminado.md` (`BAC-06`, `BAC-06B`, `FIX-24`, `BAC-18` y `FIX-23`), `/home/runner/work/centinela/centinela/documentacion/actual.md` (hito Gestión Administrativa y `FIX-50` a `FIX-53`) y `/home/runner/work/centinela/centinela/documentacion/terminado-1.md`. El defecto pertenece a la fase base: no requiere modificar tareas de la Etapa 1 ni mover tareas terminadas.
+- Se buscaron IDs en todos los documentos antes de agregar estos fixes; `FIX-54` a `FIX-57` estaban libres. Este PR solo documenta: no modifica implementación ni gitlinks y no asigna responsables.
+
+### Hallazgo y evidencia de código
+
+1. **El correo sigue reservado tras la baja.** `/home/runner/work/centinela/centinela/backend/internal/core/domain/models.go:29-34` declara `NombreUsuario` y `EmailUsuario` con `uniqueIndex` global y `not null`; `Usuario` solo tiene `Activo`, sin marca de eliminación. `/home/runner/work/centinela/centinela/backend/internal/core/services/user_service.go:198-223` implementa `EliminarUsuario` actualizando únicamente `activo=false` (205-206): conserva correo y username; la revocación de sesiones PostgreSQL/Redis/SSE falla como advertencia (211-213). La auditoría usa `actorID` y `detalles.usuarioEliminado` (216-220), no al eliminado como actor.
+2. **Suspensión y eliminación son indistinguibles.** `/home/runner/work/centinela/centinela/backend/internal/core/services/user_service.go:162-170` permite cambiar `activo` por `PUT`, incluida la reactivación. Las comprobaciones de alta (70-81), edición y perfil usan `ExisteEmailEnOrg`; `/home/runner/work/centinela/centinela/backend/internal/adapters/secondary/postgres/user_repository.go:104-130` no excluye eliminados/inactivos del correo ni del username. Listado, resumen y búsqueda administrativa por ID incluyen todas las filas; la actividad histórica se consulta por UUID.
+3. **Liberar solo el índice no alcanza.** `/home/runner/work/centinela/centinela/backend/internal/adapters/secondary/postgres/auth_repository.go:28-40` busca `email_usuario=?` con `First`, sin estado. Con varias filas históricas podría seleccionar la cuenta vieja y bloquear login/recuperación. `/home/runner/work/centinela/centinela/backend/internal/core/services/auth_service.go:57-72` comprueba `Activo` después del lookup; `SolicitarRecuperacionContrasena:572-582` descarta inactivos, pero `ConfirmarRecuperacionContrasena:606-650` no verifica `Activo`. `VerificarTotp:197-335` tampoco lo comprueba tras buscar por UUID; `usuarioDePre2FA:535-544` solo recupera el UUID. Refresh sí comprueba `Activo` (381-383). La baja no limpia `codigo_recuperacion`/expiración ni el estado preauth: hacen falta guardas y pruebas de credenciales, tokens y OTP anteriores, sin afirmar explotación runtime.
+4. **La identidad histórica debe conservarse.** `/home/runner/work/centinela/centinela/backend/internal/core/domain/models.go:53` define `OnDelete:RESTRICT`; el comentario de `Auditoria.UsuarioID:96` aún dice `SET NULL` y está desactualizado. `/home/runner/work/centinela/centinela/backend/internal/adapters/secondary/postgres/db.go:45-54` incluye `Usuario` en `AutoMigrate`, y 229-239 define la FK de auditoría particionada a `usuarios(id) ON DELETE RESTRICT`. `/home/runner/work/centinela/centinela/backend/internal/adapters/secondary/postgres/audit_repository.go:69-77,147-155` hace `LEFT JOIN usuarios u ON u.id=a.usuario_id`, filtra organización y no filtra `Activo`: conservar fila, UUID, organización y nombre originales es necesario para consultas y exports.
+5. **El frontend no origina la restricción.** `/home/runner/work/centinela/centinela/frontend/centinela/src/components/features/users/services/userDeactivationService.ts:4-7` envía correctamente `DELETE` y espera `204`. `/home/runner/work/centinela/centinela/frontend/centinela/src/pages/detailsUserPage.tsx:95-98` muestra “Usuario eliminado” con descripción “cuenta desactivada”; al completar vuelve a `/users`. El formulario permite editar perfil y `activo`. `/home/runner/work/centinela/centinela/frontend/centinela/src/components/features/createuser/services/createUserService.ts:4-15` espera `201` y propaga errores distintos de `EMAIL_DELIVERY_FAILED`. El bloqueo nace en la validación y unicidad del backend.
+6. **La cobertura existente no contempla recreación.** `/home/runner/work/centinela/centinela/test/back/backend_acceptance_test.go:418-434` prueba suspensión y reactivación con `PUT`, luego `DELETE` conservando `activo=false`; termina ahí, sin alta con el mismo correo, autenticación de la cuenta nueva ni preservación de auditoría al recrear. Solo se leyó el test. Además, `/home/runner/work/centinela/centinela/backend/internal/core/services/user_service.go:95-99,103,115` envía el correo antes del INSERT y genera un UUID nuevo: revisar ese orden al evaluar altas concurrentes.
+
+### Decisión propuesta a partir del requisito del usuario
+
+Conservar al usuario anterior para auditoría y permitir una cuenta **nueva** con su correo tras una eliminación lógica definitiva, no tras una suspensión reversible:
+
+- Suspensión: `activo=false` y `eliminado_en IS NULL`; reserva el correo y puede reactivarse.
+- Eliminación: `eliminado_en timestamptz` con fecha y `activo=false`; no puede reactivarse ni modificarse por los flujos operativos. Conserva correo histórico, UUID, organización, nombre y relaciones.
+- Unicidad **global**, según el alcance monoorganización actual, del correo normalizado solo en filas **no eliminadas**: `UNIQUE (lower(btrim(email_usuario))) WHERE eliminado_en IS NULL`. No ampliar soporte multitenant.
+- **No** usar `WHERE activo=true`: liberaría correos de suspendidos y generaría conflictos al reactivarlos. **No** usar `UNIQUE(email_usuario, activo)`: limita las generaciones históricas y no resuelve el requisito.
+- Mantener el username único según la política actual: la nueva cuenta usa otro username. Su reutilización es una decisión separada, fuera de alcance.
+- No borrar físicamente usuarios, reenlazar registros al UUID nuevo, ni hacer `UPDATE`/`DELETE` de auditoría. Mantener el contrato append-only de `BAC-18`/`FIX-23`, las búsquedas históricas por UUID y los JOIN de auditoría/actividad sin scope de borrado de usuarios. La nueva cuenta no hereda credenciales, 2FA, permisos ni sesiones.
+
+> [!IMPORTANT]
+> **Datos existentes:** hoy `activo=false` no permite saber si ocurrió un `DELETE` o una suspensión por `PUT`. No marcar automáticamente todos los inactivos como eliminados. Planificar clasificación controlada con evidencia de `AccionEliminarUsuario` y `detalles.usuarioEliminado`, considerando reactivaciones posteriores y la disponibilidad de `auditoria_legacy` (`FIX-51`), o revisión manual. Mantener suspendidos por defecto hasta identificación segura. `FIX-51` es un problema independiente: no incorporar su migración de auditoría a estos fixes.
+
+---
+
+## 🎨 Revisión visual y de UX del 06/10/2026: autenticación, branding y acciones de instancias
+
+> [!WARNING]
+> **Estado: Defectos visuales y de UX detectados en despliegue activo.** En el despliegue del frontend (verificado en `centinela.tail6bb3f3.ts.net/two-factor/verify`, frontend commit `d47999d`, backend commit `f17295c`), el layout compartido de autenticación (`/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password`, `/change-password`) y la navegación principal contienen desalineaciones de interfaz y experiencia de usuario que degradan la usabilidad y la presentación institucional del producto:
+> 1. El logo de la aplicación se renderiza como texto literal crudo (`"logo Centinela"`).
+> 2. La columna lateral/carrusel de bienvenida muestra el texto informal `"imagenes y informacion random"`.
+> 3. Falta un texto claro, conciso y amigable que explique qué es Centinela y por qué es obligatorio pasar por el doble factor de autenticación (2FA).
+> 4. El botón de acción "Crear instancia" se ubicó en el Dashboard en lugar de la página de Instancias, rompiendo la separación de responsabilidades y la consistencia con el resto de la aplicación.
+
+> Las tareas de corrección asociadas (`FIX-58`, `FIX-59` y `FIX-60`) se encuentran en [`actual.md`](actual.md).
+
+---
+
+## Hallazgo incorporado del PR #3 (06/10/2026)
+
+Se conserva la numeración de `main` `cb0be91`, incluidas las tareas `FIX-54` a `FIX-60`. Las correcciones de ticket con 401 (`FIX-61`) y de stream `/events` (`FIX-45`) fueron verificadas con pruebas automatizadas en verde y promovidas a [`terminado.md`](terminado.md).
+
+---
+
+## 🛠️ Fix detectado el 06/10/2026: Saneamiento y complemento de auditoría particionada
+
+
+---
+
+## 🛠️ Fix detectado el 08/10/2026: Conexión y reintentos de Redis en arranque
+
+
+---
+
+
+
+## 🛠️ Fixes detectados en la verificación del 13/10/2026 (fase base)
+
+
+---
+
+
+## 🛠️ Stubs y placeholders detectados en los submódulos (13/10/2026)
+
+> Revisión de `backend` (`6afc017`) y `frontend` (`7fcc0bd`) buscando stubs/placeholders en código ya declarado terminado. Cada hallazgo cita el archivo y la tarea de `terminado.md` que afecta.
+
+---
+

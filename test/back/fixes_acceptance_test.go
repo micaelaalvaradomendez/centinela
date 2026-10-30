@@ -1,0 +1,443 @@
+package back_test
+
+import (
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+)
+
+// TestFixesPendientes verifica las tareas y correcciones identificadas en documentacion/actual.md
+// que requieren pruebas de aceptación y regresión dedicadas:
+//   - FIX-50: Apagado correcto del servidor HTTP ante SIGINT/SIGTERM (BAC-18B).
+//   - FIX-51: Historial de auditoria previo a la migración particionada accesible desde la API (BAC-18B).
+//   - FIX-52: Distinguir INSTANCE_BUSY de INSTANCE_INVALID_STATE y limpiar código muerto (BAC-24A).
+//   - FIX-53: Unificar códigos de acción y resultado en la auditoría de instancias (BAC-24A).
+//   - FIX-54: Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend).
+//   - FIX-55: Alinear baja, validación y autenticación con identidad histórica (Backend).
+//   - FIX-81: Corregir el orden de migraciones: migrarUnicidadEmail antes de crear auditoria (Backend).
+//   - FIX-88: Evitar que EMAIL_PROVIDER caiga en silencio en el correo simulado (BAC-16B / INF-08B).
+func TestFixesPendientes(t *testing.T) {
+	requireIntegration(t)
+
+	orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
+	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
+	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
+
+	t.Run("FIX-50 el servidor HTTP implementa apagado ordenado con http.Server y Shutdown ante senales", func(t *testing.T) {
+		mainContent := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
+
+		// 1. router.Run no debe usarse porque bloquea sin recibir el contexto de apagado.
+		if regexp.MustCompile(`router\.Run\(`).MatchString(mainContent) {
+			t.Errorf("cmd/api/main.go usa router.Run(), lo que bloquea sin observar el contexto de apagado")
+		}
+
+		// 2. Debe instanciarse un http.Server explícito con Addr y Handler.
+		if !regexp.MustCompile(`&?http\.Server\s*\{[^}]*Handler:\s*router`).MatchString(mainContent) &&
+			!regexp.MustCompile(`&?http\.Server\s*\{[^}]*Addr:`).MatchString(mainContent) {
+			t.Errorf("cmd/api/main.go no crea una instancia explícita de http.Server{Addr, Handler: router}")
+		}
+
+		// 3. Debe invocarse Shutdown(ctx) ante la cancelación del contexto de señales.
+		if !regexp.MustCompile(`(?i)\.Shutdown\(`).MatchString(mainContent) {
+			t.Errorf("cmd/api/main.go no invoca srv.Shutdown(...) al recibir la señal de terminación")
+		}
+
+		// 4. Debe escucharse <-ctx.Done() conectado a NotifyContext o signal.Notify.
+		if !regexp.MustCompile(`<-ctx\.Done\(\)`).MatchString(mainContent) {
+			t.Errorf("cmd/api/main.go no espera <-ctx.Done() para iniciar el apagado ordenado")
+		}
+	})
+
+	t.Run("FIX-51 el historial de auditoria previo a la migracion particionada es visible por la API", func(t *testing.T) {
+		// Entregable: los registros de auditoria anteriores al particionamiento (conservados en
+		// auditoria_legacy o migrados) deben seguir siendo visibles en GET /api/admin/audit y exportaciones.
+		dbCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/db.go")))
+		repoCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/audit_repository.go")))
+
+		// Verificación estática: db.go debe migrar los datos a la tabla particionada (INSERT INTO auditoria SELECT ... FROM auditoria_legacy)
+		// o el repositorio de auditoría debe incluir auditoria_legacy con UNION ALL.
+		migratesLegacy := regexp.MustCompile(`(?is)INSERT\s+INTO\s+auditoria(?:\s*\([^)]+\))?\s+SELECT\s+.*?FROM\s+auditoria_legacy`).MatchString(dbCode)
+		queriesLegacy := strings.Contains(repoCode, "auditoria_legacy")
+
+		if !migratesLegacy && !queriesLegacy {
+			t.Errorf("FIX-51 no implementada: db.go no migra datos de auditoria_legacy a auditoria particionada, ni audit_repository.go consulta auditoria_legacy con UNION ALL")
+		}
+
+		// Verificación de base de datos si existe auditoria_legacy:
+		hasLegacyTable := queryDatabase(t, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'auditoria_legacy';")
+		if hasLegacyTable == "1" {
+			// Si la tabla legacy existe con filas, verificar que no queden huérfanas.
+			legacyCount := queryDatabase(t, "SELECT count(*) FROM auditoria_legacy;")
+			if legacyCount != "0" && !queriesLegacy {
+				t.Errorf("existen %s filas en auditoria_legacy que no son consultadas por la API", legacyCount)
+			}
+		}
+	})
+
+	t.Run("FIX-52 distingue INSTANCE_BUSY de INSTANCE_INVALID_STATE y limpia codigo muerto", func(t *testing.T) {
+		// 1. Limpieza de código muerto: ProxmoxPort.ReiniciarInstancia huérfano.
+		portsCode := string(readFile(t, sourcePath("backend", "internal/core/ports/proxmox_port.go")))
+		clientCode := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/proxmox/client.go")))
+
+		hasReiniciarInPort := regexp.MustCompile(`(?m)^\s*ReiniciarInstancia\(`).MatchString(portsCode)
+		if hasReiniciarInPort {
+			// Si existe en el puerto, verificar que se use de forma consistente o se haya removido a favor de Reboot.
+			handlerCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/instance_handler.go")))
+			if !strings.Contains(handlerCode, "ReiniciarInstancia") {
+				t.Errorf("ProxmoxPort.ReiniciarInstancia está declarado pero no se invoca en los handlers (código muerto)")
+			}
+		}
+
+		// 2. Comentario desactualizado en EliminarInstancia.
+		if strings.Contains(clientCode, "si está encendida Proxmox responde 500 con un mensaje de bloqueo") {
+			t.Errorf("el comentario de EliminarInstancia en client.go sigue afirmando que Proxmox responde 500 por instancia encendida; esa rama fue reemplazada por la validación 409 del handler")
+		}
+
+		// 3. Comportamiento en vivo: acción rechazada por tarea RUNNING en curso debe dar 409 INSTANCE_BUSY,
+		// mientras que acción rechazada por estado incompatible sin tarea en curso debe dar 409 INSTANCE_INVALID_STATE.
+		// En el stub, 101 está running y sin tareas en curso: start da INSTANCE_INVALID_STATE.
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/start", adminToken, nil)
+		if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
+			t.Errorf("start sobre instancia 101 (running, sin tarea en curso): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
+		}
+
+		// Simulamos una tarea RUNNING en tareas_asincronas para la 102 (detenida).
+		tareaUUID := queryDatabase(t, "SELECT uuid_generate_v7();")
+		queryDatabase(t, fmt.Sprintf(
+			"INSERT INTO tareas_asincronas (id, usuario_id, instancia_id, accion, upid_proxmox, estado, fecha_creacion) VALUES ('%s', '%s', '102', 'start', 'UPID:pve:dummy:0:0:vzstart:102:root@pam:', 'RUNNING', NOW());",
+			tareaUUID, adminID,
+		))
+		t.Cleanup(func() {
+			queryDatabase(t, fmt.Sprintf("DELETE FROM tareas_asincronas WHERE id = '%s';", tareaUUID))
+		})
+
+		// Con tarea en curso sobre la 102, intentar otra acción (stop) debe responder 409 INSTANCE_BUSY.
+		busyStatus, busyBody := requestJSON(t, http.MethodPost, "/instances/102/status/stop", adminToken, nil)
+		if busyStatus != http.StatusConflict || busyBody["errorCode"] != "INSTANCE_BUSY" {
+			t.Errorf("acción sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyStatus, busyBody)
+		}
+
+		// DELETE sobre instancia con tarea RUNNING en curso también debe responder 409 INSTANCE_BUSY.
+		busyDeleteStatus, busyDeleteBody := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		if busyDeleteStatus != http.StatusConflict || busyDeleteBody["errorCode"] != "INSTANCE_BUSY" {
+			t.Errorf("DELETE sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyDeleteStatus, busyDeleteBody)
+		}
+
+		// Cuando la tarea en tareas_asincronas ya no está RUNNING (ej. COMPLETED), no debe responder INSTANCE_BUSY.
+		queryDatabase(t, fmt.Sprintf("UPDATE tareas_asincronas SET estado = 'COMPLETED' WHERE id = '%s';", tareaUUID))
+		afterStatus, afterBody := requestJSON(t, http.MethodPost, "/instances/102/status/stop", adminToken, nil)
+		if afterBody["errorCode"] == "INSTANCE_BUSY" {
+			t.Errorf("acción sobre instancia con tarea COMPLETED respondió indebidamente 409 INSTANCE_BUSY: %d: %#v", afterStatus, afterBody)
+		}
+	})
+
+	t.Run("FIX-53 unificacion de codigos de accion y resultado en la auditoria de instancias", func(t *testing.T) {
+		auditPortCode := string(readFile(t, sourcePath("backend", "internal/core/ports/audit_port.go")))
+		handlerCode := string(readFile(t, sourcePath("backend", "internal/adapters/primary/http/instance_handler.go")))
+
+		// 1. Constante ResultadoPendiente en audit_port.go.
+		if !regexp.MustCompile(`ResultadoPendiente\s*=\s*"[^"]+"`).MatchString(auditPortCode) {
+			t.Errorf("internal/core/ports/audit_port.go no define la constante ResultadoPendiente")
+		}
+
+		// 2. Literal "PENDING" suelto no debe usarse en instance_handler.go; debe usarse ports.ResultadoPendiente.
+		pendingLiterals := regexp.MustCompile(`"PENDING"`).FindAllStringIndex(handlerCode, -1)
+		// Si se usa ports.ResultadoPendiente, los literales no deben aparecer sueltos en llamadas de auditoría.
+		if len(pendingLiterals) > 1 && !strings.Contains(handlerCode, "ports.ResultadoPendiente") {
+			t.Errorf("instance_handler.go contiene literales sueltos \"PENDING\" en lugar de usar ports.ResultadoPendiente")
+		}
+
+		// 3. IniciarInstancia y DetenerInstancia deben auditar el nombre y tipo de la instancia, no vacíos ni fijos.
+		if strings.Contains(handlerCode, `instanciaNombre: ""`) || strings.Contains(handlerCode, `"vm_or_lxc"`) {
+			t.Errorf("IniciarInstancia o DetenerInstancia auditan instanciaNombre vacío o resource_type \"vm_or_lxc\"")
+		}
+
+		// 4. Códigos de acción unificados entre alias (/start, /stop) y genérico (/status/:action).
+		// Ambas rutas deben registrar el mismo código de acción en auditoría.
+		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/stop", adminToken, nil)
+		if status == http.StatusAccepted {
+			tareaID := requiredString(t, body, "tareaId")
+			if _, expuesto := body["upid"]; expuesto {
+				t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
+			}
+			upid := strings.ReplaceAll(queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID)), "'", "''")
+			accionAuditoria := queryDatabase(t, fmt.Sprintf("SELECT accion FROM auditoria WHERE detalles::text LIKE '%%%s%%' LIMIT 1;", upid))
+			if accionAuditoria != "STOP" && accionAuditoria != "DETENER_VM" {
+				t.Errorf("accion de auditoría inesperada para stop: %q", accionAuditoria)
+			}
+		}
+	})
+
+	t.Run("FIX-54 separar eliminacion logica y suspension con migracion de unicidad de correo", func(t *testing.T) {
+		// 1. La tabla usuarios debe incluir la columna eliminado_en timestamptz nullable.
+		columnaEliminado := queryDatabase(t, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'usuarios' AND column_name = 'eliminado_en';")
+		if columnaEliminado != "1" {
+			t.Errorf("la tabla usuarios no tiene la columna eliminado_en (timestamptz nullable)")
+		}
+
+		// 2. El índice único de correo debe ser parcial (WHERE eliminado_en IS NULL).
+		indiceParcial := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'usuarios' AND indexdef ILIKE '%email_usuario%' AND indexdef ILIKE '%WHERE%eliminado_en%IS NULL%';")
+		if indiceParcial == "" {
+			t.Errorf("falta un índice único parcial en usuarios(email_usuario) con WHERE eliminado_en IS NULL")
+		}
+
+		// 3. El índice parcial debe normalizar con lower y btrim (UNIQUE (lower(btrim(email_usuario))) WHERE eliminado_en IS NULL).
+		if indiceParcial != "" && (!strings.Contains(strings.ToLower(indiceParcial), "lower") || !strings.Contains(strings.ToLower(indiceParcial), "trim")) {
+			t.Errorf("el índice único parcial debe normalizar con lower(btrim(email_usuario)), definición actual: %s", indiceParcial)
+		}
+
+		// 4. No debe haber un índice único incondicional en email_usuario que impida reutilizar correos de eliminados.
+		indiceIncondicional := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'usuarios' AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%email_usuario%' AND indexdef NOT ILIKE '%WHERE%';")
+		if indiceIncondicional != "" {
+			t.Errorf("persiste un índice único incondicional sobre email_usuario: %s", indiceIncondicional)
+		}
+
+		// 5. La unicidad del nombre_usuario (username) debe permanecer incondicional.
+		indiceUsername := queryDatabase(t, "SELECT coalesce(string_agg(indexdef, E'\\n'), '') FROM pg_indexes WHERE tablename = 'usuarios' AND indexdef ILIKE '%UNIQUE%' AND indexdef ILIKE '%nombre_usuario%' AND indexdef NOT ILIKE '%WHERE%';")
+		if indiceUsername == "" {
+			t.Errorf("falta el índice único incondicional sobre nombre_usuario")
+		}
+
+		// 6. El modelo domain/models.go no debe tener el comentario obsoleto SET NULL para auditoría.
+		modelsCode := string(readFile(t, sourcePath("backend", "internal/core/domain/models.go")))
+		if strings.Contains(modelsCode, "SET NULL si se elimina el usuario") {
+			t.Errorf("models.go contiene comentario 'SET NULL si se elimina el usuario'; la relación de auditoría debe reflejar RESTRICT")
+		}
+
+		// 7. En base de datos: si existe eliminado_en, múltiples eliminados pueden tener el mismo correo.
+		if columnaEliminado == "1" {
+			emailDup := fmt.Sprintf("dup.%d@elcentinela.com", time.Now().UnixNano())
+			u1 := queryDatabase(t, "SELECT uuid_generate_v7();")
+			u2 := queryDatabase(t, "SELECT uuid_generate_v7();")
+			orgID := queryDatabase(t, "SELECT id FROM organizaciones LIMIT 1;")
+			_, err1 := execDatabase(t, fmt.Sprintf("INSERT INTO usuarios (id, organizacion_id, nombre_completo, nombre_usuario, email_usuario, contrasena_hash, rol, activo, eliminado_en) VALUES ('%s', '%s', 'Eliminado 1', 'del1_%s', '%s', 'hash', 'OPERATOR', false, NOW());", u1, orgID, u1[:8], emailDup))
+			_, err2 := execDatabase(t, fmt.Sprintf("INSERT INTO usuarios (id, organizacion_id, nombre_completo, nombre_usuario, email_usuario, contrasena_hash, rol, activo, eliminado_en) VALUES ('%s', '%s', 'Eliminado 2', 'del2_%s', '%s', 'hash', 'OPERATOR', false, NOW());", u2, orgID, u2[:8], emailDup))
+			if err1 != nil || err2 != nil {
+				t.Errorf("la base de datos no permitió almacenar dos usuarios eliminados con el mismo correo: err1=%v, err2=%v", err1, err2)
+			}
+			execDatabase(t, fmt.Sprintf("DELETE FROM usuarios WHERE id IN ('%s', '%s');", u1, u2))
+		}
+	})
+
+	t.Run("FIX-55 alinear baja, validacion y autenticacion con identidad historica", func(t *testing.T) {
+		columnaEliminado := queryDatabase(t, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'usuarios' AND column_name = 'eliminado_en';")
+		if columnaEliminado != "1" {
+			t.Skip("eliminado_en no está implementado aún en la base de datos (FIX-54)")
+		}
+
+		suffix := time.Now().UnixNano()
+		email := fmt.Sprintf("historico.%d@elcentinela.com", suffix)
+		username := fmt.Sprintf("hist_%d", suffix)
+
+		// 1. Crear usuario inicial.
+		userID, tempPass := createUserThroughAPI(t, adminToken, username, email, "OPERATOR")
+		userSession := loginWithTOTP(t, email, tempPass, "")
+
+		// 2. DELETE /api/admin/users/:id debe marcarlo como eliminado (eliminado_en != null y activo = false).
+		delStatus, _ := requestValue(t, http.MethodDelete, "/admin/users/"+userID, adminToken, nil)
+		if delStatus != http.StatusNoContent && delStatus != http.StatusOK {
+			t.Fatalf("DELETE /admin/users/%s: esperado 204 o 200, recibido %d", userID, delStatus)
+		}
+
+		eliminadoEn := queryDatabase(t, fmt.Sprintf("SELECT coalesce(eliminado_en::text, '') FROM usuarios WHERE id = '%s';", userID))
+		activo := queryDatabase(t, fmt.Sprintf("SELECT activo FROM usuarios WHERE id = '%s';", userID))
+		if eliminadoEn == "" || activo != "f" {
+			t.Errorf("tras DELETE: esperado eliminado_en con valor y activo = false, recibido eliminado_en=%q, activo=%s", eliminadoEn, activo)
+		}
+
+		// 3. Las credenciales previas quedan completamente invalidadas: login rechazado.
+		loginStatus, _ := requestValue(t, http.MethodPost, "/auth/login", "", map[string]any{"email": email, "password": tempPass})
+		if loginStatus != http.StatusUnauthorized && loginStatus != http.StatusForbidden {
+			t.Errorf("login con credenciales de usuario eliminado debe ser rechazado (401 o 403), recibido %d", loginStatus)
+		}
+
+		// 4. Token previo revocado.
+		tokenStatus, _ := requestValue(t, http.MethodGet, "/account/profile", userSession.AccessToken, nil)
+		if tokenStatus != http.StatusUnauthorized {
+			t.Errorf("token de sesión de usuario eliminado debe ser rechazado con 401, recibido %d", tokenStatus)
+		}
+
+		// 5. No se puede reactivar un usuario eliminado con PUT activo=true.
+		reactivateStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID, adminToken, map[string]any{"activo": true})
+		if reactivateStatus == http.StatusOK || reactivateStatus == http.StatusNoContent {
+			t.Errorf("PUT /admin/users/:id con activo=true sobre usuario eliminado no debe permitirse, recibido %d", reactivateStatus)
+		}
+
+		// 6. Bloquear edición y cambios de permisos sobre eliminados.
+		editStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID, adminToken, map[string]any{"nombreCompleto": "Intento Modificar"})
+		if editStatus == http.StatusOK || editStatus == http.StatusNoContent {
+			t.Errorf("PUT /admin/users/:id sobre usuario eliminado debe ser rechazado, recibido %d", editStatus)
+		}
+
+		permStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, map[string]any{"permisos": []map[string]any{}})
+		if permStatus == http.StatusOK || permStatus == http.StatusNoContent {
+			t.Errorf("PUT /admin/users/:id/permissions sobre usuario eliminado debe ser rechazado, recibido %d", permStatus)
+		}
+
+		// 7. Consulta histórica explícita por UUID debe estar permitida para auditoría.
+		histStatus, histBody := requestJSON(t, http.MethodGet, "/admin/users/"+userID, adminToken, nil)
+		if histStatus != http.StatusOK {
+			t.Errorf("GET /admin/users/:id para usuario eliminado debe responder 200 con historial, recibido %d: %#v", histStatus, histBody)
+		} else {
+			if histBody["eliminadoEn"] == nil || histBody["activo"] != false {
+				t.Errorf("detalle histórico de eliminado debe mostrar eliminadoEn y activo=false: %#v", histBody)
+			}
+		}
+
+		// 8. Crear una cuenta nueva con el MISMO correo debe ser permitido y tener un UUID diferente.
+		newUserID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("nuevo_%d", suffix), email, "OPERATOR")
+		if newUserID == userID {
+			t.Errorf("la nueva cuenta creada con el mismo correo debe recibir un nuevo UUID, recibido el mismo: %s", newUserID)
+		}
+
+		// 9. El historial y auditoría previos siguen asociados al UUID original, sin fusionar identidades.
+		auditRowsOld := queryDatabase(t, fmt.Sprintf("SELECT count(*) FROM auditoria WHERE usuario_id = '%s';", userID))
+		if auditRowsOld == "0" {
+			t.Errorf("los registros de auditoría del usuario original (%s) se perdieron o fueron reasignados", userID)
+		}
+
+		// 10. Suspensión reversible: suspender reserva el correo y reactivar funciona.
+		suspSuffix := time.Now().UnixNano()
+		suspEmail := fmt.Sprintf("susp.%d@elcentinela.com", suspSuffix)
+		suspID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("susp_%d", suspSuffix), suspEmail, "OPERATOR")
+
+		// Suspender con activo=false
+		sStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+suspID, adminToken, map[string]any{"activo": false})
+		if sStatus != http.StatusOK && sStatus != http.StatusNoContent {
+			t.Fatalf("suspender usuario: esperado 200 o 204, recibido %d", sStatus)
+		}
+
+		// Crear nuevo usuario con el correo del suspendido debe responder 409 conflicto estructurado
+		dupSuspStatus, dupSuspBody := requestJSON(t, http.MethodPost, "/admin/users", adminToken, map[string]any{
+			"nombreCompleto": "Intento Con Correo Suspendido",
+			"nombreUsuario":  fmt.Sprintf("otro_%d", suspSuffix),
+			"emailUsuario":   suspEmail,
+			"rol":            "OPERATOR",
+		})
+		if dupSuspStatus != http.StatusConflict {
+			t.Errorf("alta con correo de usuario suspendido debe responder 409, recibido %d: %#v", dupSuspStatus, dupSuspBody)
+		}
+		if dupSuspBody["errorCode"] == nil || dupSuspBody["errorCode"] == "" {
+			t.Errorf("conflicto de correo debe tener código estructurado de error (errorCode): %#v", dupSuspBody)
+		}
+
+		// Reactivar con activo=true debe permitirse en suspendidos (reversibilidad)
+		reactSuspStatus, _ := requestValue(t, http.MethodPut, "/admin/users/"+suspID, adminToken, map[string]any{"activo": true})
+		if reactSuspStatus != http.StatusOK && reactSuspStatus != http.StatusNoContent {
+			t.Errorf("reactivar usuario suspendido debe ser exitoso (reversible), recibido %d", reactSuspStatus)
+		}
+	})
+
+	t.Run("FIX-68 integracion del cliente de eventos con la ruta real servida por el backend", func(t *testing.T) {
+		clientCode := string(readFile(t, sourcePath("frontend", "src/services/eventsClient.ts")))
+		// 1. Contrato del frontend: EVENTS_STREAM_PATH debe ser '/events' y no '/events/stream'.
+		if strings.Contains(clientCode, "EVENTS_STREAM_PATH = '/events/stream'") {
+			t.Errorf("frontend/src/services/eventsClient.ts define EVENTS_STREAM_PATH = '/events/stream', ruta inexistente en el backend")
+		}
+		if !strings.Contains(clientCode, "EVENTS_STREAM_PATH = '/events'") {
+			t.Errorf("frontend/src/services/eventsClient.ts no define EVENTS_STREAM_PATH = '/events'")
+		}
+
+		// 2. Comprobación en vivo del backend: la ruta /api/events responde con SSE para un ticket válido,
+		// mientras que /api/events/stream responde 404 (confirmando que una desalineación rompería el cliente).
+		statusWrong, _ := requestValue(t, http.MethodGet, "/events/stream", "", nil)
+		if statusWrong != http.StatusNotFound {
+			t.Errorf("GET /api/events/stream debe responder 404 Not Found, recibido %d", statusWrong)
+		}
+
+		// 3. Obtener ticket efímero con token de admin y verificar conexión a /events?ticket=...
+		ticketStatus, ticketBody := requestJSON(t, http.MethodPost, "/events/ticket", adminToken, nil)
+		if ticketStatus != http.StatusOK {
+			t.Fatalf("POST /api/events/ticket falló con status %d: %#v", ticketStatus, ticketBody)
+		}
+		ticket := requiredString(t, ticketBody, "ticket")
+
+		req, err := http.NewRequest(http.MethodGet, apiURL+"/events?ticket="+ticket, nil)
+		if err != nil {
+			t.Fatalf("fallo al crear request SSE: %v", err)
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("fallo al conectar a /api/events: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET /api/events?ticket=...: esperado 200 OK, recibido %d", resp.StatusCode)
+		}
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/event-stream") {
+			t.Errorf("Content-Type de /api/events debe ser text/event-stream, recibido %q", contentType)
+		}
+	})
+
+	t.Run("FIX-88 evita que EMAIL_PROVIDER caiga en silencio en el correo simulado", func(t *testing.T) {
+		mainContent := string(readFile(t, sourcePath("backend", "cmd/api/main.go")))
+
+		// 1. No debe usar un else ciego donde cualquier valor o ausencia de EMAIL_PROVIDER caiga
+		// silenciosamente en NewMockEmailService() sin validación ni aviso explícito.
+		// El criterio exige: fallar al arrancar (o registrar un WARN muy visible) cuando EMAIL_PROVIDER
+		// no esté definido, salvo que se use explícitamente EMAIL_PROVIDER=mock.
+		blindFallback := regexp.MustCompile(`(?s)if\s+os\.Getenv\("EMAIL_PROVIDER"\)\s*==\s*"smtp"\s*\{.*?\}\s*else\s*\{\s*emailService\s*=\s*email\.NewMockEmailService\(\)\s*log\.Println\("📧 Email Provider:\s*MOCK`)
+		if blindFallback.MatchString(mainContent) {
+			t.Errorf("FIX-88: cmd/api/main.go cae silenciosamente en NewMockEmailService cuando EMAIL_PROVIDER no es 'smtp', sin validar si está vacío ni requerir explícitamente 'mock'")
+		}
+
+		// 2. Si EMAIL_PROVIDER está vacío o no configurado, debe emitirse un log de advertencia (WARN/WARNING)
+		// o impedirse la selección silenciosa de mock.
+		if !regexp.MustCompile(`(?i)(warn|warning|faltante|no\s+definid|mock\s+explicito)`).MatchString(mainContent) &&
+			!strings.Contains(mainContent, `EMAIL_PROVIDER == "mock"`) &&
+			!strings.Contains(mainContent, `os.Getenv("EMAIL_PROVIDER") == "mock"`) {
+			t.Errorf("FIX-88: cmd/api/main.go no exige EMAIL_PROVIDER=mock explícito ni registra advertencia visible ante ausencia de EMAIL_PROVIDER")
+		}
+
+		// 3. Documentación en .env.example: debe advertir que 'mock' es solo para tests/CI/desarrollo
+		// y no sugerir dejarlo vacío de forma descuidada.
+		envExample := string(readFile(t, sourcePath("backend", ".env.example")))
+		if strings.Contains(envExample, "déjalo vacío para log/mock") {
+			t.Errorf("FIX-88: backend/.env.example sugiere 'déjalo vacío para log/mock'; debe indicar que mock es solo para tests/CI")
+		}
+		if !regexp.MustCompile(`(?i)(test|ci|desarrollo)`).MatchString(envExample) || !strings.Contains(envExample, "EMAIL_PROVIDER") {
+			t.Errorf("FIX-88: backend/.env.example no documenta claramente el uso restringido de mock para tests/CI")
+		}
+	})
+
+	t.Run("FIX-81 orden de migraciones para arranque limpio de base de datos", func(t *testing.T) {
+		dbContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/db.go")))
+		migrarUsuariosContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/migrar_usuarios.go")))
+
+		// 1. Verificación del orden en db.go: migrarAuditoriaParticionada debe llamarse antes de migrarUnicidadEmail,
+		// O clasificarEliminados en migrar_usuarios.go debe verificar si la tabla auditoria existe antes de hacer SELECT.
+		idxEmail := strings.Index(dbContent, "migrarUnicidadEmail(db)")
+		idxAudit := strings.Index(dbContent, "migrarAuditoriaParticionada(db)")
+
+		tieneGuardaTablaAuditoria := regexp.MustCompile(`existeTabla\s*\(\s*[a-zA-Z0-9_.]+\s*,\s*"auditoria"\s*\)`).MatchString(migrarUsuariosContent)
+
+		if idxEmail != -1 && idxAudit != -1 && idxEmail < idxAudit && !tieneGuardaTablaAuditoria {
+			t.Errorf("FIX-81: db.go llama migrarUnicidadEmail(db) (pos %d) ANTES de migrarAuditoriaParticionada(db) (pos %d) y clasificarEliminados no verifica si la tabla auditoria existe antes de consultarla. En base limpia el arranque aborta con SQLSTATE 42P01 (relation 'auditoria' does not exist)", idxEmail, idxAudit)
+		}
+	})
+}
+
+// TestFIX81_OrdenMigracionesBaseLimpia verifica que las migraciones del backend
+// puedan ejecutarse sobre una base de datos nueva/limpia sin fallar por
+// dependencias cruzadas entre auditoria y usuarios (FIX-81).
+func TestFIX81_OrdenMigracionesBaseLimpia(t *testing.T) {
+	dbContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/db.go")))
+	migrarUsuariosContent := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/postgres/migrar_usuarios.go")))
+
+	idxEmail := strings.Index(dbContent, "migrarUnicidadEmail(db)")
+	idxAudit := strings.Index(dbContent, "migrarAuditoriaParticionada(db)")
+
+	tieneGuardaTablaAuditoria := regexp.MustCompile(`existeTabla\s*\(\s*[a-zA-Z0-9_.]+\s*,\s*"auditoria"\s*\)`).MatchString(migrarUsuariosContent)
+
+	if idxEmail != -1 && idxAudit != -1 && idxEmail < idxAudit && !tieneGuardaTablaAuditoria {
+		t.Errorf("FIX-81: db.go llama migrarUnicidadEmail(db) (pos %d) ANTES de migrarAuditoriaParticionada(db) (pos %d) y clasificarEliminados no verifica si la tabla auditoria existe antes de consultarla. En base limpia el arranque aborta con SQLSTATE 42P01 (relation 'auditoria' does not exist)", idxEmail, idxAudit)
+	}
+}
+
+

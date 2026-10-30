@@ -141,6 +141,9 @@
 - **Criterio de éxito:** el dominio o IP local resuelve, el frontend alcanza el backend y el backend alcanza PostgreSQL y Proxmox VE sin exponer la base públicamente.
 
 ### BAC-06B — Edición de Usuario y Cambio de Rol (PUT /api/admin/users/{id}):
+
+> **Nota de alcance (06/10/2026, revisión estática):** la edición de `activo` contempla desactivar/reactivar, pero hoy no distingue suspensión de eliminación por `DELETE`. La separación y el bloqueo de reactivación de eliminados quedan pendientes en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend); no se ejecutaron nuevas pruebas.
+
 - Asignado: Lisandro | Estimación: 2h
 - Depende de: BAC-06
 - Entregable: Endpoint PUT /api/admin/users/{id} para actualizar nombre, correo, estado (isActive) y rol (role: ADMIN u OPERATOR).  
@@ -161,6 +164,8 @@
 - **Criterio de éxito:** la migración se ejecuta desde cero, crea las relaciones y carga un administrador inicial.
 
 ### `BAC-06` - CRUD de usuarios para administradores
+
+> **Nota de alcance (06/10/2026, revisión estática):** el recorrido previamente verificado de crear/listar/desactivar no cubre recrear una cuenta con el correo de otra eliminada conservando su identidad y auditoría. Esa brecha queda pendiente en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend); no se ejecutaron nuevas pruebas.
 
 - **Área:** Backend
 - **Asignado:** Lisandro
@@ -733,6 +738,8 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 - **Criterio de éxito:** La migración crea el campo sin romper registros previos; el middleware `RequireInstanceAccess` verifica tanto la pertenencia de la instancia como el nivel de permiso; si un usuario tiene permiso `READ_ONLY` sobre la VM 101, puede consultar su estado pero recibe 403 al intentar ejecutar una acción de apagado/encendido.
 
 ### `FIX-24` - Confirmación del alta sin contraseña temporal y baja de usuario (`FRN-06` / `BAC-16`) (Frontend)
+
+> **Nota de alcance (06/10/2026, revisión estática):** la baja implementada envía `DELETE` y espera `204`, pero conserva el correo reservado en backend. Las verificaciones anteriores no cubren su reutilización; la distinción suspensión/eliminación y sus mensajes quedan pendientes en `FIX-54` a `FIX-57` de [`futuro.md`](futuro.md#fix-54---separar-eliminación-lógica-y-suspensión-migrar-unicidad-del-correo-backend). No se ejecutaron nuevas pruebas.
 
 > [!NOTE]
 > **Actualización (01/10/2026):** el entregable 2 se corrigió con `FIX-27` (commit `3ea7fa4`). FRN-06 pasa 6/6.
@@ -1590,15 +1597,11 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
 
 ### `FRN-17C` (`BRG-02-FRN`) - Cliente de eventos con solicitud previa de ticket efímero y reconexión segura
 
-> [!WARNING]
-> **Estado: Implementada con problema (verificado el 05/10/2026, frontend `d47999d`, commit `2a2db82` "cliente SSE con tickets efímeros y backoff").** `test/front/events-client.test.tsx`:
-> - **Cumple** (3 de 4):
->   - pide `POST /api/events/ticket` con `Bearer`, y el JWT nunca va en la URL;
->   - ante una desconexión pide un ticket nuevo y aplica retroceso exponencial;
->   - con un `401` avisa a la app (`API_UNAUTHORIZED_EVENT`), y el `AuthProvider` cierra la sesión y lleva a `/login`.
-> - **Falla:** abre el stream en **`/api/events/stream?ticket=…`** (`services/eventsClient.ts:19`, `EVENTS_STREAM_PATH = '/events/stream'`). El backend lo sirve en `GET /api/events` (`cmd/api/main.go:260`), así que contra el backend real el stream responde 404 y no llega ningún evento.
->
-> La corrección es **`FIX-45`**, en [`futuro.md`](futuro.md).
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026 con FIX-45 en `7f945ec` y FIX-61 en `2a2db82`, frontend `5a86dce`).**
+> - `src/services/eventsClient.ts` define `EVENTS_STREAM_PATH = '/events'`, conectándose correctamente a `GET /api/events?ticket=<uuid>`.
+> - Ante 401 en ticket, detiene los temporizadores de reconexión y delega el cierre de sesión en `AuthProvider`.
+> - Pasan 4 de 4 pruebas de `FRN-17C` en `test/front/events-client.test.tsx`.
 
 - **Área:** Frontend
 - **Asignado:** Cristian
@@ -1610,3 +1613,258 @@ Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas
   1. En `useEvents` (`FRN-17A`), antes de abrir la conexión hacia `/api/events`, invocar `POST /api/events/ticket` con el interceptor autenticado (`Bearer`) y conectar a `/api/events?ticket=<uuid>`.
   2. Ante una desconexión de red, solicitar un nuevo ticket efímero aplicando retroceso exponencial; si `/api/events/ticket` responde `401`, disparar el cierre de sesión local y redirigir a `/login`.
 - **Criterio de éxito:** El frontend se conecta a `/api/events` usando tickets de un solo uso sin exponer el JWT en la URL y se reconecta pidiendo un ticket fresco.
+
+---
+
+# Verificación del 06/10/2026: tareas movidas desde `actual.md`
+
+Evidencia completa en [test/informe.md](../test/informe.md). Revisiones probadas: backend `59148b1` y frontend `5a86dce`.
+
+### `FIX-44` - Corregir índice parcial en `sesiones_activas` para incluir `jti_access` y alinear worker de purga (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `c02fd29` / `59148b1`).**
+> - Commit `c02fd29`: `internal/adapters/secondary/postgres/db.go:148` indexa `(jti_access, usuario_id) WHERE activa = true`, cubriendo la consulta de validación de sesiones activas en alta concurrencia.
+> - `purga_worker.go:39` inicializa el worker de purga periódica con `time.NewTicker(1 * time.Hour)`.
+> - En `cierre_fase_base_acceptance_test.go`: `BAC-18B_indice_parcial_en_sesiones_activas_y_auditoria_particionada_por_trimestre` y `BAC-18B_rutina_horaria_que_purga_sesiones_inactivas_o_vencidas_de_sesiones_activas` pasan 100% en verde.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 0,5 h
+- **Depende de:** `BAC-18B`.
+- **Criterio de éxito:** Pasan las pruebas de índice parcial y purga horaria en `cierre_fase_base_acceptance_test.go`.
+
+### `FIX-50` - Apagado correcto del servidor HTTP ante `SIGINT`/`SIGTERM` (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `3988546` / `59148b1`).**
+> - Commit `3988546`: `main.go:308-330` reemplaza `router.Run` por `http.Server{Addr: ":8080", Handler: router}`, escucha señales `SIGINT`/`SIGTERM` con `signal.NotifyContext` y ejecuta `srv.Shutdown(ctxApagado)` con timeout para drenar peticiones activas.
+> - Pasa la prueba `FIX-50_el_servidor_HTTP_implementa_apagado_ordenado_con_http.Server_y_Shutdown_ante_senales` en `fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B`.
+- **Criterio de éxito:** Enviar `SIGINT` o `SIGTERM` hace que el servidor HTTP y los workers se apaguen de forma ordenada en pocos segundos.
+
+### `FIX-45` - El cliente de eventos abre el stream en una ruta que el backend no sirve (`FRN-17C`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, frontend `7f945ec` / `5a86dce`).**
+> - Commit `7f945ec`: `src/services/eventsClient.ts:19` define `EVENTS_STREAM_PATH = '/events'`, alineándose con el endpoint servido por el backend en `GET /api/events` (`BAC-21C`).
+> - Pasan 4 de 4 pruebas de `FRN-17C` en `test/front/events-client.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Nico
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C` y `BAC-21C`.
+- **Criterio de éxito:** El cliente conecta a `/api/events?ticket=...` y recibe eventos SSE en tiempo real.
+
+
+### `FIX-51` - El historial de `auditoria` previo a la migración queda inaccesible desde la API (`BAC-18B`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 06/10/2026, backend `df320c7`).**
+> - Commit `df320c7`: `internal/adapters/secondary/postgres/db.go:283-303` implementa el traspaso masivo `INSERT INTO auditoria SELECT ... FROM auditoria_legacy ON CONFLICT DO NOTHING` y elimina de forma limpia e idempotente `DROP TABLE IF EXISTS auditoria_legacy CASCADE`.
+> - Se verificó que `auditoria.id` es tipo UUIDv7 (sin secuencia serial ni autoincremental en PostgreSQL); no requiere ni admite `setval`, garantizando integridad referencial y de claves sin colisiones.
+> - Pasa la suite unitaria de persistencia `TestMigrarAuditoriaParticionada_TraspasoLegacy` en `backend/internal/adapters/secondary/postgres/migrar_auditoria_test.go` y la prueba de integración en `test/back/fixes_acceptance_test.go`.
+> - Deuda técnica residual: la llamada forzada a `setval` ejecutada con error silenciado en `df320c7` se canalizó a [`FIX-70`](futuro.md#fix-70---eliminar-ajuste-espurio-de-secuencia-setval-en-clave-primaria-uuidv7-de-auditoría-bac-18b--fix-51-backend) en `futuro.md` para su saneamiento.
+
+- **Área:** Backend
+- **Asignada:** Tayra (autora de `96106a6`, resuelto en `df320c7`)
+- **Estimación:** 1 h
+- **Depende de:** `BAC-18B`.
+- **Problema y evidencia:** `migrarAuditoriaParticionada` (`db.go`) renombraba la tabla plana preexistente a `auditoria_legacy` dejando los eventos anteriores fuera de las consultas de `auditRepositoryImpl`.
+- **Entregable:** Volcado de datos hacia la tabla particionada, eliminación limpia de la tabla temporal y prueba automatizada de regresión.
+- **Criterio de éxito:** Registros preexistentes son consultables en `GET /api/admin/audit` y exportaciones sin duplicación ni pérdida de datos.
+
+
+### `FIX-58` - Reemplazar placeholder textual del logo por el imagotipo/logotipo oficial vectorizado (`FRN-01` / `LOGIN-02`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Se incorporó el logotipo oficial vectorizado de Centinela (SVG) con accesibilidad `alt="Centinela"`, dimensiones responsivas y redirección segura a `/login`.
+> - Se eliminó la maqueta textual residual `"logo Centinela"` en todas las vistas de acceso.
+> - Pasa la suite de pruebas `test/front/auth-branding.test.tsx`.
+
+- **Área:** Frontend / UI
+- **Asignada:** Belinda / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la vista de autenticación desplegada, en el encabezado superior izquierdo de la columna lateral se renderizaba el texto plano `"logo Centinela"`. No se utilizaba el imagotipo vectorizado oficial.
+- **Entregables:**
+  1. Incorporar el activo gráfico oficial vectorizado de Centinela (SVG).
+  2. Implementar accesibilidad correcta (`alt="Centinela"`) y contraste visual según WCAG.
+  3. Asegurar comportamiento responsivo sin desbordes.
+- **Criterio de éxito:**
+  - En `/login`, `/two-factor/verify`, `/two-factor/setup`, `/recover-password` y `/change-password` se visualiza el logotipo oficial vectorizado de Centinela.
+  - El elemento es accesible para lectores de pantalla y mantiene proporciones nítidas.
+
+
+### `FIX-59` - Sustituir el placeholder "imagenes y informacion random" por mensaje informativo y amigable sobre Centinela y 2FA (`FRN-01` / `LOGIN-02`) (Frontend / UX Copy)
+
+> [!NOTE]
+> **Estado: Implementada con observaciones (verificado el 09/10/2026, frontend `ee4644c`).**
+> - El texto informal `"imagenes y informacion random"` fue eliminado al 100% de `MainLayoutAuth.tsx`.
+> - Se incorporaron los componentes y textos explicativos de Centinela y el propósito de seguridad de 2FA.
+> - **Observación detectada:** La alineación literal de titulares con la suite `test/front/auth-branding.test.tsx` se canaliza en [`FIX-80`](futuro.md#fix-80---alineación-textual-y-normalización-de-copy-en-vistas-de-autenticación-fix-59-frontend) de `futuro.md`.
+
+- **Área:** Frontend / UX Copy
+- **Asignada:** Luz / Belinda
+- **Estimación:** 1,5 h
+- **Depende de:** `FRN-01` y `LOGIN-02`.
+- **Problema y evidencia:**
+  En la columna lateral de bienvenida de las pantallas de acceso, aparecía textualmente el placeholder informal `"imagenes y informacion random"`.
+- **Entregables:**
+  1. Reemplazar el placeholder por información clara sobre qué es Centinela y el valor del 2FA.
+  2. Acompañar el copy con iconografía representativa.
+- **Criterio de éxito:**
+  - El texto `"imagenes y informacion random"` no aparece en ninguna pantalla ni componente del frontend.
+  - La columna lateral presenta el mensaje claro y estructurado con jerarquía visual adecuada.
+
+
+### `FIX-60` - Reubicar el botón "Crear instancia" del Dashboard a la página de Instancias (`FRN-19B` / `FRN-20A` / `RF-03` / `RF-07`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - Se eliminó el botón "Crear instancia" de `Dashboard.tsx`, preservando el dashboard exclusivamente para telemetría y salud del nodo.
+> - Se reubicó en la cabecera del inventario en `Instances.tsx` bajo la guarda de permisos `isAdmin()`.
+> - Pasan las suites `test/front/dashboard-node.test.tsx` e `instances-table.test.tsx`.
+
+- **Área:** Frontend / UI
+- **Asignada:** Cristian / Luz
+- **Estimación:** 1 h
+- **Depende de:** `FRN-19A`, `FRN-19B`, `FRN-20A` y `SEC-03` (`PermissionGate`).
+- **Entregables:**
+  1. Eliminar el botón "Crear instancia" de `Dashboard.tsx`.
+  2. Agregar el botón "Crear instancia" en la cabecera de `Instances.tsx`.
+  3. Proteger la visualización del botón con `isAdmin()` para rol `ADMIN`.
+- **Criterio de éxito:**
+  - `screen.queryByRole('button', { name: /crear instancia|nueva instancia/i })` devuelve `null` en `/dashboard`.
+  - En `/instances`, un usuario con rol `ADMIN` ve el botón; un usuario con rol `OPERATOR` no lo ve.
+
+
+### `FIX-61` - Cerrar sesión y detener reconexiones ante 401 al solicitar el ticket de eventos (`FRN-17C`) (Frontend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, frontend `ee4644c`).**
+> - En `src/services/eventsClient.ts`, ante un error HTTP 401 al solicitar el ticket efímero, se cancelan inmediatamente los temporizadores de reconexión, se cierra la conexión activa y se ejecuta `logout()` en el almacén de sesión.
+> - Pasan las 6 pruebas de `test/front/events-client.test.ts`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0,5 h
+- **Depende de:** `FRN-17C`, `BAC-21C`.
+- **Criterio de éxito:** Ante 401 en ticket se detienen los reintentos, se cancelan los timers y se cierra la sesión.
+
+
+### `FIX-70` - Blindaje transaccional de la migración de auditoría y saneamiento de integridad en UUIDv7 (`BAC-18B` / `FIX-51`) (Backend)
+
+> [!NOTE]
+> **Estado: Completada (verificado el 09/10/2026, backend `4f68e44`).**
+> - Commit `08ca9dd`: El volcado masivo desde `auditoria_legacy` y el posterior `DROP TABLE` se ejecutan dentro de una transacción atómica explícita (`tx := db.Begin()`).
+> - Se eliminó la llamada espuria a `SELECT setval(pg_get_serial_sequence('auditoria', 'id'), ...)` sobre claves primarias UUIDv7.
+> - Se implementó el aprovisionamiento dinámico de particiones trimestrales evitando el bloqueo operativo de la partición default.
+> - Pasan las pruebas unitarias en `migrar_auditoria_test.go` y la prueba de integración en `test/back/fixes_acceptance_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra / Backend
+- **Estimación:** 1 h
+- **Depende de:** `FIX-51` (en `terminado.md`).
+- **Problema:** Falta de atomicidad transaccional y llamada a secuencia inexistente en UUIDv7 en la migración de auditoría particionada.
+- **Entregables:**
+  1. Envolver el volcado de `auditoria_legacy` y `DROP TABLE` en transacción atómica (`tx := db.Begin()`).
+  2. Saneamiento de `db.go` removiendo el ajuste espurio de secuencia `setval`.
+  3. Aprovisionamiento seguro de particiones futuras.
+- **Criterio de éxito:**
+  - El traspaso histórico es 100% transaccional y atómico.
+  - La migración corre sin consultas fallidas ni errores silenciados.
+  - La API de auditoría conserva íntegramente la visibilidad del historial.
+
+
+---
+
+## Actualización del 13/10/2026 — tareas movidas desde `actual.md` (fase base)
+
+Verificadas contra backend `6afc017`. El estado vigente es el bloque de cada tarea.
+
+### `FIX-54` - Separar eliminación lógica y suspensión; migrar unicidad del correo (Backend)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada, con un problema crítico pendiente.**
+> - `TestFixesPendientes` (subtest FIX-54) **pasa**: columna `eliminado_en`, índice único parcial del correo y clasificación histórica.
+> - **Problema:** en una base **nueva**, `clasificarEliminados` consulta `auditoria` antes de que `migrarAuditoriaParticionada` la cree → el backend aborta al iniciar y bloquea toda la suite. Corrección en **`FIX-81`** ([`futuro.md`](futuro.md)).
+
+- **Área:** Backend
+- **Estimación:** 2 h
+- **Depende de:** `BAC-05`, `BAC-06` y la clasificación controlada de datos históricos descrita arriba; coordinar disponibilidad de evidencia con `FIX-51`, sin mezclar su solución.
+- **Problema:** la baja conserva correctamente la identidad, pero la unicidad incondicional reserva su correo; `activo` no distingue eliminación de suspensión.
+- **Entregables:**
+  1. Agregar `eliminado_en timestamptz` nullable y definir la invariante de eliminado siempre inactivo, conservando identidad y relaciones. Aplicar el plan seguro de clasificación histórica; no inferir eliminación solo desde `activo=false`.
+  2. Quitar `uniqueIndex` incondicional de `EmailUsuario` del modelo e inspeccionar el nombre real del índice/constraint existente antes de reemplazarlo explícitamente por `UNIQUE (lower(btrim(email_usuario))) WHERE eliminado_en IS NULL`. Evitar que `AutoMigrate` recree la unicidad anterior; mantener la del username.
+  3. Prevalidar duplicados normalizados entre no eliminados sin fusionar identidades ni modificar auditoría; definir resolución controlada y transacción/orden seguro de migración. Documentar base nueva, base existente, reinicio e idempotencia.
+  4. Corregir el comentario `SET NULL` para reflejar `RESTRICT`, sin cambiar FK ni aplicar scopes de borrado a JOIN de auditoría o actividad histórica.
+- **Criterios de aceptación:** múltiples eliminados pueden conservar el mismo correo; solo una fila no eliminada puede reservarlo, incluso con mayúsculas/espacios; suspendidos lo reservan. Migración repetible y reinicio no recrean el índice anterior ni pierden filas/relaciones/auditoría.
+
+### `FIX-55` - Alinear baja, validación y autenticación con identidad histórica (Backend)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestFixesPendientes` (subtest FIX-55) pasa (ya no se omite por FIX-54): la baja se alinea con la identidad histórica y un correo liberado permite registrar una cuenta nueva.
+
+- **Área:** Backend
+- **Estimación:** 2,5 h
+- **Depende de:** `FIX-54`, `BAC-06`, `BAC-06B`, `BAC-13`, `BAC-15` y los mecanismos existentes de autenticación/revocación.
+- **Problema:** cambiar solo la unicidad dejaría lookup ambiguo, reactivación de eliminados y flujos con estado temporal anterior a la baja.
+- **Entregables:**
+  1. `DELETE` fija la marca y desactiva conservando identidad; `PUT activo=false` solo suspende y `PUT activo=true` no restaura eliminados. Bloquear edición, cambios de permisos y resets administrativos sobre eliminados; conservar consultas históricas explícitas por UUID.
+  2. `ExisteEmailEnOrg` y validaciones de crear/editar/perfil excluyen eliminados, incluyen suspendidos y comparten normalización con DB. El lookup de autenticación por email excluye eliminados, mantiene el rechazo de suspendidos y no usa `First` ambiguo entre generaciones.
+  3. Incorporar guardas de eliminado por UUID en login, 2FA, refresh y recuperación y revisar los caminos que emiten/usan acceso. Invalidar OTP de recuperación y expiración, preauth, tickets, sesiones PostgreSQL/Redis y streams con los mecanismos existentes. Definir consistencia/rollback o estrategia fail-closed: un error de revocación no debe producir éxito engañoso ni dejar acceso habilitado.
+  4. Crear con UUID y clave nuevos, cambio obligatorio y 2FA nuevo, sin permisos/sesiones heredados; mantener relaciones históricas en el UUID anterior. Conservar la unicidad DB como última barrera ante carreras y mapear su violación de correo a `409` estructurado, con código acordado en contrato, sin SQL crudo y sin convertir cualquier fallo DB en conflicto.
+  5. Revisar el envío SMTP previo al INSERT al probar altas concurrentes y documentar su riesgo; no prometer una transacción distribuida email/DB ni incorporar un refactor SMTP ajeno como requisito obligatorio.
+- **Criterios de aceptación:** nueva cuenta accesible sin seleccionar la histórica; eliminado no puede reactivarse, editarse ni acceder mediante credenciales, tokens, preauth u OTP previos. Suspensión sigue siendo reversible y reserva correo. Conflictos y fallos de revocación tienen respuestas controladas y coherentes con el estado persistido.
+
+### `FIX-56` - Distinguir suspensión y eliminación en contrato e interfaz (Frontend)
+
+> [!WARNING]
+> **Estado verificado (13/10/2026, frontend `7fcc0bd`): implementada, con problemas pendientes.** La interfaz distingue suspensión de eliminación (badges, modales y mensajes) y `admin-users-deletion` mejoró de 5 a 4 fallos. Corrección en **`FIX-82`** ([`futuro.md`](futuro.md)).
+
+- **Área:** Frontend
+- **Estimación:** 1,5 h
+- **Depende de:** DTO/contrato de `FIX-54`/`FIX-55`, `FRN-05`, `FRN-06`, `FRN-06B` y `FIX-24`.
+- **Problema:** la interfaz llama eliminación a una desactivación y no dispone de estado separado; no es la causa del bloqueo de unicidad backend.
+- **Entregables:**
+  1. Diferenciar “Inactivo” de “Eliminado” según DTO; deshabilitar reactivar, editar y resetear eliminados. Ocultarlos del listado operativo por defecto manteniendo acceso histórico explícito y auditoría.
+  2. Modal de eliminación: explicar conservación de historial y liberación del correo; suspensión: explicar reversibilidad y reserva del correo. Alinear acciones, mensajes y navegación con el contrato.
+  3. Mostrar el conflicto de correo de cuentas no eliminadas con el código acordado por backend; mantener alta `201`, baja `204` y restricción `403` salvo cambio contractual explícito documentado.
+- **Criterios de aceptación:** mensajes y acciones distinguen ambos estados; un eliminado no ofrece acciones operativas; historial accesible y errores de correo claros, sin atribuir la restricción DB al frontend.
+
+
+--- 
+
+
+### `FIX-71` - Robustecer reconexión y reintentos ante arranque en frío de Redis (`INF-06` / `BAC-17A`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (13/10/2026, backend `6afc017`): implementada y con test en verde.** `TestFIX71RedisArranqueEnFrio` pasa: tras reiniciar Redis el backend se recompone y vuelve a servir las operaciones que dependen de él.
+
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Lucas
+- **Estimación:** 1 h
+- **Depende de:** `BAC-17A` e `INF-06` (en `terminado.md`).
+- **Problema técnico detallado:**
+  Al ejecutar las pruebas unitarias del paquete `backend/internal/adapters/secondary/redis` (`go test ./internal/adapters/secondary/redis/...`), la prueba `TestConectar/se_recupera_si_Redis_aparece_durante_los_reintentos` falla sistemáticamente:
+  ```
+  kv_store_test.go:79: Debe conectar cuando Redis aparece en un reintento: redis no responde en 127.0.0.1:46429: dial tcp 127.0.0.1:46429: connect: connection refused
+  ```
+  En `backend/internal/adapters/secondary/redis/kv_store.go`, la función `Conectar` utiliza `store := Nuevo(cfg)` y ejecuta un bucle de 3 intentos de `Ping` espaciados con `esperaArranque = 500ms`. Sin embargo, el cliente `goredis.NewClient` inicializa internamente un pool de conexiones con `DialerRetries: 2` y `MaxRetries: 3`. Cuando el socket no está disponible de inmediato (arranque en frío o Redis levantando de forma asíncrona unos cientos de milisegundos más tarde), el pool retiene errores de conexión o agota sus reintentos internos sin refrescar el estado del socket entre ciclos de sondeo, o el contexto de la prueba simula el reinicio de forma que el cliente no logra negociar la reconexión limpia en el tiempo estipulado.
+- **Qué debe hacer el equipo de backend:**
+  1. En `kv_store.go`, asegurar que la estrategia de arranque en frío y reintentos de `Conectar` renueve el intento de conexión o limpie las conexiones muertas del pool cuando `Ping` retorne `connection refused`.
+  2. Ajustar la sincronización de reintento en `kv_store_test.go` para garantizar que la reactivación del servidor de prueba en segundo plano (`srv.StartAddr` / `srv.Restart`) sea tolerada y verificada de manera determinística por la función `Conectar`.
+  3. Ejecutar localmente `go test -v ./internal/adapters/secondary/redis/...` en el backend y certificar que `TestConectar` pase 100% en verde.
+- **Criterio de éxito:**
+  - `go test ./internal/adapters/secondary/redis/...` pasa en verde sin fallos de conexión.
+  - El backend tolera arrancar cuando Redis tarda hasta 2-3 segundos en estar listo para aceptar conexiones TCP.
+
+

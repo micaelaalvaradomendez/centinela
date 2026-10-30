@@ -78,14 +78,16 @@ func TestHitoLOGIN04CircuitoCompletoSeguridadYAutenticacion(t *testing.T) {
 		t.Errorf("Paso 6.1: OPERATOR en /admin/users esperado 403, recibido %d", status)
 	}
 
-	if status, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, permissionsPayload(101)); status != http.StatusNoContent {
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+	ref103 := instanceRefByVMID(t, adminToken, 103)
+	if status, _ := requestValue(t, http.MethodPut, "/admin/users/"+userID+"/permissions", adminToken, map[string]any{"permisos": []map[string]any{{"vmid": ref101}}}); status != http.StatusNoContent {
 		t.Fatalf("Paso 6.2: asignación de permisos esperado 204, recibido %d", status)
 	}
-	if status, body := requestJSON(t, http.MethodGet, "/instances/103", operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
+	if status, body := requestJSON(t, http.MethodGet, "/instances/"+ref103, operatorToken, nil); status != http.StatusForbidden || body["errorCode"] != "INSTANCE_ACCESS_DENIED" {
 		t.Errorf("Paso 6.3: instancia no asignada esperado 403 INSTANCE_ACCESS_DENIED, recibido %d: %#v", status, body)
 	}
 	status, inventory := requestJSONArray(t, http.MethodGet, "/instances", operatorToken)
-	if status != http.StatusOK || len(inventory) != 1 || inventory[0].(map[string]any)["id"] != float64(101) {
+	if status != http.StatusOK || len(inventory) != 1 || inventory[0].(map[string]any)["id"] != ref101 {
 		t.Errorf("Paso 6.4: el inventario del OPERATOR debe contener solo la 101, recibido %d: %#v", status, inventory)
 	}
 
