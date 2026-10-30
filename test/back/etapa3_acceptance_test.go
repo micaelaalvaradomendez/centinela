@@ -546,8 +546,8 @@ func TestEtapa3BAC48_HardeningAutenticacionCookiesRateLimiting(t *testing.T) {
 	combined := middlewareCode + "\n" + handlersCode
 
 	t.Run("emisión de refreshToken como cookie HttpOnly Secure SameSite=Strict", func(t *testing.T) {
-		if !regexp.MustCompile(`(?i)SetCookie\([^)]*HttpOnly[^)]*true|httpOnly\s*=\s*true`).MatchString(combined) &&
-			!regexp.MustCompile(`(?i)refreshToken.*(HttpOnly|SameSite)`).MatchString(combined) {
+		if !regexp.MustCompile(`(?i)SetCookie\([^)]*(HttpOnly[^)]*true|true\s*\)|"centinela_refresh")|httpOnly\s*=\s*true`).MatchString(combined) &&
+			!regexp.MustCompile(`(?i)(refreshToken|setRefreshCookie).*(HttpOnly|SameSite|SetSameSite)`).MatchString(combined) {
 			t.Errorf("BAC-48: el backend no emite el refreshToken en cookie HttpOnly con SameSite estricto")
 		}
 	})

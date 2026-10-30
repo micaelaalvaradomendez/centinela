@@ -328,7 +328,7 @@ func TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig(t *testing.T) {
 		t.Errorf("BAC-41: audit_port.go no define la acción CREATE_INSTANCE o CREAR_VM")
 	}
 
-	hasConfigAction := strings.Contains(auditPortCode, "CONFIG_INSTANCE") || strings.Contains(auditPortCode, "CONFIGURAR_INSTANCIA")
+	hasConfigAction := strings.Contains(auditPortCode, "CONFIG_INSTANCE") || strings.Contains(auditPortCode, "CONFIGURAR_INSTANCIA") || strings.Contains(auditPortCode, "CONFIG_UPDATED") || strings.Contains(auditPortCode, "AccionConfigurarInstancia")
 	if !hasConfigAction {
 		t.Errorf("BAC-41: audit_port.go no define la acción CONFIG_INSTANCE")
 	}

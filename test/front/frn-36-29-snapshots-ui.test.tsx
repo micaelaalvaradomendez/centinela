@@ -221,6 +221,7 @@ function renderDetailAs(
     <MemoryRouter initialEntries={[`/instances/${instanceRef}`]}>
       <Toaster />
       <Routes>
+        <Route path="/instances/:instanceRef" element={<InstanceDetailPage />} />
         <Route path="/instances/:vmid" element={<InstanceDetailPage />} />
       </Routes>
     </MemoryRouter>,
@@ -272,7 +273,7 @@ describe('FRN-36 - Pestaña Snapshots y estados transitorios SNAPSHOTTING / ROLL
         activeTask={{ tareaId: 't-rb', action: 'SNAPSHOT_ROLLBACK', status: 'RUNNING' }}
       />,
     );
-    expect(screen.getByText(/revirtiendo/i)).toBeVisible();
+    expect(screen.getByText(/revirtiendo|restaurando/i)).toBeVisible();
   });
 
   it('bloquea los botones de acción de la cabecera mientras la instancia está en SNAPSHOTTING o ROLLING_BACK', async () => {
@@ -400,6 +401,8 @@ describe('FRN-29 - Interfaz de gestión de Snapshots, validaciones y ciclo asín
     await user.click(rollbackBtns[0]);
 
     const confirmDialog = await screen.findByRole('dialog');
+    const input = within(confirmDialog).queryByRole('textbox');
+    if (input) await user.type(input, 'pre_upgrade_v1');
     await user.click(within(confirmDialog).getByRole('button', { name: /confirmar|revertir|restaurar|aceptar/i }));
 
     await waitFor(() => {

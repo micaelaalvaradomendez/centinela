@@ -94,3 +94,42 @@ flowchart TD
     FIX112 --> FIX118
 ```
 
+---
+
+## 🛠️ Especificación Detallada de Fixes Pendientes (Etapa 2)
+
+### `FIX-126` - Renderizado condicional de StorageMeter en Dashboard para OPERATOR (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 0.5 h
+- **Depende de:** `FIX-117A`, `FIX-117B`.
+- **Problema técnico detallado:**
+  En `frontend/centinela/src/pages/Dashboard.tsx:140`, el componente `<StorageMeter>` se renderiza de forma incondicional siempre que `data` exista:
+  ```tsx
+  <StorageMeter usedGb={data?.storage?.usedGb ?? 0} totalGb={data?.storage?.totalGb ?? 0} usagePercent={data?.storage?.usagePercent ?? 0} variant="ring" />
+  ```
+  Aun cuando `data?.storage` es `null` (comportamiento canónico de `FIX-117A` para usuarios con rol `OPERATOR`), el Dashboard muestra un medidor de almacenamiento en 0% en lugar de ocultar la tarjeta de capacidad de almacenamiento del host según lo exigido en `FIX-117B`.
+- **Qué debe hacer el equipo de frontend:**
+  En `Dashboard.tsx`, condicionar el renderizado del bloque `<StorageMeter>` a la presencia efectiva de `data?.storage != null` o al rol `user.rol === 'ADMIN'`, impidiendo que un operador visualice métricas de disco vacías.
+- **Criterio de éxito:**
+  El Dashboard no renderiza `<StorageMeter>` para operadores ni ante `data.storage === null`. La prueba `test/front/fix-117b-dashboard-operador.test.tsx` pasa al 100% sin renderizar el medidor.
+
+---
+
+### `FIX-127` - Resiliencia de `SnapshotsTabContent` ante Providers desacoplados y alias de ruta `:vmid` / `:instanceRef` (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-36`, `FRN-29`.
+- **Problema técnico detallado:**
+  1. En `frontend/centinela/src/components/features/instances/components/detail/SnapshotsTabContent.tsx:69`, se ejecuta `const { ultimoMensaje } = useEventsContext();` sin comprobar si el componente está envuelto en un `EventsProvider`. Cuando se monta en pruebas unitarias aisladas (`src/test/instance-transient-states.test.tsx`), lanza `Error: useEventsContext debe utilizarse dentro de un EventsProvider` y falla el renderizado del estado vacío.
+  2. En `frontend/centinela/src/pages/InstanceDetailPage.tsx:12`, la lectura de parámetros utiliza estrictamente `const { instanceRef } = useParams<{ instanceRef: string }>()`. Si componentes, tests legados o enlaces invocan la ruta con el parámetro `:vmid`, `instanceRef` queda como `undefined` y rechaza la navegación como "Identificador inválido".
+- **Qué debe hacer el equipo de frontend:**
+  1. En `EventsContext.tsx` o `SnapshotsTabContent.tsx`, permitir que `useEventsContext()` devuelva `null` o un valor seguro por defecto cuando no esté presente el `EventsProvider` (o usar un hook defensivo `useOptionalEventsContext()`).
+  2. En `InstanceDetailPage.tsx`, leer ambos parámetros con fallback: `const { instanceRef, vmid } = useParams(); const ref = instanceRef ?? vmid;`.
+  3. En `applicationRoutes.tsx`, asegurar que ambas variantes de ruta (`/instances/:instanceRef` y `/instances/:vmid`) dirijan al mismo componente.
+- **Criterio de éxito:**
+  La prueba unitaria `src/test/instance-transient-states.test.tsx` y `src/test/instance-detail.test.tsx` pasan al 100% sin requerir providers globales en tests unitarios.
+

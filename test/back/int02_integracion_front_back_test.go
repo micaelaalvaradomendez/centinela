@@ -14,12 +14,17 @@ import (
 // Valida los 7 pasos del MVP operativo de punta a punta entre ambos lados.
 func TestINT02IntegracionFrontBack(t *testing.T) {
 	requireIntegration(t)
+	runnerBin, runnerArgs := "pnpm", []string{"exec", "vitest", "run", "int02-e2e", "--reporter=verbose"}
 	if _, err := exec.LookPath("pnpm"); err != nil {
-		t.Skip("pnpm no está instalado: no se puede ejecutar el frontend")
+		if _, err := exec.LookPath("npx"); err != nil {
+			t.Skip("ni pnpm ni npx están instalados: no se puede ejecutar el frontend")
+		}
+		runnerBin = "npx"
+		runnerArgs = []string{"vitest", "run", "int02-e2e", "--reporter=verbose"}
 	}
 	frontDir, _ := filepath.Abs("../front")
 	if _, err := os.Stat(filepath.Join(frontDir, "node_modules")); err != nil {
-		t.Skip("falta test/front/node_modules: correr `pnpm --dir test/front install`")
+		t.Skip("falta test/front/node_modules: correr `pnpm --dir test/front install` o `npm install`")
 	}
 	composePath, _ := filepath.Abs(composeFile)
 
@@ -27,7 +32,7 @@ func TestINT02IntegracionFrontBack(t *testing.T) {
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
 	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
 
-	command := exec.Command("pnpm", "exec", "vitest", "run", "int02-e2e", "--reporter=verbose")
+	command := exec.Command(runnerBin, runnerArgs...)
 	command.Dir = frontDir
 	command.Env = append(os.Environ(),
 		"CENTINELA_E2E_API="+strings.TrimSuffix(apiURL, "/api"),
