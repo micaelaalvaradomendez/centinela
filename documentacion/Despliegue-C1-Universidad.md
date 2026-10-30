@@ -2,301 +2,336 @@
 
 > **Qué es esto**: el plan completo, paso a paso, para replicar **todo** Centinela
 > (proxy, frontend, backend, base de datos, Redis y el relay `centinela-smtp-brevo`)
-> en el servidor **C1** de la universidad, con **un contenedor (LXC) por servicio**,
-> igual que en casa.
+> en **C1**, el nodo que la cátedra asigna al equipo dentro del **laboratorio ING3**,
+> con **un contenedor (LXC) por servicio**, igual que en casa.
 >
-> **Estado**: plan listo para ejecutar. Cuando la facultad habilite C1, se sigue
-> esta guía de punta a punta y no hay que pensar nada nuevo.
+> **Estado**: plan definido y **verificado en lo esencial** sin root. Para ejecutar:
+> autorizar la IP de salida en Brevo, probar el firewall con un contenedor y, cuando la
+> cátedra habilite C1, replicar.
+>
+> **Revisiones**:
+> - **Rev 2 — 06/10/2026**: re-análisis con el entorno real del laboratorio.
+> - **Rev 3 — 06/10/2026**: verificación en vivo (solo lectura) del nodo y **camino sin
+>   root** para el correo (el equipo no tiene root; el egreso del diseño lo requiere).
+>   Evidencia en el Anexo E.
 
 ---
 
 ## 0. Objetivo
 
-Que C1 corra **el sistema completo**, con la **IP pública fija de C1** autorizada en
-Brevo (y la de casa durante la transición), y que el correo salga **cifrado** en los dos tramos.
+Que C1 corra **el sistema completo**, con el **correo saliendo por el reenviador de usuario
+del host hacia Brevo**, y que el correo salga **cifrado** en los dos tramos.
 
 Resultado esperado:
 
 ```
-Backend --STARTTLS--> relay centinela-smtp-brevo --STARTTLS + IP autorizada--> Brevo --> destinatario
+Backend --STARTTLS--> relay centinela-smtp-brevo --STARTTLS--> Brevo --> destinatario
 ```
 
 ---
 
-## 1. Arquitectura objetivo en C1
+## 1. El entorno real (C1 en ING3)
 
-Se mantiene el mismo esquema que ya usamos en casa: **un contenedor por servicio**.
+Cómo es el nodo (datos de referencia del laboratorio, verificados en C1):
 
-> **Decisión tomada**: se evaluó consolidar todo con Docker Compose en un solo nodo,
-> y **se descartó**. Se replica el esquema actual (LXC por servicio) porque el equipo
-> ya lo conoce, se opera igual y C1 lo aguanta (probado). El costo es un poco más de
-> RAM (cada LXC tiene su propio SO), y se asume.
+| Recurso          | Valor                          |
+|------------------|--------------------------------|
+| Nodo             | Proxmox VE 8.4.21              |
+| CPU              | 2 vCPU                         |
+| Memoria          | ~4,1 GB de RAM                 |
+| Disco            | ~86 GB (37,6 + 48,6)           |
+| Acceso           | Solo por Tailscale             |
+| Cuenta del grupo | `infra@pve`                    |
+| Root             | **No disponible** (verificado) |
 
-```
-                        Internet
-                           │
-                           v
-                 ┌───────────────────────┐
-                 │   C1 (universidad)    │  IP pública FIJA
-                 │                       │
-                 │  CT-proxy  (nginx)    │  TLS + /api + /swagger
-                 │     │           │     │
-                 │     v           v     │
-                 │  CT-front     CT-api  │
-                 │  (nginx SPA)  (Go)    │
-                 │                 │     │
-                 │        ┌────────┼──────────┐
-                 │        v        v          v
-                 │    CT-db      CT-redis   CT-relay
-                 │   (postgres)             (postfix)
-                 │                            │
-                 └────────────────────────────┼───────┘
-                                              v
-                                            Brevo ──> destinatarios
-```
+**Detalle:**
 
-### Contenedores a crear en C1
+- Es un nodo **independiente** (no es clúster): se administra desde su panel web.
+- Se entra **solo por Tailscale**: sin Tailscale encendido y conectado, el nodo no responde.
+- La cuenta del grupo crea y administra máquinas y **solo** las conecta a las redes internas.
+- **Sin root**: el equipo nunca tuvo root en el nodo (`sudo` pide contraseña). La
+  administración es por panel + usuario SSH (`nicolas.lencina`).
 
-| CT          | Nombre                       | Servicio                  | Rol                              |
-|-------------|------------------------------|---------------------------|----------------------------------|
-| CT200       | `centinela-proxy`            | nginx                     | Entrada, TLS, proxy              |
-| CT201       | `centinela-db`               | PostgreSQL                | Base de datos                    |
-| CT202       | `centinela-api`              | Go (systemd)              | API                              |
-| CT203       | `centinela-front`            | nginx                     | Sirve el SPA                     |
-| CT204       | `centinela-redis`            | Redis                     | Caché / tickets                  |
-| CT205       | `centinela-smtp-brevo`       | postfix                   | Relay de correo a Brevo          |
+### Las redes
 
-*(Los IDs son una sugerencia; se ajustan a los que estén libres en C1.)*
+| Red       | Bridge | Rango        | Salida       |
+|-----------|--------|--------------|--------------|
+| Campus    | vmbr0  | 10.7.93.0/24 | solo el host |
+| Interna A | vmbr1  | 10.10.1.0/24 | sin salida   |
+| Interna B | vmbr2  | 10.10.2.0/24 | sin salida   |
+| Interna C | vmbr3  | 10.10.3.0/24 | sin salida   |
+
+**Detalle:**
+
+- Las internas **no tienen uplink, ni gateway, ni NAT** hoy: los huéspedes no navegan.
+- El **host sí tiene IP en cada bridge interna** (`10.10.1.1`, `10.10.2.1`, `10.10.3.1`):
+  ahí puede escuchar un **proceso de usuario** (sin root) que dé salida puntual.
+- El nodo **no rutea entre redes internas**: todo el stack va en **una sola bridge** (`vmbr1`).
+- El **host** sale a internet por `vmbr0` (la salida del campus) y por ahí corre Tailscale.
+
+### La consecuencia principal (el "servicio de msj")
+
+El diseño original del lab (doc 10) prevé "red interna **con salida a internet** y sin
+acceso al campus", pero esa etapa (**NAT**) **requiere root** y **no está aplicada**.
+Sin root no se puede aplicar; entonces el correo se resuelve con un **reenviador de usuario
+en el host** (sección 4) y la instalación se hace **preparando los CT afuera**.
 
 ---
 
-## 2. Inventario: qué hay hoy y cómo se replica
+## 2. Arquitectura objetivo en C1
 
-| Componente          | Hoy (casa)                        | En C1                                |
-|---------------------|-----------------------------------|--------------------------------------|
-| Proxy / TLS         | CT100 nginx                       | CT200 nginx                          |
-| Frontend            | CT103 nginx + SPA                 | CT203 nginx + SPA                    |
-| Backend             | CT102 Go + systemd                | CT202 Go + systemd                   |
-| Base de datos       | CT101 PostgreSQL                  | CT201 PostgreSQL                     |
-| Redis               | CT106 Redis                       | CT204 Redis                          |
-| Relay correo        | CT107 postfix                     | CT205 postfix                        |
-| Red interna         | vmbr0 `10.10.10.0/24`             | bridge de C1 (a definir)             |
-| Acceso              | `centinela.tail6bb3f3.ts.net`     | dominio/Tailscale de C1              |
+Se mantiene el esquema de casa: **un contenedor por servicio**. Se evaluó consolidar
+con Docker Compose y **se descartó** (menos componentes a gestionar).
 
-**Repositorios que se usan**
+```
+                      Notebooks del equipo (Tailscale)
+                                 │
+                                 v   (publicación por el host, Fase 4)
+                ┌────────────────────────────────┐
+                │            C1 (ING3)           │
+                │                                │
+                │  CT-proxy  (nginx)  10.10.1.10 │
+                │     │           │              │
+                │     v           v              │
+                │  CT-front     CT-api           │
+                │  10.10.1.13   10.10.1.12       │
+                │                 │              │
+                │        ┌────────┼─────────┐    │
+                │        v        v         v    │
+                │    CT-db      CT-redis   CT-relay
+                │  10.10.1.11  10.10.1.14  10.10.1.15
+                │                             │  │
+                └─────────────────────────────┼──┘
+                                              v  10.10.1.1:2587 (reenviador de usuario)
+                                            Brevo (587) ──> destinatarios
+```
 
-- `orchestrator` (general/infra): `compose.yaml`, `docker/`, `documentacion/`, scripts de deploy.
-- `backend` (submódulo, `tayraag/centinela-back`): código Go.
-- `frontend` (submódulo, `luzpacello/centinela-front`): SPA React.
+### Contenedores a crear
+
+| CT  | Nombre                 | Servicio     | IP sugerida |
+|-----|------------------------|--------------|-------------|
+| 200 | `centinela-proxy`      | nginx        | 10.10.1.10  |
+| 201 | `centinela-db`         | PostgreSQL   | 10.10.1.11  |
+| 202 | `centinela-api`        | Go (systemd) | 10.10.1.12  |
+| 203 | `centinela-front`      | nginx        | 10.10.1.13  |
+| 204 | `centinela-redis`      | Redis        | 10.10.1.14  |
+| 205 | `centinela-smtp-brevo` | postfix      | 10.10.1.15  |
+
+*(IDs e IPs son una sugerencia; se ajustan a lo que esté libre.)*
 
 ---
 
 ## 3. Presupuesto de recursos (LXC por servicio)
 
-Cada LXC tiene el costo de su propio sistema operativo (~80–120 MB en reposo) más el servicio.
+| CT        | RAM asignada    | Disco         | Nota                         |
+|-----------|-----------------|---------------|------------------------------|
+| `proxy`   | 256 MB          | 2 GB          | nginx es liviano             |
+| `db`      | 512–1024 MB     | 8–10 GB       | el más pesado; guarda estado |
+| `api`     | 256 MB          | 4 GB          | binario Go + logs            |
+| `front`   | 256 MB          | 2 GB          | nginx estático               |
+| `redis`   | 256 MB          | 2 GB          | caché                        |
+| `relay`   | 256 MB          | 2 GB          | postfix                      |
+| **Total** | **~1,8–2,3 GB** | **~20–22 GB** | + lo que use el host         |
 
-| CT                   | RAM asignada        | Disco             | Nota                                |
-|----------------------|---------------------|-------------------|-------------------------------------|
-| `proxy`              | 256 MB              | 2 GB              | nginx es liviano                    |
-| `db`                 | 512–1024 MB         | 8–10 GB           | el más pesado; guarda estado        |
-| `api`                | 256 MB              | 4 GB              | binario Go + logs                   |
-| `front`              | 256 MB              | 2 GB              | nginx estático                      |
-| `redis`              | 256 MB              | 2 GB              | caché                               |
-| `relay`              | 256 MB              | 2 GB              | postfix                             |
-| **Total**            | **~1.8–2.3 GB**     | **~20–22 GB**     | + lo que use el host                |
+**Detalle:**
 
-Con **4 GB de RAM** en C1 va cómodo (confirmado).
-Si aprieta, se puede bajar cada CT a 192 MB y la db a 512 MB.
+- Entra cómodo en **4,1 GB / ~86 GB**.
+- **La CPU es el recurso fino**: 2 vCPU para todo el nodo. Operaciones de a una.
+- **Nada de runners de CI en el nodo**.
 
 ---
 
-## 4. Requisitos previos (antes de tocar C1)
+## 4. El camino del correo (sin root)
 
-- [ ] Acceso SSH al Proxmox de C1 (usuario + clave).
-- [ ] **IP pública fija** confirmada (la que ve internet).
-- [ ] Template LXC disponible (`debian-13-standard` o el que haya).
-- [ ] Storage para los rootfs (`local-lvm` o equivalente).
-- [ ] Bridge de red + gateway + DNS definidos.
-- [ ] Puerto 80/443 accesibles (o el que asigne la facultad).
-- [ ] DNS o Tailscale para el acceso con nombre.
-- [ ] Credenciales de Brevo: **SMTP key** (`SMTP_USER` / `SMTP_PASS`) y acceso al **panel**.
-- [ ] El **dump** de la base actual (para migrar usuarios y auditoría).
-- [ ] Los repos clonados (o los archivos del relay del PR #1).
+**Cómo sale** (verificado el 06/10, solo lectura):
+
+1. El **host ya tiene internet** (la salida del campus). No hace falta NAT para esto.
+2. Un **proceso de usuario** (no root) en el host escucha en `10.10.1.1:2587` y reenvía a
+   `smtp-relay.brevo.com:587`:
+
+```bash
+socat TCP-LISTEN:2587,bind=10.10.1.1,fork,reuseaddr TCP:smtp-relay.brevo.com:587
+```
+
+3. El **relay** (CT205) entrega a `[10.10.1.1]:2587`.
+4. Brevo recibe desde la **IP pública del campus**: `170.210.70.248` (medida, estable en
+   las muestras; sin IPv6).
+
+**Persistencia sin root:** `cron` de usuario (`@reboot`) con un watchdog simple; `tmux`
+también está disponible.
+
+**Pendientes antes de ejecutar:**
+
+| #   | Pendiente                          | Quién      |
+|-----|------------------------------------|------------|
+| 1   | Autorizar la IP de egreso en Brevo | Nicolás    |
+| 2   | Rotar la clave SMTP                | Nicolás    |
+| 3   | Probar el firewall (CT → host)     | Despliegue |
+| 4   | Probar el reenviador con un CT     | Despliegue |
+
+**Detalle:**
+
+- **1** — `170.210.70.248` en Authorized IPs, con el bloqueo activo.
+- **2** — la clave actual estuvo expuesta.
+- **3** — CT → `10.10.1.1:2587`; si el firewall corta, la regla se agrega desde el panel.
+- **4** — extremo a extremo: cliente → relay → Brevo.
+
+**Plan B (fuerza mayor):** si el camino directo no funcionara, el correo sale por el
+**relay de casa** con un puente Tailscale armado del lado nuestro (los equipos compartidos
+están en cuarentena: reciben conexiones, no las inician; el puente no puede depender del
+nodo). No es el plan principal.
+
+**Si algún día hay root:** se aplica el egreso documentado del lab (NAT + bloqueos) y el
+relay pasa a Brevo directo, sin cambiar nada más.
+
+**Instalación (sin salida general):** los CT se **preparan afuera** (en casa) y se traen
+con `vzdump`/restore; alternativa futura: un proxy de usuario para `apt`.
+
+### Verificado en casa (30/10/2026)
+
+El relay de casa salía a Brevo con la IP pública autorizada. La cola se trababa porque el
+firewall del host solo dejaba salir al proxy: las reglas de 587/465 habían quedado en un
+snapshot viejo. El fix que funcionó fue **acotar** el egreso al relay, sin abrirlo a todos:
+
+```bash
+iptables -t nat -A POSTROUTING -s <IP-RELAY>/32 -o <UPLINK> -p tcp -m multiport --dports 587,465 -j MASQUERADE
+iptables -A FORWARD -i <BRIDGE> -o <UPLINK> -s <IP-RELAY>/32 -p tcp -m multiport --dports 587,465 -j ACCEPT
+```
+
+Resultado: TCP 587 + STARTTLS TLS 1.3 con el certificado de Brevo, cola vacía y 8 mensajes
+con `250 2.0.0 OK`. En C1 no hace falta: el relay vive en `vmbr1` (con SNAT) y Brevo autoriza
+`170.210.70.248`. Si el 587 estuviera bloqueado, probar 465; si todo el SMTP saliente está
+bloqueado, relay en VPS por 443 o API HTTP de Brevo.
 
 ---
 
 ## 5. Runbook (paso a paso)
 
-### Fase 0 — Preparar el host C1
+### Fase 0 — Preparar
 
-1. Verificar template, storage y red disponibles:
-   ```bash
-   pveam list local | grep debian
-   pvesm status
-   grep -E "iface vmbr|address|bridge" /etc/network/interfaces
-   ```
-2. Anotar: **bridge**, **gateway** y **DNS** (los que use C1).
-3. Verificar la IP pública: `curl -s https://api.ipify.org` (es la que va a Brevo).
-4. **DNS**: si el resolver del host es un stub local (`127.0.0.53`), los contenedores
-   no lo alcanzan. A los LXC hay que darles un **nameserver alcanzable** (ver Gotcha 1).
+1. Pendientes de la sección 4 (Brevo + reenviador + firewall).
+2. Verificar que el reenviador esté arriba: `ss -tln | grep 2587`.
+3. Anotar de C1: IDs libres, almacenamiento (`local`, `local-lvm`) y bridge (`vmbr1`).
+4. Certificado: cert del nodo (Tailscale) o self-signed.
 
 ### Fase 1 — Crear los 6 contenedores
 
-Para cada uno (ajustando ID, IP y tamaño):
+Desde el panel con `infra@pve` (o por `pct` si se hace por SSH):
 
 ```bash
-pct create 20X local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst \
-  --hostname centinela-<servicio> \
-  --cores 1 --memory <RAM> --swap 256 \
+pct create 20X local:vztmpl/debian-13-standard_...tar.zst \
+  --hostname centinela-<servicio> --cores 1 --memory <RAM> --swap 256 \
   --rootfs local-lvm:<GB> \
-  --net0 name=eth0,bridge=<bridge>,ip=<IP>/24,gw=<gw>,firewall=1 \
-  --nameserver <DNS-alcanzable> \
+  --net0 name=eth0,bridge=vmbr1,ip=10.10.1.1X/24,firewall=1 \
   --unprivileged 1 --onboot 1 \
   --description "<servicio> de Centinela"
 pct start 20X
 ```
 
-Verificación rápida por CT: `pct exec 20X -- ip -brief a` y `getent hosts deb.debian.org`.
+**Detalle:** **sin gateway** (la red no tiene salida general); para llegar al host alcanza
+la misma subred (`10.10.1.1`). Nombres internos por `/etc/hosts`.
 
-### Fase 2 — Base de datos (CT201) y Redis (CT204)
+### Fase 2 — Base de datos (201) y Redis (204)
 
-1. **Postgres**: instalar, crear la base y el usuario de la app.
-2. **Migrar los datos actuales**:
-   - En casa: `pg_dump` de `centinela_test`.
-   - Copiar el dump a C1 y restaurarlo.
-3. **Redis**: instalar, setear password y `bind` a la red interna.
-4. Verificar: `\dt`, conteo de usuarios, y que el trigger de auditoría exista.
+1. Postgres y Redis: instalados **desde la imagen preparada** (o vía proxy).
+2. **Migrar los datos**: `pg_dump` en casa y traer el dump por `pct push`/restore.
+3. Verificar: `\dt`, usuarios y trigger de auditoría.
 
-### Fase 3 — Backend (CT202)
+### Fase 3 — Backend (202)
 
-1. Instalar el toolchain Go (o compilar afuera y copiar el binario).
-2. Crear el `.env` real (permisos `600`) con TODAS las variables (ver Anexo A).
-3. Apuntar `SMTP_HOST` al **relay** (IP de CT205) y `SMTP_PORT=25`.
-4. Crear el servicio systemd `centinela-api` con `EnvironmentFile=/etc/centinela-api.env`.
-5. Arrancar y verificar `GET /api/version`.
+1. Binario Go (o toolchain si hubiera salida).
+2. `.env` real (permisos `600`) — Anexo A. `SMTP_HOST` = relay (`10.10.1.15`),
+   `SMTP_PORT=25`.
+3. Servicio systemd `centinela-api`; verificar `GET /api/version`.
+4. La app alcanza la **API de Proxmox** del host por la bridge interna (confirmar IP).
 
-### Fase 4 — Frontend (CT203) y Proxy (CT200)
+### Fase 4 — Frontend (203) y Proxy (200)
 
-1. Build del SPA (`pnpm build`) con `VITE_API_BASE_URL=/api`.
-2. CT203: nginx sirviendo el SPA (fallback `try_files ... /index.html`).
-3. CT200: nginx de entrada que:
-   - sirve `/` → CT203,
-   - proxipea `/api/` → CT202:8080,
-   - normaliza `/swagger` → CT202,
-   - tiene el TLS (cert real: Tailscale cert o Let's Encrypt de la facultad).
+1. Build del SPA y nginx con TLS.
+2. **Publicar al equipo** con el mismo patrón del correo: un proceso de usuario en el host
+   escuchando en la IP Tailscale (`100.116.49.111`) en un **puerto no privilegiado** y
+   reenviando al CT200:
 
-### Fase 5 — Relay `centinela-smtp-brevo` (CT205)
+```bash
+socat TCP-LISTEN:8443,bind=100.116.49.111,fork,reuseaddr TCP:10.10.1.10:443
+```
 
-En el repo (PR #1) está la configuración del relay como **plantilla**: `docker/relay/main.cf.tpl`.
-(Ese directorio es la variante Docker; **en C1 no se usa Docker**: se instala postfix nativo
-en el CT y se toma ese `main.cf` como base.)
+El equipo entra por `https://100.116.49.111:8443/`.
 
-1. Instalar `postfix`, `libsasl2-modules`, `ca-certificates`.
-2. Generar el certificado del relay (SAN = su IP interna) para el STARTTLS.
-3. Configurar postfix como relay a Brevo (STARTTLS + clave SMTP) — mismo `main.cf`
-   que en casa.
-4. Desactivar chroot y copiar el `resolv.conf` (ver Gotcha 2).
-5. Probar: cliente → relay → Brevo, con `status=sent` en el log.
+### Fase 5 — Relay `centinela-smtp-brevo` (205)
+
+1. Postfix nativo, igual que en casa (no Docker).
+2. `relayhost = [10.10.1.1]:2587`. El STARTTLS se negocia extremo a extremo con Brevo
+   (el reenviador es transparente). Si algún día se activa validación de certificado,
+   usar `smtp_tls_policy_maps` con `match=smtp-relay.brevo.com`.
+3. Probar: cliente → relay → Brevo con `status=sent`.
 
 ### Fase 6 — Brevo
 
-1. Panel → **Settings → Security → Authorized IPs**.
-2. **Agregar la IP pública de C1** (dejar la de casa durante la transición).
-3. **SMTP keys → Blocking: activado**.
-4. Verificar el **remitente** (`centinelauntdf@gmail.com`) activo.
-5. **Higiene**: rotar la SMTP key (la actual estuvo expuesta en ClickUp).
-6. Recordar el límite: **free = 300 envíos/día** (compartido por toda la cuenta).
+1. Autorizar `170.210.70.248` (Authorized IPs) con el **bloqueo activo**.
+2. **Rotar la SMTP key** (la actual estuvo expuesta).
+3. Recordar: free = **300 envíos/día**.
 
 ### Fase 7 — Verificación end-to-end
 
-1. Alta de un usuario de prueba → debe llegar el correo con la clave temporal.
-2. "Olvidé mi contraseña" → debe llegar el OTP.
-3. En Brevo: confirmar eventos `delivered`.
-4. Integridad: retener un mensaje con `defer_transports`, `postcat` para ver el cuerpo
-   intacto (con acentos), y liberarlo.
+1. Alta de usuario de prueba → correo con clave temporal.
+2. Recuperación → OTP.
+3. Brevo: eventos `delivered`.
+4. Integridad con `postcat`.
 
 ---
 
-## 6. Gotchas (lo que aprendimos a golpes)
+## 6. Gotchas
 
-Estos problemas **ya nos costaron tiempo** en casa. En C1 reaparecen si no se tienen en cuenta.
+Los de casa (siguen valiendo): DNS del contenedor; chroot de postfix; faltante de
+`libsasl2-modules`; egreso restringido; sin ruta IPv6; STARTTLS y certificados; go-mail
+oportunista; bloqueo de Brevo (`525`); auditoría inmutable.
 
-### Gotcha 1 — DNS dentro de los contenedores
-- **Síntoma**: `getent hosts smtp-relay.brevo.com` vacío; el correo queda en cola con
-  `Host or domain name not found`.
-- **Causa**: el contenedor no puede usar el resolver del host (`127.0.0.53`, systemd-resolved).
-- **Solución**: darle un `nameserver` alcanzable (el DNS del lab o uno público permitido).
+De C1:
 
-### Gotcha 2 — postfix en chroot no ve el DNS
-- **Síntoma**: postfix resuelve bien desde el shell pero al enviar falla.
-- **Causa**: postfix corre enjaulado (chroot) y adentro no ve `/etc/resolv.conf`.
-- **Solución**: `postconf -F '*/*/chroot = n'` + copiar el `resolv.conf` al jaque.
+### Gotcha 10 — Sin salida general
+- Los CT no navegan: `apt` no funciona adentro. Los CT se preparan afuera.
 
-### Gotcha 3 — Falta `libsasl2-modules`
-- **Síntoma**: `SASL authentication failure: No worthy mechs found`.
-- **Causa**: falta el paquete con los mecanismos SASL (LOGIN/PLAIN).
-- **Solución**: instalar `libsasl2-modules` en el CT del relay.
+### Gotcha 11 — Una sola bridge
+- El nodo no rutea entre `vmbr1/2/3`: todo el stack en `vmbr1`.
 
-### Gotcha 4 — Egreso restringido
-- **Síntoma**: `apt` no llega a `deb.debian.org:80` (timeout).
-- **Causa**: la red bloquea puertos/hosts; solo pasan algunos (ej. 587 a Brevo).
-- **Solución**: bajar el `.deb` en el host (que sí tiene internet) y pasarlo al CT con `pct push`.
+### Gotcha 12 — La IP que ve Brevo es la del campus
+- `170.210.70.248`; puede ser compartida. Mantener el bloqueo y la clave rotada.
 
-### Gotcha 5 — Sin ruta IPv6
-- **Síntoma**: `apt` intenta IPv6 y falla (`Network is unreachable`).
-- **Solución**: forzar IPv4 (`-o Acquire::ForceIPv4=true`).
+### Gotcha 13 — 2 vCPU
+- Nada de runners de CI; operaciones de a una.
 
-### Gotcha 6 — STARTTLS interno y certificados
-- **Síntoma**: el backend rechaza el STARTTLS del relay (cert no confiable).
-- **Causa**: el certificado es self-signed y el cliente valida contra el nombre/IP.
-- **Solución**: generar el cert con **SAN** correcto (IP del relay) e **instalarlo como
-  confiable** en el backend (`update-ca-certificates`).
+### Gotcha 14 — Sin root
+- El egreso (NAT) del diseño no se puede aplicar: el correo va por el reenviador de
+  usuario; los cambios de host quedan para quien tenga root.
 
-### Gotcha 7 — Cómo se comporta el cliente SMTP (go-mail)
-- STARTTLS es **oportunista**: si el server no lo ofrece, sigue en texto plano.
-- AUTH solo se intenta **si el servidor lo anuncia**.
-- Por eso apuntar el backend a un relay sin TLS/AUTH funciona, y con TLS funciona igual.
-
-### Gotcha 8 — Brevo bloquea por IP de origen (`525`)
-- **Síntoma**: `525 "5.7.1 Unauthorized IP address"` y las altas/recuperaciones fallan.
-- **Causa**: el bloqueo de IPs para SMTP keys está activo y la IP de salida no está autorizada.
-- **Solución**: el relay (IP fija) + autorizar esa única IP. Nunca "abrir" el bloqueo.
-
-### Gotcha 9 — La auditoría es inmutable
-- **Síntoma**: `DELETE` de un usuario falla por FK `RESTRICT` + trigger.
-- **Causa**: `auditoria` tiene un trigger que prohíbe `DELETE/UPDATE/TRUNCATE`.
-- **Consecuencia**: un usuario con auditoría **no se puede borrar físicamente**.
-  Para "dar de baja" se usa soft-delete + anonimización (no borrado físico).
+### Gotcha 15 — Firewall del host activo
+- `pve-firewall` está activo: probar CT → host con el primer CT; si corta, agregar la
+  regla desde el panel.
 
 ---
 
-## 7. Plan B / rollback
+## 7. Rollback
 
-Si algo sale mal en C1, **volver atrás es simple**:
-
-1. En el backend de C1, devolver `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=587`
-   (y `SMTP_USER/PASS/FROM` de Brevo).
-2. En Brevo, **desactivar** el bloqueo de SMTP keys (o autorizar la IP que corresponda).
-3. El resto del stack no depende del relay: se puede dejar como está.
-
-El sistema sigue andando en casa (PRUEBAS) mientras tanto.
+- Apagar el reenviador del host si hiciera falta (matar solo ese `socat`).
+- En emergencia de correo: apuntar el relay al **relay de casa** (plan B).
+- El resto del stack no depende del correo; casa sigue andando (PRUEBAS).
 
 ---
 
-## 8. Checklist del día de la migración
+## 8. Checklist del día
 
-- [ ] Host C1 con template, storage y red listos.
-- [ ] 6 LXC creados y con DNS funcionando.
-- [ ] Base migrada (dump/restore) y verificada.
-- [ ] Redis arriba con password.
-- [ ] Backend arriba con el `.env` completo (`600`) y systemd.
-- [ ] Frontend servido y `/api` proxiado por el proxy.
-- [ ] Relay arriba, con STARTTLS y cert confiado por el backend.
-- [ ] IP de C1 autorizada en Brevo + bloqueo activo.
-- [ ] SMTP key rotada.
-- [ ] Alta de usuario de prueba → correo `delivered`.
-- [ ] Recuperación de contraseña → OTP `delivered`.
-- [ ] Rollback anotado (sección 7) por si falla.
+- [ ] IP autorizada en Brevo + clave rotada + bloqueo activo.
+- [ ] Reenviador arriba y persistente (`10.10.1.1:2587`).
+- [ ] Firewall probado (CT → host:2587).
+- [ ] 6 LXC creados/restaurados en `vmbr1`.
+- [ ] Base migrada y verificada; Redis con password.
+- [ ] Backend `.env` (600) y systemd.
+- [ ] Front servido y `/api` proxiado.
+- [ ] App publicada al equipo y probada.
+- [ ] Relay con `relayhost=[10.10.1.1]:2587`.
+- [ ] Alta → `delivered`; recuperación → OTP.
+- [ ] Rollback anotado.
 
 ---
 
@@ -304,75 +339,84 @@ El sistema sigue andando en casa (PRUEBAS) mientras tanto.
 
 ### Anexo A — Variables del backend (`.env` real, permisos `600`)
 
-| Variable                         | Para qué                                        |
-|----------------------------------|-------------------------------------------------|
-| `AUTH_MODE`                      | Modo de autenticación (`postgres`)              |
-| `DATABASE_URL` / `DB_DSN`        | Conexión a PostgreSQL                           |
-| `HTTP_ADDR`                      | Puerto de la API (`:8080`)                      |
-| `JWT_SECRET`                     | Firma de tokens                                 |
-| `TOTP_ENCRYPTION_KEY`            | Cifrado de los secretos 2FA                     |
-| `ENABLE_SWAGGER`                 | Expone `/swagger`                               |
-| `ALLOWED_ORIGINS`                | CORS                                            |
-| `PROXMOX_*`                      | Integración con Proxmox                         |
-| `REDIS_*`                        | Conexión a Redis                                |
-| `EMAIL_PROVIDER=smtp`            | Proveedor de correo real                        |
-| `SMTP_HOST`                      | **El relay** (IP del CT205)                     |
-| `SMTP_PORT`                      | `25` (interno)                                  |
-| `SMTP_USER/PASS`                 | Credenciales SMTP de Brevo                      |
-| `SMTP_FROM`                      | Remitente (`centinelauntdf@gmail.com`)          |
+| Variable                  | Para qué                           |
+|---------------------------|------------------------------------|
+| `AUTH_MODE`               | Modo de autenticación (`postgres`) |
+| `DATABASE_URL` / `DB_DSN` | Conexión a PostgreSQL              |
+| `HTTP_ADDR`               | Puerto de la API (`:8080`)         |
+| `JWT_SECRET`              | Firma de tokens                    |
+| `TOTP_ENCRYPTION_KEY`     | Cifrado de los secretos 2FA        |
+| `ENABLE_SWAGGER`          | Expone `/swagger`                  |
+| `ALLOWED_ORIGINS`         | CORS                               |
+| `PROXMOX_*`               | Integración con Proxmox            |
+| `REDIS_*`                 | Conexión a Redis                   |
+| `EMAIL_PROVIDER=smtp`     | Proveedor de correo real           |
+| `SMTP_HOST`               | **El relay** (10.10.1.15)          |
+| `SMTP_PORT`               | `25` (interno)                     |
+| `SMTP_USER/PASS`          | Credenciales SMTP de Brevo         |
+| `SMTP_FROM`               | Remitente                          |
 
-### Anexo B — Config del relay (plantilla en el repo)
+### Anexo B — Config del relay
 
-- `docker/relay/main.cf.tpl` → **la plantilla que se usa** (adaptada al CT).
+- `docker/relay/main.cf.tpl` → plantilla que se usa (adaptada al CT; **sin Docker**).
 - `docker/relay/README.md` → el "por qué" de cada ajuste.
-- `docker/relay/Dockerfile`, `docker/relay/entrypoint.sh`, `compose.relay.yaml`, `.env.relay.example`
-  → variante Docker; **NO se usan en C1** (se instaló postfix nativo en el CT).
 
 ### Anexo C — Comandos clave
 
 ```bash
-# IP pública (lo que ve Brevo)
-curl -s https://api.ipify.org
+# Reenviador de correo en el host (usuario, sin root)
+socat TCP-LISTEN:2587,bind=10.10.1.1,fork,reuseaddr TCP:smtp-relay.brevo.com:587
 
 # Migrar la base (desde casa)
-ssh root@proxmox 'pct exec 101 -- su - postgres -c "pg_dump -d centinela_test -Fc -f /var/lib/postgresql/centinela_test.dump"'
-# copiar el dump y restaurar en C1:
-pg_restore -d centinela_test --clean --if-exists /ruta/centinela_test.dump
+ssh root@proxmox 'pct exec 101 -- su - postgres -c "pg_dump -d centinela_test -Fc -f /tmp/centinela_test.dump"'
+pct push 201 /ruta/centinela_test.dump /root/centinela_test.dump
+pg_restore -d centinela_test --clean --if-exists /root/centinela_test.dump
 
-# Ver logs del relay
-pct exec 205 -- tail -f /var/log/postfix-relay.log
-
-# Probar el relay (cliente -> relay -> Brevo)
-python3 -c "
-import smtplib
-from email.message import EmailMessage
-m=EmailMessage(); m['From']='centinelauntdf@gmail.com'; m['To']='centinelauntdf@gmail.com'
-m['Subject']='Prueba C1'; m.set_content('hola')
-s=smtplib.SMTP('<IP-del-relay>',25,timeout=20); s.send_message(m); print('OK')
-"
+# Publicar la app al equipo
+socat TCP-LISTEN:8443,bind=100.116.49.111,fork,reuseaddr TCP:10.10.1.10:443
 ```
 
 ### Anexo D — Certificado del relay (STARTTLS interno)
 
 ```bash
-# Generar (SAN = IP interna del relay)
 openssl req -x509 -newkey rsa:2048 -nodes -keyout relay.key -out relay.crt -days 3650 \
   -subj "/CN=centinela-smtp-brevo" -addext "subjectAltName=IP:<IP-del-relay>"
-
-# En el backend: instalar como CA confiable
 cp relay.crt /usr/local/share/ca-certificates/centinela-smtp-brevo.crt
 update-ca-certificates
 ```
+
+### Anexo E — Evidencia de la verificación (06/10/2026, solo lectura)
+
+| Chequeo          | Resultado                                   |
+|------------------|---------------------------------------------|
+| Usuario          | nicolas.lencina, sin root (sudo pide clave) |
+| vmbr1 del host   | 10.10.1.1/24                                |
+| Herramientas     | socat, python3, tmux, cron OK               |
+| Firewall         | pve-firewall activo                         |
+| IP de egreso     | 170.210.70.248 (estable en 3 muestras)      |
+| Brevo 587        | alcanzable; cert regional sudamérica OK     |
+| Brevo 25         | bloqueado (esperado)                        |
+| Postfix del host | localhost:25 (notif. PVE; no tocar)         |
 
 ---
 
 ## 10. Diferencias respecto de casa (resumen)
 
-| Tema                | Casa (hoy)                             | C1 (objetivo)                              |
-|---------------------|----------------------------------------|--------------------------------------------|
-| Contenedores        | 6 LXC separados                        | 6 LXC separados (igual)                    |
-| IP de salida        | domiciliaria (dinámica)                | **fija** (universidad)                     |
-| Relay               | CT107 (`10.10.10.60`)                  | CT205                                      |
-| Brevo IPs           | 1 autorizada (casa)                    | + IP de C1 autorizada                      |
-| Acceso              | Tailscale `centinela.tail6bb3f3`       | dominio/Tailscale de C1                    |
-| Deploy              | scripts `deploy-back/front.sh`         | los mismos scripts (cambiando host/CT)     |
+| Tema              | Casa (hoy)               | C1 (objetivo)                             |
+|-------------------|--------------------------|-------------------------------------------|
+| Contenedores      | 6 LXC separados          | 6 LXC separados (igual)                   |
+| Salida a internet | NAT propio               | reenviador de usuario (solo 587)          |
+| IP de salida      | domiciliaria             | la del campus (170.210.70.248)            |
+| Relay             | CT107 (`10.10.10.60`)    | CT205 (`10.10.1.15`)                      |
+| Brevo IPs         | 1 autorizada (casa)      | + la IP del campus                        |
+| Acceso            | Tailscale propia         | Tailscale del nodo + publicación por host |
+| Deploy            | scripts                  | los mismos scripts (cambiando host/CT)    |
+| CI                | runners en el hipervisor | **no** en el nodo (CPU)                   |
+
+---
+
+## 11. Repositorio y autorizaciones
+
+- El repo principal es **`micaelaalvaradomendez/centinela`**: unifica front y back.
+- **Los despliegues los autorizan únicamente Micaela y Nicolás.** Nada se publica,
+  comenta, pushea ni despliega sin esa autorización.
