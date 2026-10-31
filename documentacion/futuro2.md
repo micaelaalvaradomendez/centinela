@@ -87,10 +87,48 @@ flowchart TD
         FIX117B --> FIX126["FIX-126: Ocultar StorageMeter en operador (Front)"]
         FIX118["FIX-118: Eliminar Admin123! en migraciones (Back)"]
         FIX119["FIX-119: Validar existencia de VMIDs en permisos (Back)"]
+        FIX116 --> FIX127["FIX-127: Normalización de VLAN 0 / untagged en creación (Back)"]
     end
 
     FIX105 --> FIX113
     FIX111A --> FIX114
     FIX112 --> FIX118
 ```
+
+---
+
+### `FIX-127` - Admisión de `vlan: 0` o su omisión como tráfico no etiquetado (*untagged*) en la creación de instancias (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0.5 h
+- **Depende de:** `BAC-37`, `RF-07`
+- **Problema técnico detallado:**
+  En `backend/internal/adapters/primary/http/instance_handler.go:427-429`, la función `validarCreacionNormalizada` aplica la siguiente regla de validación sobre el identificador de red VLAN:
+  ```go
+  if input.VLAN != nil && (*input.VLAN < 1 || *input.VLAN > 4094) {
+      return ports.CrearInstanciaProxmoxInput{}, fmt.Errorf("vlan debe estar entre 1 y 4094")
+  }
+  ```
+  Al enviar peticiones desde el frontend o clientes API donde no se configura una VLAN explícita (tráfico nativo *untagged* por defecto), los serializadores JSON suelen enviar `"vlan": 0` (o `null`). Debido a que el DTO `CrearInstanciaRedRequest.VLAN` se bindea como un puntero a entero (`*int`), un valor numérico `0` hace que `input.VLAN != nil` sea verdadero y que `*input.VLAN < 1` falle la condición. Esto provoca una respuesta inmediata `400 Bad Request: vlan debe estar entre 1 y 4094`, bloqueando la creación de cualquier instancia (VM o LXC).
+
+  En redes basadas en el estándar IEEE 802.1Q y en Proxmox VE, el valor `0` representa la ausencia de etiqueta VLAN (*tráfico nativo / sin etiquetar*). En el hipervisor Proxmox VE, los parámetros de red únicamente llevan la directiva `,tag=<id>` cuando la VLAN es efectiva ($\ge 1$).
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/adapters/primary/http/instance_handler.go`, dentro de `validarCreacionNormalizada`, admitir explícitamente `0` transformándolo en `nil` (o saneando el puntero antes de validar):
+     ```go
+     if input.VLAN != nil {
+         if *input.VLAN == 0 {
+             input.VLAN = nil
+         } else if *input.VLAN < 1 || *input.VLAN > 4094 {
+             return ports.CrearInstanciaProxmoxInput{}, fmt.Errorf("vlan debe estar entre 1 y 4094")
+         }
+     }
+     ```
+  2. Verificar que en `internal/adapters/secondary/proxmox/client.go` (`AprovisionarInstancia`), la directiva de red `net0` no incluya `,tag=0` cuando el valor sea `nil` o `0` (el cliente actual ya valida `if input.VLAN != nil { net0 += ",tag=" + strconv.Itoa(*input.VLAN) }`).
+  3. Añadir pruebas unitarias en `instance_handler_test.go` verificando que un payload de creación con `"vlan": 0`, `"vlan": null` o con el campo omitido sea aceptado exitosamente con respuesta `202 Accepted` y despachado sin error.
+- **Criterio de éxito:**
+  - `POST /api/instances` acepta peticiones con `"vlan": 0`, interpretándolas como interfaz de red nativa sin etiquetar (*untagged*).
+  - No se rechaza con `400 INVALID_REQUEST` ante la ausencia o valor neutro (`0`) de VLAN.
+  - La suite de pruebas de handlers y creación de instancias pasa al 100% en verde.
+
 
