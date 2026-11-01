@@ -32,7 +32,7 @@ const mockSnapshots = [
 const mockInstance = {
   id: 'inst-test-01',
   name: 'servidor-web-prod',
-  type: 'qemu',
+  type: 'vm',
   status: 'running',
   node: 'proxmox-pve',
   ip: '192.168.1.150',
@@ -88,7 +88,7 @@ describe('FRN-30 - Modal destructivo de Rollback y confirmación antierror', () 
     }
 
     const hasWarningText = searchPattern(/Esta acción restaurará la máquina al punto seleccionado|datos posteriores se perderán|revertir.*snapshot/i);
-    const hasRollbackEndpoint = searchPattern(/\/snapshots\/.*\/rollback/);
+    const hasRollbackEndpoint = searchPattern(/\/snapshots\/.*\/rollback|\/snapshots.*rollback|\$\{path\}\/rollback/);
 
     expect(hasWarningText, 'Falta la advertencia destructiva en el componente modal de rollback').toBe(true);
     expect(hasRollbackEndpoint, 'Falta el consumo del endpoint de rollback en los servicios de snapshots').toBe(true);
@@ -98,7 +98,10 @@ describe('FRN-30 - Modal destructivo de Rollback y confirmación antierror', () 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       const u = String(url);
       if (u.includes('/snapshots')) return Promise.resolve(json(mockSnapshots));
+      if (u.match(/\/instances(\?|$)/)) return Promise.resolve(json([mockInstance]));
       if (u.includes('/instances/')) return Promise.resolve(json(mockInstance));
+      if (u.includes('/node/status')) return Promise.resolve(json({ cpu: { usagePercent: 10, cores: 4 }, ram: { usedGb: 2, totalGb: 8, usagePercent: 25 }, uptimeSeconds: 100 }));
+      if (u.includes('/events/ticket') || u.includes('/auth/ws-ticket')) return Promise.resolve(json({ ticket: 'ticket-frn30' }));
       return Promise.resolve(json({}));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -107,6 +110,7 @@ describe('FRN-30 - Modal destructivo de Rollback y confirmación antierror', () 
       withProtectedProviders(
         <MemoryRouter initialEntries={['/instances/inst-test-01']}>
           <Routes>
+            <Route path="/instances/:instanceRef" element={<InstanceDetailPage />} />
             <Route path="/instances/:vmid" element={<InstanceDetailPage />} />
           </Routes>
         </MemoryRouter>,

@@ -617,5 +617,72 @@ Verificadas contra backend `c08af54` y frontend `41cad44`.
   3. Actualización inmediata de los valores de CPU/RAM en la cabecera del detalle y en la tabla de `/instances`.
 - **Criterio de éxito:** La modificación de recursos se refleja instantáneamente en la interfaz y emite el feedback correspondiente al estado de hot-plug.
 
+---
+
+## Verificación del 30/10/2026
+
+Verificadas contra frontend `594a4e0` y backend `908522e`.
+
+#### `FRN-36` (`BRG-10-FRN`) - Modularización de `InstanceDetailPage` para Pestaña de Snapshots y Estados Transitorios
+
+> [!NOTE]
+> **Estado verificado (30/10/2026, frontend `594a4e0`): implementada y con tests en verde.** Pasa la suite `test/front/frn-36-29-snapshots-ui.test.tsx` (7 de 7 pruebas en verde, 100% ✅). Reestructuración modular de pestañas en `InstanceDetailPage.tsx`, soporte para `SNAPSHOTTING` y `ROLLING_BACK` en `InstanceStatusBadge`, y bloqueo reactivo de la botonera de acciones rápidas ante `activeTask`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 2.0 h
+- **Depende de:** `FRN-21`, `FRN-28`.
+- **Problema:** La página de detalle actual tiene pestañas fijas y no propaga el estado de bloqueo a la cabecera cuando una máquina está en transición asíncrona.
+- **Entregable:**
+  1. Reestructuración de `InstanceDetailPage.tsx` con soporte para pestañas modulares (dejando listo el slot para "Snapshots").
+  2. Soporte en el badge de estado para etiquetas transitorias: `SNAPSHOTTING` (azul), `ROLLING_BACK` (amarillo/naranja).
+  3. Deshabilitación reactiva de la botonera de acciones rápidas de la cabecera cuando `instance.activeTask != null`.
+- **Criterio de éxito:** Si la máquina reporta `activeTask`, los botones de la cabecera se bloquean con spinner y la pestaña de Snapshots cuenta con su contenedor maquetado.
+
+#### `FIX-91` - Eliminar el componente muerto `InstanceTester` (`FRN-15` / `FRN-16`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (30/10/2026, frontend `594a4e0`): implementada y con tests en verde.** Pasa la suite `test/front/fix-91-dead-code.test.tsx` (2 de 2 pruebas en verde, 100% ✅). El archivo `InstanceTester.tsx` fue eliminado de `src/components/features/instances/components/` y ningún archivo de producción importa componentes de prueba ni datos falsos de mock local.
+
+- **Área:** Frontend
+- **Asignado:** Cristian
+- **Estimación:** 0.5 h
+- **Depende de:** `FRN-15`, `FRN-16` (en `terminado-1.md`).
+- **Problema técnico:** `frontend/centinela/src/components/features/instances/components/InstanceTester.tsx` definía datos falsos y simulaba transiciones con `setTimeout`. No se importaba desde ningún archivo de producción y persistía como código muerto.
+- **Entregable:** Eliminación del archivo `InstanceTester.tsx` y verificación de importaciones limpias.
+- **Criterio de éxito:** No queda código de producto con datos mock ni componentes sin importar.
+
+#### `FIX-108` - Adaptación del Frontend para consumo de identificadores de instancia ofuscados (Frontend)
+
+> [!NOTE]
+> **Estado verificado (30/10/2026, frontend `594a4e0`): implementada y con tests en verde.** Pasan `test/front/fix-108-ids-ofuscados.test.tsx` (11 de 11 pruebas en verde) y `frontend/centinela/src/test/ids-ofuscados.test.tsx` (14 de 14 pruebas en verde). El frontend adoptó el identificador de instancia opaco como `string | number` (`InstanceRef`) en inventario, navegación `/instances/:instanceRef` y ciclo de vida sin conversiones destructivas numéricas.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1.5 h
+- **Depende de:** `FIX-107`.
+- **Problema:** El frontend modelaba el identificador de instancia estrictamente como un número entero (`vmid: number`). Al migrar el backend a identificadores opacos/cifrados no secuenciales (ej. `"inst_k8Pq2v"`), el frontend rechazaba las respuestas.
+- **Entregable:**
+  1. En `instance.ts`: actualizar `InventoryInstance` para que `id` admita `string | number` y definir el tipo `InstanceRef`.
+  2. En `instanceService.ts`: flexibilizar la validación para admitir identificadores alfanuméricos y enteros legados.
+  3. En rutas y componentes: navegación `/instances/:instanceRef` sin conversiones destructivas a entero.
+- **Criterio de éxito:** La tabla de instancias renderiza identificadores opacos y las operaciones de ciclo de vida despachan la referencia en la URL sin conversiones numéricas destructivas.
+
+#### `FIX-124` - Sanitización estricta de identificadores opacos de instancia en Frontend (Frontend)
+
+> [!NOTE]
+> **Estado verificado (30/10/2026, frontend `594a4e0`): implementada y con tests en verde.** Pasan `test/front/fix-108-ids-ofuscados.test.tsx` (11 de 11 pruebas en verde) y `frontend/centinela/src/test/ids-ofuscados.test.tsx` (14 de 14 pruebas en verde). `validateInstanceRef` rechaza path traversal (`../`), espacios, inyecciones, query strings y saltos de línea antes de despachar solicitudes de red.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-108`.
+- **Problema técnico:** `validateInstanceRef` sólo recortaba espacios en blanco sin validar contra la expresión regular de identificadores seguros `/^[a-zA-Z0-9_-]+$/`, permitiendo secuencias maliciosas o malformadas.
+- **Entregable:**
+  1. Restricción en `validateInstanceRef` contra `/^[a-zA-Z0-9_-]+$/`.
+  2. Eliminación de la conversión residual `Number(instanceReference)` en `InstanceDetailPage.tsx`.
+  3. Certificación de la suite `test/front/fix-108-ids-ofuscados.test.tsx`.
+- **Criterio de éxito:** Todas las entradas maliciosas o malformadas son rechazadas localmente en `instanceService.ts` antes de despachar solicitudes de red (11/11 pruebas en verde).
+
 
 

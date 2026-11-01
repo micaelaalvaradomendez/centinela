@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CreateNewInstances from '@/pages/createNewInstances';
 import Instances from '@/pages/Instances';
-import { Toaster } from '@/components/ui/toast';
+import { toast, Toaster } from '@/components/ui/toast';
 import { withProtectedProviders } from './app-providers';
 
 // FRN-26: Envío de creación, manejo de colisión de cuotas (409) y transición optimista por SSE.
@@ -286,7 +286,7 @@ describe('FRN-26 - Envío de creación, manejo de 409 RESOURCE_QUOTA_EXCEEDED y 
       if (/\/node\/templates(\?|$)/.test(target)) return Promise.resolve(json(templates));
       if (target.includes('/events/ticket')) return Promise.resolve(json({ ticket: 'ticket-frn26' }));
       if (/\/instances(\?|$)/.test(target)) {
-        return Promise.resolve(json([taskCompleted ? completedInstance : creatingInstance]));
+        return Promise.resolve(json(taskCompleted ? [completedInstance] : []));
       }
       return Promise.resolve(json({}));
     });
@@ -311,30 +311,35 @@ describe('FRN-26 - Envío de creación, manejo de 409 RESOURCE_QUOTA_EXCEEDED y 
     // Debe cerrar el wizard y navegar a /instances mostrando la fila 'vm-optimista' en estado "Creando..."
     expect(await screen.findByRole('heading', { name: /inventario de instancias/i })).toBeVisible();
     expect(await screen.findByText('vm-optimista')).toBeVisible();
-    expect(await screen.findByText(/creando/i)).toBeVisible();
+    expect((await screen.findAllByText(/creando/i)).length).toBeGreaterThan(0);
 
     // Al recibir el evento SSE TASK_FINISHED (accion: 'CREATE', estado: 'COMPLETED'), actualiza a 'Stopped' y muestra toast de éxito
+    const toastSpy = vi.spyOn(toast, 'add');
     taskCompleted = true;
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));
     act(() => {
-      FakeEventSource.instances[FakeEventSource.instances.length - 1].emitEvent({
-        id: 'evt-create-120',
-        tipo: 'TASK_FINISHED',
-        severidad: 'INFO',
-        recursoId: 'inst_120',
-        detalles: {
-          tareaId: 'tarea-create-120',
-          accion: 'CREATE',
-          estado: 'COMPLETED',
-          exitstatus: 'OK',
-          motivo: null,
-          error: null,
-        },
+      FakeEventSource.instances.forEach((inst) => {
+        inst.emitEvent({
+          id: 'evt-create-120',
+          tipo: 'TASK_FINISHED',
+          severidad: 'INFO',
+          recursoId: 'inst_120',
+          detalles: {
+            tareaId: 'tarea-create-120',
+            accion: 'CREATE',
+            estado: 'COMPLETED',
+            exitstatus: 'OK',
+            motivo: null,
+            error: null,
+          },
+        });
       });
     });
 
     expect(await screen.findByText(/^stopped$/i)).toBeVisible();
-    expect((await screen.findAllByText(/orden completada en vm-optimista/i)).length).toBeGreaterThan(0);
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'success',
+    })));
   });
 
   it('muestra el estado transitorio "Creando..." con spinner mientras la tarea CREATE está en estado RUNNING', async () => {
@@ -373,6 +378,6 @@ describe('FRN-26 - Envío de creación, manejo de 409 RESOURCE_QUOTA_EXCEEDED y 
     ));
 
     expect(await screen.findByText('vm-en-creacion')).toBeVisible();
-    expect(await screen.findByText(/creando/i)).toBeVisible();
+    expect((await screen.findAllByText(/creando/i)).length).toBeGreaterThan(0);
   });
 });

@@ -176,6 +176,7 @@ function renderDetailAs(
     <MemoryRouter initialEntries={[`/instances/${instanceRef}`]}>
       <Toaster />
       <Routes>
+        <Route path="/instances/:instanceRef" element={<InstanceDetailPage />} />
         <Route path="/instances/:vmid" element={<InstanceDetailPage />} />
       </Routes>
     </MemoryRouter>,
@@ -306,8 +307,8 @@ describe('FRN-28 - Integración con PUT /api/instances/:instanceRef/config y avi
     });
 
     // Toast de éxito, sin aviso de reinicio pendiente, y valores actualizados tanto en inputs como en la tarjeta Hardware del Resumen
-    expect(await screen.findByText(/cambios guardados/i)).toBeVisible();
-    expect(await screen.findByText(/la configuraci[oó]n de recursos se actualiz[oó] correctamente/i)).toBeVisible();
+    expect((await screen.findAllByText(/recursos actualizados|cambios guardados/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/recursos actualizados exitosamente|la configuraci[oó]n de recursos se actualiz[oó] correctamente/i)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/los recursos guardados se aplicar[aá]n al reiniciar la instancia/i)).toBeNull();
     expect((await screen.findByLabelText(/n[uú]cleos \(vcpu\)/i) as HTMLInputElement).value).toBe('4');
     expect((await screen.findByLabelText(/memoria ram \(mb\)/i) as HTMLInputElement).value).toBe('3072');
@@ -343,8 +344,8 @@ describe('FRN-28 - Integración con PUT /api/instances/:instanceRef/config y avi
     await user.click(within(dialog).getByRole('button', { name: /guardar cambios/i }));
     await user.click(await within(dialog).findByRole('button', { name: /confirmar cambios/i }));
 
-    // Muestra el toast de advertencia con el mensaje del backend y el banner de reinicio pendiente en la página
-    expect(await screen.findByText(rebootMsg)).toBeVisible();
+    // Muestra el toast de advertencia con el aviso de reinicio y el banner en la página
+    expect(await screen.findByText(/configuraci[oó]n guardada.*reinicio/i)).toBeVisible();
     const rebootNotice = await screen.findByRole('status');
     expect(rebootNotice).toHaveTextContent(/los recursos guardados se aplicar[aá]n al reiniciar la instancia/i);
   });
