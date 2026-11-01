@@ -29,6 +29,9 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > - `FRN-30` (resuelto y con tests en verde el 30/10/2026: modal destructivo de rollback con confirmación antierror tipear nombre idéntico; `frn-30-snapshots-rollback-ui.test.tsx` 2/2 en verde).
 > - `FRN-34` (resuelto y con tests en verde el 30/10/2026: adaptación de cliente a cookies seguras de sesión y auditoría WCAG AA; `frn-34-cookies-a11y.test.tsx` 3/3 en verde).
 >
+> **Pasados a `terminado3.md` (Etapa Adaptación Proxmox PVE 8.4):**
+> - `ADP-01`, `ADP-02`, `ADP-03`, `ADP-04`, `ADP-05` y `ADP-08` (resueltos y con tests en verde el 01/11/2026: backend `ec5922c` y frontend `ce38ea9`).
+>
 > **Seguimiento de Fixes en `futuro2.md` y `futuro3.md`:**
 > - `FIX-126` (seguimiento en [`futuro2.md`](futuro2.md): ocultar `<StorageMeter>` en Dashboard para `OPERATOR` o `data.storage == null`).
 > - `FIX-127` (seguimiento en [`futuro2.md`](futuro2.md): resiliencia de `SnapshotsTabContent` ante providers desacoplados y alias `:vmid`/`:instanceRef`).
@@ -149,70 +152,7 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 
 ---
 
-#### `ADP-01` (`BAC-PVE8-01`) - Ajuste de Parámetros de Aprovisionamiento QEMU y LXC en `client.go`
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** Cierre de Etapa 3 (`INT-07`).
-- **Problema:** `client.go` no incluye `ostype`, `agent=1`, `unprivileged=1` ni `nesting=1` al llamar a `POST /nodes/{node}/qemu` y `/lxc`, provocando que en PVE 8.4 las VMs no activen el socket de red del agente y los contenedores no arranquen con systemd.
-- **Entregables:**
-  1. En `backend/internal/adapters/secondary/proxmox/client.go:parametrosCreacion`:
-     - Agregar `params.Set("ostype", "l26")` y `params.Set("agent", "1")` para QEMU.
-     - Agregar `params.Set("unprivileged", "1")` y `params.Set("features", "nesting=1")` para LXC.
-  2. Actualizar pruebas unitarias en `client_test.go` verificando que los parámetros urlencoded incluyan estas directivas.
-- **Criterio de éxito:** `go test -v -run TestClient_AprovisionarInstancia ./internal/adapters/secondary/proxmox` pasa al 100% validando la inclusión de `agent=1`, `ostype=l26`, `unprivileged=1` y `nesting=1`.
-
-#### `ADP-02` (`BAC-PVE8-02`) - Parámetros de Purga Profunda en Eliminación de Instancias
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** `ADP-01`.
-- **Problema:** En PVE 8.4, eliminar una instancia mediante `DELETE /nodes/{node}/{tipo}/{vmid}` sin `purge=1` falla si la instancia tiene metadatos en HA o deja discos huérfanos sin desasociar.
-- **Entregables:**
-  1. En `client.go:EliminarInstancia`:
-     - Agregar query string `?purge=1&destroy-unreferenced-disks=1` a la llamada HTTP DELETE.
-  2. Agregar prueba unitaria en `client_test.go` asegurando que la URL de borrado contenga los parámetros de purga.
-- **Criterio de éxito:** La llamada de borrado emite la query esperada y la prueba unitaria pasa en verde.
-
-#### `ADP-03` (`BAC-PVE8-03`) - Flexibilización y Tolerancia en Parser de Interfaces y Configuración
-- **Área:** Backend
-- **Asignado:** Lisandro
-- **Estimación:** 2.0 h
-- **Depende de:** `ADP-01`.
-- **Problema:** Si PVE 8.4 entrega `memory` como entero en `qemu config` o `prefix` como entero en `lxc interfaces`, no debe ocurrir ningún desajuste en el cómputo de digests de concurrencia ni en la extracción de IPs.
-- **Entregables:**
-  1. Verificar que `ObtenerConfig` mantenga consistencia en el digest tanto si `memory` llega como string o como entero en el JSON.
-  2. Asegurar que `ObtenerInterfaces` gestione respuestas donde `ip-addresses` sea `null`, esté ausente o use CIDRs tradicionales en `inet`.
-  3. Tests de regresión en `client_test.go` con payloads de PVE 8.4 reales.
-- **Criterio de éxito:** Suites `TestClient_ObtenerInterfaces_LXC` y `TestObtenerConfig_QemuYLXC` pasan sin errores contra payloads mixtos (string e integer).
-
-#### `ADP-04` (`BAC-PVE8-04`) - Parametrización Dinámica de VMIDs Protegidos por Entorno
-- **Área:** Backend
-- **Asignado:** Tayra
-- **Estimación:** 1.5 h
-- **Depende de:** Ninguna.
-- **Problema:** El rango `100-105` está hardcodeado por defecto para la infraestructura de Centinela. En el servidor final con PVE 8.4.21, Centinela podría usar otros IDs y no debe bloquear VMs preexistentes del hipervisor.
-- **Entregables:**
-  1. En `backend/internal/adapters/primary/http/middleware/protected_instance.go`:
-     - Verificar que `PROXMOX_PROTECTED_VMIDS` permita listas vacías o personalizadas mediante `.env` sin romper el arranque de la API.
-  2. Actualizar `SETUP.md` y `.env.example` documentando la configuración de VMIDs protegidos para el servidor productivo.
-- **Criterio de éxito:** Si `PROXMOX_PROTECTED_VMIDS=""` o contiene IDs arbitrarios (ej. `"200,201"`), la API protege exactamente esos IDs y permite gestionar los IDs 100-105 sin retornar 403.
-
-
-#### `ADP-05` (`SIM-PVE8-01`) - Soporte de Modo Dual de Versión en Simulador (`PROXMOX_SIM_TARGET_VERSION`)
-- **Área:** Backend / Testing
-- **Asignado:** Lisandro
-- **Estimación:** 2.5 h
-- **Depende de:** `ADP-01`, `ADP-03`.
-- **Problema:** El simulador reporta rígidamente `pve-manager/9.2.2` y kernel 7.0.2 en `/nodes/{node}/status`, y no valida los parámetros de `agent` ni `ostype` al crear VMs.
-- **Entregables:**
-  1. En `backend/cmd/proxmox-simulador/simulador.go` y `config.go`:
-     - Incorporar variable de configuración `TargetVersion` (default `"8.4.21"`).
-     - Cuando `TargetVersion == "8.4.21"`:
-       - `/nodes/{node}/status` responde `pveversion: "pve-manager/8.4-21/12345678"` y `kversion: "Linux 6.8.8-2-pve"`.
-       - `POST /nodes/{node}/qemu` requiere `ostype` y `agent` para habilitar el socket del guest agent.
-       - `DELETE` exige `purge=1` si la instancia tiene el flag HA activado.
-- **Criterio de éxito:** `PROXMOX_SIM_TARGET_VERSION=8.4.21 go run ./cmd/proxmox-simulador` expone las firmas y validaciones de PVE 8.4.21.
+*Las tareas `ADP-01`, `ADP-02`, `ADP-03`, `ADP-04`, `ADP-05` y `ADP-08` fueron completadas y verificadas en [`terminado3.md`](terminado3.md). Restan las siguientes tareas pendientes de adaptación:*
 
 #### `ADP-06` (`SIM-PVE8-02`) - Actualización del Catálogo Inicial de Plantillas e ISOs a Debian 12 Bookworm
 - **Área:** Backend / Simulador
@@ -241,17 +181,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
   2. En `InstanceCreationSummary.tsx`:
      - Formatear adecuadamente los identificadores de volid de Debian 12 (`local:vztmpl/debian-12-standard...`).
 - **Criterio de éxito:** El wizard permite seleccionar y resumir plantillas de Debian 12 sin advertencias ni errores en consola.
-
-#### `ADP-08` (`FRN-PVE8-02`) - Verificación de Renderizado de Estado de Storage y Nodos en Dashboard
-- **Área:** Frontend
-- **Asignado:** Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `ADP-07`.
-- **Problema:** En PVE 8.4, los storages reportan métricas sin el content type `import` y con ligeras variaciones de redondeo en bytes disponibles.
-- **Entregables:**
-  1. En `Dashboard.tsx` y componentes de medición (`StorageMeter.tsx`, `InstanceResourcesPanel.tsx`):
-     - Validar que los cálculos de porcentaje de uso no produzcan NaN ni desbordamientos ante los tamaños de bloque devueltos por PVE 8.4.
-- **Criterio de éxito:** Tarjetas de almacenamiento y nodo renderizan correctamente en el Dashboard con datos simulados de PVE 8.4.
 
 #### `ADP-09` (`INF-PVE8-01`) - Verificación y Configuración de Privilegios del Token en PVE 8.4.21
 - **Área:** Infraestructura

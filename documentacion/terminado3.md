@@ -173,3 +173,107 @@ Verificadas contra backend `908522e` y frontend `594a4e0`.
   2. Eliminación de almacenamiento manual de `refreshToken` en almacenamiento local del navegador.
   3. Modales accesibles con navegación por teclado y roles ARIA.
 - **Criterio de éxito:** La rotación de tokens opera mediante cookies HttpOnly y las pruebas de accesibilidad pasan limpiamente.
+
+---
+
+## Verificación del 01/11/2026 (Etapa Adaptación Proxmox PVE 8.4)
+
+Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
+
+#### `ADP-01` (`BAC-PVE8-01`) - Ajuste de Parámetros de Aprovisionamiento QEMU y LXC en `client.go`
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, backend `ec5922c`): implementada y con tests en verde.** Commit `7505aa5`. Inyección de `ostype=l26` y `agent=1` para QEMU, y `unprivileged=1` con `features=nesting=1` para LXC en los parámetros urlencoded de creación de instancias. Pasan las pruebas unitarias en `client_test.go` y la suite `TestClient_AprovisionarInstancia`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** Cierre de Etapa 3 (`INT-07`).
+- **Problema:** `client.go` no incluía `ostype`, `agent=1`, `unprivileged=1` ni `nesting=1` al llamar a `POST /nodes/{node}/qemu` y `/lxc`, provocando que en PVE 8.4 las VMs no activaran el socket de red del agente y los contenedores no arrancaran con systemd.
+- **Entregables:**
+  1. En `backend/internal/adapters/secondary/proxmox/client.go:parametrosCreacion`:
+     - Se agregaron `params.Set("ostype", "l26")` y `params.Set("agent", "1")` para QEMU.
+     - Se agregaron `params.Set("unprivileged", "1")` y `params.Set("features", "nesting=1")` para LXC.
+  2. Pruebas unitarias en `client_test.go` verificando que los parámetros urlencoded incluyan estas directivas.
+- **Criterio de éxito:** `go test -v -run TestClient_AprovisionarInstancia ./internal/adapters/secondary/proxmox` pasa al 100% validando la inclusión de `agent=1`, `ostype=l26`, `unprivileged=1` y `nesting=1`.
+
+#### `ADP-02` (`BAC-PVE8-02`) - Parámetros de Purga Profunda en Eliminación de Instancias
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, backend `ec5922c`): implementada y con tests en verde.** Commit `084ad9a`. Incorporación de query string `?purge=1&destroy-unreferenced-disks=1` en la llamada HTTP DELETE de `EliminarInstancia`. Pasan las pruebas unitarias de purga en `client_test.go`.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `ADP-01`.
+- **Problema:** En PVE 8.4, eliminar una instancia mediante `DELETE /nodes/{node}/{tipo}/{vmid}` sin `purge=1` falla si la instancia tiene metadatos en HA o deja discos huérfanos sin desasociar.
+- **Entregables:**
+  1. En `client.go:EliminarInstancia`:
+     - Query string `?purge=1&destroy-unreferenced-disks=1` anexada a la llamada HTTP DELETE.
+  2. Pruebas unitarias en `client_test.go` asegurando que la URL de borrado contenga los parámetros de purga.
+- **Criterio de éxito:** La llamada de borrado emite la query esperada y la prueba unitaria pasa en verde.
+
+#### `ADP-03` (`BAC-PVE8-03`) - Flexibilización y Tolerancia en Parser de Interfaces y Configuración
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, backend `ec5922c`): implementada y con tests en verde.** Commit `166c108`. Tolerancia en `ObtenerConfig` para digests con memoria como string o entero, y en `ObtenerInterfaces` para respuestas donde `ip-addresses` sea null, ausente o use CIDRs tradicionales en `inet`. Pasan las suites `TestClient_ObtenerInterfaces_LXC` y `TestObtenerConfig_QemuYLXC`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `ADP-01`.
+- **Problema:** Si PVE 8.4 entrega `memory` como entero en `qemu config` o `prefix` como entero en `lxc interfaces`, no debe ocurrir ningún desajuste en el cómputo de digests de concurrencia ni en la extracción de IPs.
+- **Entregables:**
+  1. `ObtenerConfig` mantiene consistencia en el digest tanto si `memory` llega como string o como entero en el JSON.
+  2. `ObtenerInterfaces` gestiona respuestas donde `ip-addresses` sea `null`, esté ausente o use CIDRs tradicionales en `inet`.
+  3. Tests de regresión en `client_test.go` con payloads de PVE 8.4 reales.
+- **Criterio de éxito:** Suites `TestClient_ObtenerInterfaces_LXC` y `TestObtenerConfig_QemuYLXC` pasan sin errores contra payloads mixtos (string e integer).
+
+#### `ADP-04` (`BAC-PVE8-04`) - Parametrización Dinámica de VMIDs Protegidos por Entorno
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, backend `ec5922c`): implementada y con tests en verde.** Commit `c09a867`. `PROXMOX_PROTECTED_VMIDS` admite listas vacías o personalizadas vía variable de entorno sin romper el arranque de la API ni bloquear instancias no protegidas.
+
+- **Área:** Backend
+- **Asignada:** Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** Ninguna.
+- **Problema:** El rango `100-105` está hardcodeado por defecto para la infraestructura de Centinela. En el servidor final con PVE 8.4.21, Centinela podría usar otros IDs y no debe bloquear VMs preexistentes del hipervisor.
+- **Entregables:**
+  1. En `backend/internal/adapters/primary/http/middleware/protected_instance.go`:
+     - Verificación de que `PROXMOX_PROTECTED_VMIDS` permita listas vacías o personalizadas mediante `.env` sin romper el arranque de la API.
+  2. Actualización de `SETUP.md` y `.env.example` documentando la configuración de VMIDs protegidos para el servidor productivo.
+- **Criterio de éxito:** Si `PROXMOX_PROTECTED_VMIDS=""` o contiene IDs arbitrarios (ej. `"200,201"`), la API protege exactamente esos IDs y permite gestionar los IDs 100-105 sin retornar 403.
+
+#### `ADP-05` (`SIM-PVE8-01`) - Soporte de Modo Dual de Versión en Simulador (`PROXMOX_SIM_TARGET_VERSION`)
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, backend `ec5922c`): implementada y con tests en verde.** Commit `ec5922c`. Configuración `TargetVersion` en simulador con default `8.4.21`. Respuestas condicionadas en `/nodes/{node}/status` (firma `pve-manager/8.4-21` y kernel `Linux 6.8.8-2-pve`), validación de `ostype` y `agent` en creación QEMU, y requerimiento de `purge=1` en borrado. Pasan las pruebas de contrato en `simulador_test.go`.
+
+- **Área:** Backend / Testing
+- **Asignado:** Lisandro
+- **Estimación:** 2.5 h
+- **Depende de:** `ADP-01`, `ADP-03`.
+- **Problema:** El simulador reportaba rígidamente `pve-manager/9.2.2` y kernel 7.0.2 en `/nodes/{node}/status`, y no validaba los parámetros de `agent` ni `ostype` al crear VMs.
+- **Entregables:**
+  1. En `backend/cmd/proxmox-simulador/simulador.go` y `config.go`:
+     - Variable de configuración `TargetVersion` (default `"8.4.21"`).
+     - `/nodes/{node}/status` responde `pveversion: "pve-manager/8.4-21/12345678"` y `kversion: "Linux 6.8.8-2-pve"`.
+     - `POST /nodes/{node}/qemu` requiere `ostype` y `agent` para habilitar el socket del guest agent.
+     - `DELETE` exige `purge=1` si la instancia tiene el flag HA activado.
+- **Criterio de éxito:** `PROXMOX_SIM_TARGET_VERSION=8.4.21 go run ./cmd/proxmox-simulador` expone las firmas y validaciones de PVE 8.4.21.
+
+#### `ADP-08` (`FRN-PVE8-02`) - Verificación de Renderizado de Estado de Storage y Nodos en Dashboard
+
+> [!NOTE]
+> **Estado verificado (01/11/2026, frontend `ce38ea9`): implementada y con tests en verde.** Commit `8d66b75` (PR #177). Manejo robusto en `Dashboard.tsx`, `StorageMeter.tsx` e `InstanceResourcesPanel.tsx` ante variaciones de redondeo y ausencia de content type `import`. Pasan todas las pruebas de dashboard e instancias en vitest (41/41 suites, 247/247 tests en verde).
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1.5 h
+- **Depende de:** `ADP-07`.
+- **Problema:** En PVE 8.4, los storages reportan métricas sin el content type `import` y con ligeras variaciones de redondeo en bytes disponibles.
+- **Entregables:**
+  1. En `Dashboard.tsx` y componentes de medición (`StorageMeter.tsx`, `InstanceResourcesPanel.tsx`):
+     - Cálculos de porcentaje de uso tolerantes sin NaN ni desbordamientos ante los tamaños de bloque devueltos por PVE 8.4.
+- **Criterio de éxito:** Tarjetas de almacenamiento y nodo renderizan correctamente en el Dashboard con datos simulados de PVE 8.4.
