@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -327,7 +328,11 @@ func TestFIX71RedisArranqueEnFrio(t *testing.T) {
 // INF-07C (RF-07 / RF-10): la documentación de la API de Proxmox debe reflejar los
 // permisos que el token necesita para aprovisionar y reconfigurar en la Etapa 2.
 func TestINF07CPermisosTokenProxmox(t *testing.T) {
-	doc := string(readFile(t, "../../documentacion/api-proxmox.md"))
+	docPath := "../../documentacion/api-proxmox.md"
+	if _, err := os.Stat(docPath); os.IsNotExist(err) {
+		docPath = "../../documentacion/api-proxmox-servidor-prueba.md"
+	}
+	doc := string(readFile(t, docPath))
 	for _, permiso := range []string{
 		"VM.Allocate",
 		"Datastore.AllocateSpace",

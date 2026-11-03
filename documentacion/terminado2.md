@@ -684,5 +684,38 @@ Verificadas contra frontend `594a4e0` y backend `908522e`.
   3. Certificación de la suite `test/front/fix-108-ids-ofuscados.test.tsx`.
 - **Criterio de éxito:** Todas las entradas maliciosas o malformadas son rechazadas localmente en `instanceService.ts` antes de despachar solicitudes de red (11/11 pruebas en verde).
 
+#### `FIX-127` - Resiliencia de `SnapshotsTabContent` ante Providers desacoplados y alias de ruta `:vmid` / `:instanceRef` (Frontend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, frontend `877eddd`): implementada en código de producción (`test/front/etapa3-pendientes.test.tsx` 3/3 en verde; seguimiento de regresión en mocks internos y alias de ruta en `FIX-141` de `futuro2.md`).** Commits `83a19b5`, `14db393`, `30a79a5` y `109f266` (PR #178). `EventsContext.tsx` expone `useOptionalEventsContext()`, `SnapshotsTabContent.tsx` opera sin `EventsProvider` montado y `InstanceDetailPage.tsx` resuelve `const resolvedRef = instanceRef ?? vmid`.
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Luz
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-36`, `FRN-29`.
+- **Problema técnico detallado:**
+  1. En `SnapshotsTabContent.tsx:69`, se ejecutaba `useEventsContext()` sin comprobar si el componente estaba envuelto en un `EventsProvider`.
+  2. En `InstanceDetailPage.tsx:12`, la lectura de parámetros utilizaba estrictamente `instanceRef` sin fallback a `vmid`.
+- **Entregable:**
+  1. Hook defensivo `useOptionalEventsContext()` en `EventsContext.tsx` y `SnapshotsTabContent.tsx`.
+  2. Fallback `const resolvedRef = instanceRef ?? vmid;` en `InstanceDetailPage.tsx`.
+- **Criterio de éxito:** `SnapshotsTabContent` e `InstanceDetailPage` operan sin `EventsProvider` obligatorio y admiten ambos nombres de parámetro de ruta en `test/front/etapa3-pendientes.test.tsx` (3/3 en verde).
+
+#### `FIX-128` - Admisión de `vlan: 0` o su omisión como tráfico no etiquetado (*untagged*) en la creación de instancias (Backend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commit `b2d5fec`. En `instance_handler.go` (`validarCreacionNormalizada`), `*input.VLAN == 0` se normaliza a `nil` (tráfico nativo sin etiquetar), pasando `TestFIX128VLAN_VlanCeroEsTraficoSinEtiquetar` en `test/back/etapa3_fixes_pendientes_test.go` y la suite de `internal/adapters/primary/http`.
+
+- **Área:** Backend
+- **Asignado:** Lisandro / Tayra
+- **Estimación:** 0.5 h
+- **Depende de:** `BAC-37`, `RF-07`.
+- **Problema técnico detallado:** `validarCreacionNormalizada` rechazaba `"vlan": 0` con `400 Bad Request: vlan debe estar entre 1 y 4094` cuando el serializador enviaba `0` para representar tráfico nativo *untagged*.
+- **Entregable:**
+  1. En `backend/internal/adapters/primary/http/instance_handler.go`, convertir `*input.VLAN == 0` en `nil` antes de validar el rango `1..4094`.
+  2. Pruebas unitarias en `instance_handler_test.go` y `test/back/etapa3_fixes_pendientes_test.go`.
+- **Criterio de éxito:** `POST /api/instances` acepta peticiones con `"vlan": 0` como interfaz de red sin etiquetar (*untagged*).
+
+
 
 

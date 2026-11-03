@@ -56,11 +56,16 @@ describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', (
       return found;
     }
 
-    const hasAlertTriggered = searchPattern(/ALERT_TRIGGERED|ALERT_RESOLVED/);
-    const hasNotificationBell = searchPattern(/(notification|campana|alert-badge|bell)/i);
+    const hasAlertTriggered = searchPattern(/ALERT_TRIGGERED/) && searchPattern(/ALERT_RESOLVED/);
+    // Un componente real: importa el icono Bell de lucide-react y es un archivo de componente.
+    const hasNotificationBell = searchPattern(/import\s*\{[^}]*\bBell\b[^}]*\}\s*from\s*'lucide-react'/);
+    const hasNotificationComponent = fs
+      .readdirSync(path.join(srcDir, 'components'), { recursive: true })
+      .some((f) => /(Notification|Alert).*\.tsx$/i.test(String(f)));
 
-    expect(hasAlertTriggered, 'El frontend no procesa los eventos ALERT_TRIGGERED o ALERT_RESOLVED').toBe(true);
-    expect(hasNotificationBell, 'Falta el componente o icono del centro de notificaciones / alertas').toBe(true);
+    expect(hasAlertTriggered, 'El frontend no procesa ALERT_TRIGGERED y ALERT_RESOLVED').toBe(true);
+    expect(hasNotificationBell, 'Falta la campana (icono Bell) del centro de notificaciones').toBe(true);
+    expect(hasNotificationComponent, 'Falta un componente Notification*/Alert*.tsx en src/components').toBe(true);
   });
 
   it('el Dashboard muestra el banner de alerta cuando se reporta saturación crítica de recursos', async () => {
@@ -89,9 +94,12 @@ describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', (
       ),
     );
 
-    // Debe renderizar el panel del Dashboard sin crashear
+    // Banner rojo persistente (role="alert") con el texto de saturación crítica.
     await waitFor(() => {
-      expect(screen.queryByText(/saturación|alerta|crítica|recursos/i) || screen.queryByRole('alert')).toBeDefined();
+      const banners = screen.queryAllByRole('alert').filter(
+        (el) => /saturaci[oó]n|cr[ií]tic/i.test(el.textContent ?? '') && /red|rose/.test(el.className),
+      );
+      expect(banners.length, 'FRN-33: no hay un banner rojo role="alert" de saturación crítica').toBeGreaterThan(0);
     });
   });
 });

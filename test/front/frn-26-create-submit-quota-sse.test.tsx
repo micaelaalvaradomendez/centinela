@@ -119,7 +119,7 @@ async function advanceWizardToReviewStep(user: ReturnType<typeof userEvent.setup
 
   // Paso 4: Sistema Operativo
   await screen.findByRole('radiogroup', { name: /template del sistema operativo/i });
-  await user.click(await screen.findByRole('radio', { name: /seleccionar ubuntu-24\.04\.iso/i }));
+  await user.click(await screen.findByRole('radio', { name: /seleccionar .*ubuntu-24\.04\.iso/i }));
   await waitFor(() => expect(screen.getByRole('button', { name: /siguiente/i })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: /siguiente/i }));
 

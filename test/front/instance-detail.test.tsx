@@ -26,12 +26,12 @@ function collectPaths(route: AnyRoute, parent = ''): string[] {
 const declaredPaths = applicationRoutes.flatMap((route) => collectPaths(route));
 
 // FRN-21 / FIX-95: Declarar ruta /instances/:vmid y enlazar inventario con la vista de detalle
-describe('FRN-21 / FIX-95 - Vista Detalle de Instancia (/instances/:vmid)', () => {
-  it('declara la ruta /instances/:vmid dentro del árbol de rutas de la aplicación', () => {
+describe('FRN-21 / FIX-95 / FIX-108 - Vista Detalle de Instancia (/instances/:instanceRef o :vmid)', () => {
+  it('declara la ruta de detalle (/instances/:instanceRef o /instances/:vmid) dentro del árbol de rutas de la aplicación', () => {
     expect(
-      declaredPaths,
-      'falta la ruta /instances/:vmid (FRN-21). Rutas declaradas: ' + declaredPaths.join(', '),
-    ).toContain('/instances/:vmid');
+      declaredPaths.some((p) => p === '/instances/:instanceRef' || p === '/instances/:vmid'),
+      'falta la ruta /instances/:instanceRef o /instances/:vmid (FRN-21). Rutas declaradas: ' + declaredPaths.join(', '),
+    ).toBe(true);
   });
 
   it('mantiene la ruta de inventario /instances como padre del detalle', () => {

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardPage from '@/pages/Dashboard';
@@ -88,8 +88,9 @@ const nodeCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
 // Se ubica por el encabezado (h2) para no confundirlo con el pie de la tarjeta,
 // que repite "detenidas o pausadas".
 function cardValue(title: RegExp): string {
-  const heading = screen.getByRole('heading', { name: title });
-  return heading.closest('div')?.textContent ?? '';
+  const overview = screen.getByTestId('instances-overview');
+  const label = within(overview).getAllByText(title)[0];
+  return label.closest('div')?.textContent ?? '';
 }
 
 // La métrica es el primer número del contenedor (los títulos son texto).
@@ -105,9 +106,9 @@ describe('FRN-19C - Tarjetas de conteo de instancias con auto-actualización', (
 
     // Total = 3 VMs + 1 LXC = 4; en ejecución = 2 + 1 = 3; inactivas = 1 + 0 = 1.
     // El contenedor de la tarjeta concatena la métrica y su título ("4Instancias totales").
-    expect(leadNumber(cardValue(/instancias totales/i))).toBe('4');
-    expect(leadNumber(cardValue(/en ejecuci[oó]n/i))).toBe('3');
-    expect(leadNumber(cardValue(/detenidas o pausadas/i))).toBe('1');
+    expect(leadNumber(cardValue(/^(instancias )?totales$/i))).toBe('4');
+    expect(leadNumber(cardValue(/^en ejecuci[oó]n/i))).toBe('3');
+    expect(leadNumber(cardValue(/^detenidas o pausadas/i))).toBe('1');
   });
 
   // FRN-19C / FIX-83: Refrescar el conteo de instancias ante TASK_FINISHED

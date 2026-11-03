@@ -83,13 +83,13 @@ export async function actionsOf(row: HTMLElement): Promise<HTMLElement[]> {
   const direct = within(row).queryAllByRole('button');
   const menuTrigger = direct.find((button) => button.getAttribute('aria-haspopup') || named(button, /^(acciones|m[aá]s|opciones)\b/i));
   if (!menuTrigger) return direct;
-  await user.click(menuTrigger);
-  const items = await waitFor(() => {
-    const found = screen.queryAllByRole('menuitem');
-    expect(found.length).toBeGreaterThan(0);
-    return found;
+  if (menuTrigger.getAttribute('aria-expanded') !== 'true') {
+    await user.click(menuTrigger);
+  }
+  await waitFor(() => {
+    expect(menuTrigger.getAttribute('aria-expanded')).toBe('true');
   });
-  return [...direct, ...items];
+  return [...direct, ...screen.queryAllByRole('menuitem')];
 }
 
 export async function findAction(row: HTMLElement, action: Action): Promise<HTMLElement | undefined> {

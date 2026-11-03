@@ -34,6 +34,9 @@ func TestEtapa2INF13_StorageCompatibleConSnapshots(t *testing.T) {
 		}
 
 		docPath := filepath.Join(envOrDefault("CENTINELA_ROOT", "../.."), "documentacion", "api-proxmox.md")
+		if _, err := os.Stat(docPath); os.IsNotExist(err) {
+			docPath = filepath.Join(envOrDefault("CENTINELA_ROOT", "../.."), "documentacion", "api-proxmox-servidor-prueba.md")
+		}
 		docContent := string(readFile(t, docPath))
 		for _, requiredTerm := range []string{"lvmthin", "qcow2", "raw"} {
 			if !regexp.MustCompile(`(?i)\b` + requiredTerm + `\b`).MatchString(docContent) {
@@ -591,6 +594,23 @@ func TestEtapa3BAC55_SwitchPerfilVersionSimulador(t *testing.T) {
 	t.Run("simulador soporta configuración de versión de destino", func(t *testing.T) {
 		if !regexp.MustCompile(`(?i)PROXMOX_SIM_TARGET_VERSION|TargetVersion|VersionDestino`).MatchString(combined) {
 			t.Errorf("BAC-55: cmd/proxmox-simulador no implementa PROXMOX_SIM_TARGET_VERSION para alternar perfil de versión")
+		}
+	})
+
+	t.Run("perfil 8.4.21 emite pve-manager/8.4-21 y kernel 6.8; el default sigue siendo 9.2.2", func(t *testing.T) {
+		all := combined
+		for _, f := range []string{"cmd/proxmox-simulador/perfil.go", "cmd/proxmox-simulador/main.go", "cmd/proxmox-simulador/config.go"} {
+			if b, err := os.ReadFile(sourcePath("backend", f)); err == nil {
+				all += "\n" + string(b)
+			}
+		}
+		for _, firma := range []string{"pve-manager/8.4-21", "8.4.21", "9.2.2"} {
+			if !strings.Contains(all, firma) {
+				t.Errorf("BAC-55: el simulador no contiene la firma %q", firma)
+			}
+		}
+		if !regexp.MustCompile(`6\.8`).MatchString(all) {
+			t.Errorf("BAC-55: el perfil 8.4.21 debe exponer el kernel 6.8")
 		}
 	})
 }

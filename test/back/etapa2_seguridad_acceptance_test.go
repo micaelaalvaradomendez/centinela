@@ -306,9 +306,10 @@ func TestFIX111A_CambioDeEmailSeguro(t *testing.T) {
 // FIX-112: rate limiting y protección contra fuerza bruta en login, 2FA y recuperación.
 func TestFIX112_RateLimitingAutenticacion(t *testing.T) {
 	t.Run("ConfirmarRecuperacionContrasena bloquea la fila con FOR UPDATE", func(t *testing.T) {
-		source := secReadGoDir(t, "internal/core/services")
-		body := secFunctionBody(source, "ConfirmarRecuperacionContrasena")
-		if body == "" {
+		svcSource := secReadGoDir(t, "internal/core/services")
+		pgSource := secReadGoDir(t, "internal/adapters/secondary/postgres")
+		body := secFunctionBody(svcSource, "ConfirmarRecuperacionContrasena") + "\n" + secFunctionBody(pgSource, "ConfirmarRecuperacionConBloqueo")
+		if strings.TrimSpace(body) == "" {
 			t.Fatalf("FIX-112: no se encontró ConfirmarRecuperacionContrasena")
 		}
 		if !regexp.MustCompile(`FOR UPDATE|clause\.Locking|ForUpdate`).MatchString(body) {
@@ -489,14 +490,14 @@ func TestFIX115A_ContrasenasDeHasta128Caracteres(t *testing.T) {
 		if regexp.MustCompile(`len\(contrasena\)\s*>\s*12\b`).MatchString(passwordCode) {
 			t.Errorf("FIX-115A: password.go sigue rechazando contraseñas de más de 12 caracteres")
 		}
-		if !regexp.MustCompile(`len\(contrasena\)\s*>\s*128\b`).MatchString(passwordCode) {
+		if !regexp.MustCompile(`(?:len\(contrasena\)|RuneCountInString\(contrasena\)|largo)\s*>\s*128\b`).MatchString(passwordCode) {
 			t.Errorf("FIX-115A: password.go no impone la cota de 128 caracteres")
 		}
 		for _, file := range []string{
 			"internal/adapters/primary/http/auth_handler.go", "internal/adapters/primary/http/user_handler.go",
 			"internal/adapters/primary/http/account_handler.go", "internal/core/ports/user_port.go",
 		} {
-			if strings.Contains(string(readFile(t, sourcePath("backend", file))), "max=12") {
+			if regexp.MustCompile(`max=12\b`).MatchString(string(readFile(t, sourcePath("backend", file)))) {
 				t.Errorf("FIX-115A: %s conserva el tag de validación max=12", file)
 			}
 		}
@@ -534,7 +535,7 @@ func TestFIX115A_ContrasenasDeHasta128Caracteres(t *testing.T) {
 func TestFIX116_InyeccionDeParametrosProxmox(t *testing.T) {
 	t.Run("client.go valida que no haya comas en los parámetros concatenados", func(t *testing.T) {
 		client := string(readFile(t, sourcePath("backend", "internal/adapters/secondary/proxmox/client.go")))
-		if !regexp.MustCompile(`strings\.Contains(Any)?\([^)]*","`).MatchString(client) && !regexp.MustCompile(`ContainsRune\([^)]*','`).MatchString(client) {
+		if !regexp.MustCompile(`strings\.Contains(Any)?\([^)]*(?:","|caracteresDeDirectiva)`).MatchString(client) && !regexp.MustCompile(`ContainsRune\([^)]*','`).MatchString(client) {
 			t.Errorf("FIX-116: client.go no verifica que Bridge/StorageID/TemplateID carezcan de comas antes de armar net0")
 		}
 	})

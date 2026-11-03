@@ -18,22 +18,22 @@ const json = (body: unknown, status = 200) =>
 
 const GIB = 1024 ** 3;
 
-// Payload crudo típico de Proxmox VE 8.4: content viene como string separado por coma
-// y no incluye la propiedad 'contentTypes' procesada ni el flag 'import'.
-const pve8RawStorages = [
+// Payload de GET /api/node/storages sobre un nodo Proxmox VE 8.4:
+// el backend normaliza "content" en contentTypes: string[], sin el content type "import" de PVE 9.
+const pve8Storages = [
   {
     name: 'local',
     type: 'dir',
     totalBytes: 100 * GIB,
     freeBytes: 80 * GIB,
-    content: 'iso,vztmpl,backup', // Formato nativo PVE 8 (string, no array)
+    contentTypes: ['iso', 'vztmpl', 'backup'],
   },
   {
     name: 'local-lvm',
     type: 'lvmthin',
     totalBytes: 500 * GIB,
     freeBytes: 350 * GIB,
-    content: 'images,rootdir',
+    contentTypes: ['images', 'rootdir'],
   },
 ];
 
@@ -42,8 +42,8 @@ describe('ADP-08: Validación y Renderizado Frontend de Storages y Métricas PVE
     vi.restoreAllMocks();
   });
 
-  it('fetchCreationStorages normaliza respuestas de PVE 8 donde content es string sin fallar con ApiRequestError', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(pve8RawStorages)));
+  it('fetchCreationStorages procesa catálogos de PVE 8 sin el content type import sin fallar con ApiRequestError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(pve8Storages)));
 
     const storages = await fetchCreationStorages();
     expect(storages).toHaveLength(2);

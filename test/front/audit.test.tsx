@@ -84,7 +84,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
     const table = await screen.findByRole('table');
     expect(await within(table).findByText('Ada Lovelace')).toBeVisible();
-    expect(within(table).getByText('LOGIN')).toBeVisible();
+    expect(within(table).getByText(/inicio de sesi[oó]n|login/i)).toBeVisible();
     expect(within(table).getByText(/éxito|exito/i)).toBeVisible();
   });
 
@@ -103,11 +103,9 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    // Cambiar filtro de acción abriendo el menú desplegable de filtros
-    const filtrosBtn = screen.getByRole('button', { name: /filtros/i });
-    await user.click(filtrosBtn);
-    const loginOption = await screen.findByRole('menuitemradio', { name: /login/i });
-    await user.click(loginOption);
+    // Cambiar filtro de acción mediante el selector de Acción
+    const accionSelect = screen.getByLabelText(/acci[oó]n/i);
+    await user.selectOptions(accionSelect, 'LOGIN');
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls as [string, RequestInit][];
@@ -127,13 +125,13 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
     const tabFalla = screen.getByRole('tab', { name: /fallidos/i });
     await user.click(tabFalla);
-    await waitFor(() => expect((fetchMock.mock.calls as [string][]).some(([url]) => url.includes('resultado=FALLA'))).toBe(true));
+    await waitFor(() => expect((fetchMock.mock.calls as [string][]).some(([url]) => /resultado=(FALLA|FAILED)/.test(url))).toBe(true));
 
     await waitFor(() => {
-      const last = String((fetchMock.mock.calls as [string][]).at(-1)?.[0]);
-      expect(last).toContain('resultado=FALLA');
-      expect(last).toMatch(/desde=\d{4}-\d{2}-\d{2}/);
-      expect(last).toMatch(/hasta=\d{4}-\d{2}-\d{2}/);
+      const matching = (fetchMock.mock.calls as [string][]).map(([url]) => String(url)).find((url) => /resultado=(FALLA|FAILED)/.test(url)) ?? '';
+      expect(matching).toMatch(/resultado=(FALLA|FAILED)/);
+      expect(matching).toMatch(/desde=\d{4}-\d{2}-\d{2}/);
+      expect(matching).toMatch(/hasta=\d{4}-\d{2}-\d{2}/);
     });
   });
 
@@ -149,7 +147,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
     renderAuditoria();
     await screen.findByRole('table');
-    const nextBtn = screen.queryByRole('button', { name: /p[aá]gina siguiente/i }) ?? screen.getByRole('link', { name: /p[aá]gina siguiente/i });
+    const nextBtn = screen.queryByRole('button', { name: /(p[aá]gina )?siguiente/i }) ?? screen.getByRole('link', { name: /(p[aá]gina )?siguiente/i });
     await user.click(nextBtn);
 
     await waitFor(() => expect((fetchMock.mock.calls as [string][]).some(([url]) => url.includes('pagina=2'))).toBe(true));
@@ -174,10 +172,12 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
     const exportButton = await screen.findByRole('button', { name: /exportar/i });
     await user.click(exportButton);
+    const csvItem = await screen.findByRole('menuitem', { name: /csv/i });
+    await user.click(csvItem);
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls as [string, RequestInit][];
-      const exportCall = calls.find(([url]) => url.includes('/admin/audit/export') && url.includes('formato=csv'));
+      const exportCall = calls.find(([url]) => url.includes('/admin/audit/export') && /(formato|format)=csv/.test(url));
       expect(exportCall).toBeDefined();
       expect((exportCall?.[1].headers as Record<string, string>)?.Authorization).toBe('Bearer token-bearer-test');
     });

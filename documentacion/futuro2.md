@@ -100,3 +100,63 @@ flowchart TD
 ## 🛠️ Especificación Detallada de Fixes Pendientes (Etapa 2)
 
 ---
+
+### `FIX-141` - Actualización de mocks de `@/context/EventsContext` (`useOptionalEventsContext`) en tests unitarios internos del submódulo `frontend` (`FIX-127`) (Testing Frontend)
+
+- **Área:** Frontend (Tests internos del submódulo)
+- **Asignado:** Cristian / Luz
+- **Estimación:** 0.25 h
+- **Depende de:** `FIX-127`, `FRN-29`.
+- **Nota de diagnóstico:** La implementación de producto de `FIX-127` en `EventsContext.tsx`, `SnapshotsTabContent.tsx` e `InstanceDetailPage.tsx` **está bien implementada** y pasa las pruebas de aceptación (`test/front/etapa3-pendientes.test.tsx` 3/3 ✅ y `test/front/instance-detail.test.tsx` 3/3 ✅). El fallo ocurre únicamente en 2 archivos de test internos del submódulo `frontend/centinela/src/test/`.
+- **Tests internos del submódulo que fallan actualmente:**
+  - `frontend/centinela/src/test/snapshots.test.tsx` (4/4 fallan con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
+  - `frontend/centinela/src/test/instance-transient-states.test.tsx` (1/5 falla con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
+- **Problema técnico detallado (Por qué fallan los tests del submódulo):**
+  En el commit `14db393` (`FIX-127`), `frontend/centinela/src/components/features/instances/components/detail/SnapshotsTabContent.tsx:69` reemplazó `useEventsContext()` por `useOptionalEventsContext()`. Sin embargo, los mocks manuales `vi.mock('@/context/EventsContext', ...)` definidos en `frontend/centinela/src/test/snapshots.test.tsx:15-17` y `frontend/centinela/src/test/instance-transient-states.test.tsx:15-18` quedaron con la exportación vieja (`useEventsContext`) sin exportar `useOptionalEventsContext`.
+- **Solución técnica paso a paso:**
+  En `frontend/centinela/src/test/snapshots.test.tsx:15-17` y `frontend/centinela/src/test/instance-transient-states.test.tsx:15-18`, agregar `useOptionalEventsContext` al objeto devuelto por `vi.mock('@/context/EventsContext')`:
+  ```ts
+  vi.mock('@/context/EventsContext', () => ({
+      useEventsContext: () => ({ ultimoMensaje: null }),
+      useOptionalEventsContext: () => ({ ultimoMensaje: null }),
+      useEventSubscription: () => {},
+  }));
+  ```
+- **Criterio de éxito:**
+  - `frontend/centinela/src/test/snapshots.test.tsx` (4/4) y `frontend/centinela/src/test/instance-transient-states.test.tsx` (5/5) pasan al 100% en verde.
+
+---
+
+### `FIX-142` - Restauración de `FRN-22` (`useInstanceMetrics`, `getWsTicket`, `metricsWebSocket`) revertida en `4f743e4` e integración de pestaña `"Métricas"`, modo `"En vivo"` y gráfico de Red en `FRN-23` (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Luz / Cristian / Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-21`, `FRN-22`, `FRN-23`, `BAC-35`, `BAC-36`.
+- **Tests que fallan actualmente:**
+  - `test/front/frn-22-use-instance-metrics.test.tsx` (5/5 fallan: `no hay un servicio exportado getWsTicket() en el frontend`, `no existe el hook useInstanceMetrics en el frontend (FRN-22)`)
+  - `test/front/frn-23-metrics-charts.test.tsx` (7/7 fallan: `la vista de detalle no tiene la pestaña "Métricas"`)
+- **Problema técnico detallado (Por qué fallan los tests):**
+  1. **Reversión de `FRN-22` en `origin/main` (`4f743e4`):** La tarea `FRN-22` fue implementada originalmente en el commit `60833b3` (`🌱 feat(instances):se implementa telemetría en tiempo real de instancias.`) y pasada a `terminado2.md`. Sin embargo, en el commit `4f743e4` (`Revert "🌱 feat(instances):se implementa telemetría en tiempo real de instancias."`) se eliminaron por completo del árbol `src/` los 5 archivos de la tarea:
+     - `src/components/features/instances/metrics/metrics.types.ts`
+     - `src/components/features/instances/metrics/metricsService.ts` (`getWsTicket()`)
+     - `src/components/features/instances/metrics/metricsWebSocket.ts`
+     - `src/components/features/instances/metrics/useInstanceMetrics.ts` (`useInstanceMetrics(vmid)`)
+     - `src/test/instance-metrics.test.tsx`
+     Como consecuencia, `useInstanceMetrics` y `getWsTicket` no existen actualmente en `origin/main` (`877eddd`).
+  2. **Incumplimiento de entregables de `FRN-23` en `InstanceDetailContent.tsx` e `InstanceResourceUsage.tsx`:**
+     - En `frontend/centinela/src/components/features/instances/components/detail/InstanceDetailContent.tsx:116-120`, las pestañas se nombraron `"Resumen"`, `"Recursos"`, `"Red"` y `"Snapshots"`, omitiendo la pestaña **`"Métricas"`** exigida por `FRN-21` y `FRN-23` (`test/front/frn-23-metrics-charts.test.tsx:118`).
+     - En `frontend/centinela/src/components/features/instances/components/detail/InstanceResourceUsage.tsx:19-22`, el selector de rango (`timeframeOptions`) solo ofrece `'2h'` (`"Últimas 2 horas"`) y `'24h'` (`"Últimas 24 horas"`), omitiendo la opción **`"En vivo"`** conectada al WebSocket de `useInstanceMetrics` (`FRN-23` entregable 2).
+     - En `InstanceResourceUsage.tsx:28-57`, solo se grafican 3 métricas (`CPU`, `Memoria`, `Disco`), omitiendo el gráfico de **Tráfico de Red (`netInBps` / `netOutBps`)** (`FRN-23` entregable 1 y `FIX-131`).
+     - Cuando la instancia está detenida (`detail.status === 'stopped'` o muestras con `cpuPercent: null` y `ramUsedBytes: null`), `InstanceResourceUsage.tsx` no muestra el estado vacío explícito **`"Instancia detenida"`** (`FRN-23` entregable 5).
+- **Solución técnica paso a paso:**
+  1. Restaurar desde el commit `60833b3` (o `01c1567`) los módulos `metrics.types.ts`, `metricsService.ts` (exportando `getWsTicket()` que invoca `POST /auth/ws-ticket`), `metricsWebSocket.ts`, `useInstanceMetrics.ts` y `src/test/instance-metrics.test.tsx`, adaptándolos para aceptar `InstanceRef` (`string | number`) sin convertir IDs opacos a `Number`.
+  2. En `InstanceDetailContent.tsx:116-120`, exponer la pestaña `"Métricas"` (o incluir `"Métricas"` en el nombre accesible / pestaña dedicada que renderice `InstanceResourceUsage`).
+  3. En `InstanceResourceUsage.tsx` y `useInstanceDetail.ts`:
+     - Añadir la opción `{ value: 'live', label: 'En vivo' }` en `timeframeOptions`, consumiendo `useInstanceMetrics(detail.reference)` cuando `timeframe === 'live'` y `GET /api/instances/:ref/metrics?timeframe=2h|24h` en los modos históricos.
+     - Incorporar la 4.ª tarjeta/gráfico de **Tráfico de red** (`netInBps` / `netOutBps` formateados en `KB/s` o `MB/s`).
+     - Mostrar el aviso `"Instancia detenida"` cuando `detail.status === 'stopped'` o todos los puntos de CPU/RAM sean `null`, sin producir `NaN` ni invocar `.toFixed()` sobre `null`.
+- **Criterio de éxito:**
+  - `test/front/frn-22-use-instance-metrics.test.tsx` (5/5) pasa al 100% en verde.
+  - `test/front/frn-23-metrics-charts.test.tsx` (7/7) pasa al 100% en verde.
+

@@ -105,7 +105,7 @@ async function toOperatingSystemStep(user: ReturnType<typeof userEvent.setup>, t
 
 async function toReviewStep(user: ReturnType<typeof userEvent.setup>, type: 'vm' | 'lxc') {
   await toOperatingSystemStep(user, type);
-  const image = type === 'vm' ? /seleccionar ubuntu-24\.04\.iso/i : /seleccionar debian-12-standard/i;
+  const image = type === 'vm' ? /seleccionar .*ubuntu-24\.04\.iso/i : /seleccionar .*debian-12-standard/i;
   await user.click(await screen.findByRole('radio', { name: image }));
   await waitFor(() => expect(next()).toBeEnabled());
   await user.click(next());
@@ -200,8 +200,8 @@ describe('FRN-25 - Pasos 3 (red), 4 (sistema operativo) y 5 (resumen)', () => {
     await toOperatingSystemStep(user, 'lxc');
 
     await waitFor(() => expect(urlsCalled().some((url) => /\/node\/templates/.test(url))).toBe(true));
-    expect(await screen.findByRole('radio', { name: /seleccionar debian-12-standard/i })).toBeVisible();
-    expect(screen.queryByRole('radio', { name: /seleccionar ubuntu-24\.04\.iso/i })).toBeNull();
+    expect(await screen.findByRole('radio', { name: /seleccionar .*debian-12-standard/i })).toBeVisible();
+    expect(screen.queryByRole('radio', { name: /seleccionar .*ubuntu-24\.04\.iso/i })).toBeNull();
   });
 
   it('para una Máquina virtual ofrece solo ISOs y no plantillas LXC', async () => {
@@ -209,8 +209,8 @@ describe('FRN-25 - Pasos 3 (red), 4 (sistema operativo) y 5 (resumen)', () => {
     const user = userEvent.setup();
     await toOperatingSystemStep(user, 'vm');
 
-    expect(await screen.findByRole('radio', { name: /seleccionar ubuntu-24\.04\.iso/i })).toBeVisible();
-    expect(screen.queryByRole('radio', { name: /seleccionar debian-12-standard/i })).toBeNull();
+    expect(await screen.findByRole('radio', { name: /seleccionar .*ubuntu-24\.04\.iso/i })).toBeVisible();
+    expect(screen.queryByRole('radio', { name: /seleccionar .*debian-12-standard/i })).toBeNull();
   });
 
   it('la red alterna entre DHCP e IP estática, y la IP estática valida dirección, prefijo y gateway', async () => {

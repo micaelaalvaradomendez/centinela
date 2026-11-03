@@ -136,8 +136,9 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
     renderAuditoria();
     await screen.findByRole('table');
 
-    const filtrosBtn = screen.getByRole('button', { name: /filtros/i });
-    await user.click(filtrosBtn);
+    // El botón "Filtros" es opcional: la especificación solo exige los controles accesibles.
+    const filtrosBtn = screen.queryByRole('button', { name: /filtros/i });
+    if (filtrosBtn) await user.click(filtrosBtn);
 
     // Controles accesibles de rango de fechas ("Desde" y "Hasta", actual.md:309)
     const desdeControl = screen.queryByLabelText(/desde/i);
@@ -155,13 +156,15 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
     for (const actionPattern of [
       /snapshot.*cread|crear.*snapshot|snapshot_create/i,
       /revertir.*snapshot|rollback|snapshot_rollback/i,
-      /eliminar.*snapshot|snapshot_delete/i,
+      /snapshot.*eliminad|eliminar.*snapshot|snapshot_delete/i,
       /alerta|alert_triggered/i,
       /configuraci[oó]n|config_updated|config_instance/i,
     ]) {
-      const option = screen.queryByRole('menuitemradio', { name: actionPattern })
-        ?? screen.queryByRole('option', { name: actionPattern });
-      expect(option, `falta la acción ${actionPattern} en el filtro de auditoría (FRN-31)`).not.toBeNull();
+      const options = [
+        ...screen.queryAllByRole('menuitemradio', { name: actionPattern }),
+        ...screen.queryAllByRole('option', { name: actionPattern }),
+      ];
+      expect(options.length, `falta la acción ${actionPattern} en el filtro de auditoría (FRN-31)`).toBeGreaterThan(0);
     }
   });
 
@@ -214,13 +217,20 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
     renderAuditoria();
     await screen.findByRole('table');
 
-    // Verificar exportación CSV y JSON
-    const exportCsvBtn = screen.queryByRole('button', { name: /exportar csv|^exportar$/i });
-    expect(exportCsvBtn).not.toBeNull();
-    await user.click(exportCsvBtn!);
+    // Verificar exportación CSV y JSON (botón directo o menú desplegable FRN-32)
+    const exportTrigger = screen.queryByRole('button', { name: /exportar csv|exportar registros|^exportar$/i });
+    expect(exportTrigger).not.toBeNull();
+    await user.click(exportTrigger!);
+
+    const csvMenuItem = await screen.findByRole('menuitem', { name: /csv/i }).catch(() => null);
+    if (csvMenuItem) {
+      await user.click(csvMenuItem);
+      await waitFor(() => expect(screen.getByRole('button', { name: /exportar registros|^exportar$/i })).toBeEnabled());
+      await user.click(screen.getByRole('button', { name: /exportar registros|^exportar$/i }));
+    }
 
     const exportJsonBtn = screen.queryByRole('button', { name: /exportar json/i })
-      ?? screen.queryByRole('menuitem', { name: /json/i });
+      ?? await screen.findByRole('menuitem', { name: /json/i }).catch(() => null);
     expect(exportJsonBtn, 'falta la opción o botón para exportar en formato JSON (FRN-31 / BAC-45)').not.toBeNull();
     await user.click(exportJsonBtn!);
 

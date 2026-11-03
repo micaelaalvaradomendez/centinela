@@ -6,23 +6,6 @@ Acá se listan los fixes y mejoras técnicas correspondientes a las tareas de la
 
 ## 🛠️ Especificación Detallada de Fixes (Etapa 3)
 
-
-### `FIX-130` - Documentación exhaustiva de storages compatibles con Snapshots y sanitización de secretos (`INF-13`) (Infraestructura / Documentación)
-
-- **Área:** Infraestructura / Documentación
-- **Asignado:** Nico / Tayra
-- **Estimación:** 0.5 h
-- **Depende de:** `INF-13`.
-- **Problema técnico detallado:**
-  En `documentacion/api-proxmox.md`:
-  1. No se documenta la compatibilidad ni las restricciones de formato de disco de Proxmox VE para snapshots (`lvmthin`, `zfspool` y `qcow2` soportan snapshots en caliente; `raw` sobre LVM tradicional carece de soporte de snapshots y genera fallos `qm snapshot`).
-  2. En la sección 1 (`.env`), la variable `PROXMOX_TOKEN_SECRET` expone un UUID real (`39e714a5-967a-46c2-8de9-af048ae0020f`) en texto plano en lugar de un placeholder seguro (ej. `<uuid-secreto-proxmox>`).
-- **Qué debe hacer el equipo de infraestructura:**
-  1. En `documentacion/api-proxmox.md`, reemplazar el token real por un placeholder genérico.
-  2. Agregar una tabla o sección descriptiva detallando los tipos de storage aptos para snapshots (`lvmthin`, `zfspool`, `qcow2`) y advirtiendo sobre la incompatibilidad de `raw` sobre LVM estándar.
-- **Criterio de éxito:**
-  La prueba `TestEtapa2INF13_StorageCompatibleConSnapshots` en `test/back/etapa3_acceptance_test.go` valida la documentación sin errores.
----
+*Actualmente no hay fixes pendientes sobre las tareas ya implementadas de la Etapa 3 (`BAC-42` a `BAC-48`, `BAC-54`, `BAC-55`, `FRN-29`, `FRN-30`, `FRN-32`, `FRN-34`, `ADP-01` a `ADP-06`, `ADP-08`, `FIX-128`, `FIX-132`, `FIX-133`, `FIX-138`, `FIX-140` pasan sus suites de aceptación en verde).*
 
 
----

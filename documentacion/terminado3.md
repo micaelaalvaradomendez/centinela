@@ -266,7 +266,7 @@ Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
 #### `ADP-08` (`FRN-PVE8-02`) - Verificación de Renderizado de Estado de Storage y Nodos en Dashboard
 
 > [!NOTE]
-> **Estado verificado (01/11/2026, frontend `ce38ea9`): implementada y con tests en verde.** Commit `8d66b75` (PR #177). Manejo robusto en `Dashboard.tsx`, `StorageMeter.tsx` e `InstanceResourcesPanel.tsx` ante variaciones de redondeo y ausencia de content type `import`. Pasan todas las pruebas de dashboard e instancias en vitest (41/41 suites, 247/247 tests en verde).
+> **Estado verificado (01/11/2026, frontend `ce38ea9` / `877eddd`): implementada y con tests en verde.** Commit `8d66b75` (PR #177). Manejo robusto en `Dashboard.tsx`, `StorageMeter.tsx` e `InstanceResourcesPanel.tsx` ante variaciones de redondeo y ausencia de content type `import`. Pasa `test/front/adp-08-dashboard-storage-pve8.test.tsx` (2/2 en verde).
 
 - **Área:** Frontend
 - **Asignado:** Cristian / Belinda
@@ -277,3 +277,120 @@ Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
   1. En `Dashboard.tsx` y componentes de medición (`StorageMeter.tsx`, `InstanceResourcesPanel.tsx`):
      - Cálculos de porcentaje de uso tolerantes sin NaN ni desbordamientos ante los tamaños de bloque devueltos por PVE 8.4.
 - **Criterio de éxito:** Tarjetas de almacenamiento y nodo renderizan correctamente en el Dashboard con datos simulados de PVE 8.4.
+
+#### `FRN-32` - Componente y flujo de exportación de reportes de auditoría
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, frontend `877eddd`): implementada y con tests en verde.** Commit `404c784` (PR #180). `AuditExportButton.tsx` y `auditService.ts` implementan el menú desplegable CSV/JSON, estado de carga, notificación Toast y transferencia de filtros activos. Pasan 4/4 en `test/front/etapa3-pendientes.test.tsx` y `src/test/audit-service.test.ts`.
+
+- **Área:** Frontend
+- **Asignada:** Luz
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-31`, `BAC-45`.
+- **Problema:** Los operadores de cumplimiento requieren descargar los registros en archivos locales para archivo legal o análisis externo.
+- **Entregable:**
+  1. Botón "Exportar registros" con menú desplegable para elegir "Exportar como CSV" o "Exportar como JSON".
+  2. Integración con `exportAuditLogs(filtros, format)` transfiriendo los filtros actualmente activos en pantalla.
+  3. Estado de carga en el botón durante la generación del reporte y disparo automático de la descarga nativa en el navegador.
+  4. Notificación Toast al completar la descarga.
+- **Criterio de éxito:** Al hacer clic en exportar, se descarga el archivo con los filtros aplicados sin recargar la página ni bloquear la UI.
+
+#### `BAC-55` (`BRG-15-SIM`) - Switch de Perfil de Versión en `proxmox-simulador` (`PROXMOX_SIM_TARGET_VERSION`)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commits `61b973d` y `ec5922c`. El simulador lee `PROXMOX_SIM_TARGET_VERSION` y conmuta firmas de versión y kernel entre PVE `8.4.21` y `9.2.2`. Pasan `TestADP05_SimuladorModoDualVersion` y `cmd/proxmox-simulador`.
+
+- **Área:** Backend / Simulador
+- **Asignado:** Lisandro
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-54`.
+- **Problema:** Se requería que el simulador admitiera perfiles de versión mediante variable de entorno para contrastar pruebas tanto en versión 9 como en versión 8.4.21.
+- **Entregable:**
+  1. Lectura de `PROXMOX_SIM_TARGET_VERSION` en `backend/cmd/proxmox-simulador`.
+  2. Respuestas condicionadas en `nodes/{node}/status` y validaciones de contrato por versión.
+- **Criterio de éxito:** `PROXMOX_SIM_TARGET_VERSION=8.4.21` emite la cabecera y el JSON de status del nodo correspondientes a la versión 8.4.21.
+
+#### `ADP-06` (`SIM-PVE8-02`) - Actualización del Catálogo Inicial de Plantillas e ISOs a Debian 12 Bookworm
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commit `aee232a`. `backend/cmd/proxmox-simulador/storage.go` expone `debian-12-standard_12.7-1_amd64.tar.zst`, `ubuntu-22.04-standard_22.04-1_amd64.tar.zst` y `debian-12.7.0-amd64-netinst.iso`, sin el content type `import` en modo PVE 8.4. Pasan `TestADP06_CatalogoDebian12Simulador` y `simulador_test.go`.
+
+- **Área:** Backend / Simulador
+- **Asignado:** Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `ADP-05`.
+- **Problema:** El inventario de plantillas de `storage.go` exponía imágenes Debian 13 inexistentes en repositorios oficiales de PVE 8.4.
+- **Entregables:**
+  1. Reemplazo en `backend/cmd/proxmox-simulador/storage.go` por plantillas e ISOs de Debian 12 Bookworm y Ubuntu 22.04, removiendo `import` en modo PVE 8.4.
+  2. Ajuste de pruebas unitarias en `simulador_test.go`.
+- **Criterio de éxito:** `GET /nodes/{node}/storage/local/content` devuelve las plantillas de Debian 12 y `simulador_test.go` pasa al 100%.
+
+#### `FIX-128` (`FRN-31`) - Opciones completas de acciones de auditoría Etapa 3 y selectores en `Auditoria.tsx` (Frontend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, frontend `877eddd`): implementada y con tests en verde.** Commit `b38ab17` (PR #181). `auditActionLabels.ts` incluye `SNAPSHOT_DELETE`, `ALERT_TRIGGERED` y `SNAPSHOT_ROLLBACK: 'Revertir snapshot'`, y `Auditoria.tsx` integra `AuditExportButton`. Pasan 4/4 pruebas en `test/front/frn-31-audit-etapa3.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-31`, `BAC-44`.
+- **Problema técnico detallado:** `auditActionLabels.ts` omitía `SNAPSHOT_DELETE` y `ALERT_TRIGGERED`, rotulaba `SNAPSHOT_ROLLBACK` sin vocabulario de reversión y `Auditoria.tsx` no ofrecía exportación JSON.
+- **Entregable:**
+  1. Incorporación de `SNAPSHOT_DELETE`, `ALERT_TRIGGERED` y `'Revertir snapshot'` en `auditActionLabels.ts`.
+  2. Integración de `AuditExportButton` (CSV y JSON) en `Auditoria.tsx`.
+- **Criterio de éxito:** La suite `test/front/frn-31-audit-etapa3.test.tsx` pasa 4 de 4 pruebas en verde (100% ✅).
+
+#### `FIX-132` - Discriminación de errores 400 en recuperación de contraseña para no quemar intentos de OTP ante contraseñas inválidas o duplicadas (`CU-12`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, frontend `877eddd`): implementada y con tests en verde.** Commit `3d06236` (PR #179). `RecoverPassword.tsx` discrimina `SAME_PASSWORD`, `WEAK_PASSWORD` y `PASSWORD_RECENTLY_USED` mostrando el error en el campo de contraseña sin incrementar `failedAttempts`. Pasan 4/4 en `test/front/etapa3-pendientes.test.tsx` y 7/7 en `test/front/recover-password.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Luz / Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-34`.
+- **Problema técnico detallado:** `RecoverPassword.tsx` capturaba cualquier `error.status === 400` como fallo de código OTP, incrementando `failedAttempts` y bloqueando el formulario al 3.er intento ante `SAME_PASSWORD` o `WEAK_PASSWORD`.
+- **Entregable:** Discriminación explícita de códigos de error de contraseña (`SAME_PASSWORD`, `WEAK_PASSWORD`, `PASSWORD_RECENTLY_USED`) respecto de `RESET_FAILED`.
+- **Criterio de éxito:** Un error de política o repetición de contraseña no incrementa los intentos fallidos del OTP ni bloquea el flujo.
+
+#### `FIX-133` - Corrección de validación diferencial de cuota de vCPU en escalado vertical para permitir CPU Overcommit (`RF-10` / `BAC-40` / `CU-10`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commit `fb8a41c`. `AmpliarInstancia` en `cuotas_service.go` retorna inmediatamente si `deltaMemoria <= 0` y valida únicamente la memoria libre del nodo sin bloquear por la suma lineal de vCPUs. Pasan `TestFIX133_CuotaVCPUSinOvercommit` y las pruebas de `internal/core/services`.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Micaela
+- **Estimación:** 1.5 h
+- **Depende de:** `BAC-40`, `RF-10`, `CU-10`.
+- **Problema técnico detallado:** `AmpliarInstancia` rechazaba cualquier incremento de vCPU cuando la suma de vCPUs asignadas en el nodo igualaba o superaba los núcleos físicos (`coresDisponibles <= 0`), impidiendo el *CPU Overcommit* estándar de Proxmox VE e incumpliendo la regla de `RF-10` ($\Delta\text{RAM} \le 0$ debe autorizarse directamente).
+- **Entregable:** Validación diferencial exclusiva sobre $\Delta\text{RAM} > 0$ en `cuotas_service.go` y `configuracion_instancias.go`.
+- **Criterio de éxito:** Aumentar vCPUs con $\Delta\text{RAM} \le 0$ se autoriza sin errores `RECURSOS_INSUFICIENTES`.
+
+#### `FIX-138` - Ampliación de caracteres especiales admitidos en validación de contraseñas conforme a NIST SP 800-63B (`RF-01` / `FIX-115A/B`) (Backend / Criptografía)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commit `3fe055b`. `password.go` exporta `CaracteresEspeciales = "!@#$%^&*-_=+.~,;:'\"()[]{}<>\\/|?"` y admite espacios en frases de contraseña de más de 12 caracteres. Pasan `TestFIX138_CaracteresEspecialesNIST` y `internal/infrastructure/crypto`.
+
+- **Área:** Backend / Criptografía
+- **Asignado:** Lucas / Micaela
+- **Estimación:** 1.0 h
+- **Depende de:** `RF-01`, `FIX-115A`, `FIX-115B`.
+- **Problema técnico detallado:** `ValidarComplejidadContrasena` solo admitía `!@#$%^&*-_=+`, rechazando contraseñas generadas con `.`, `,`, `?`, `~`, `()`, `[]`, `/` o espacios en passphrases largas.
+- **Entregable:** Ampliación de `CaracteresEspeciales` y soporte de espacio en passphrases $> 12$ caracteres en `internal/infrastructure/crypto/password.go`.
+- **Criterio de éxito:** El backend acepta contraseñas con símbolos ASCII estándar y frases de contraseña largas (`TestFIX138_CaracteresEspecialesNIST` en verde).
+
+#### `FIX-140` - Trazabilidad y visibilidad de proveedor de email en modo Mock para prevenir falsos éxitos de entrega (`RF-09` / `RF-11` / `RF-13`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (03/11/2026, backend `fb8a41c`): implementada y con tests en verde.** Commit `4e4d2c4`. `GET /api/version` expone `emailProvider` y los handlers que despachan correo en modo `mock` inyectan la cabecera `X-Centinela-Email-Provider: mock`. Pasa `TestFIX140_ProveedorDeEmailVisible`.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Micaela
+- **Estimación:** 1.0 h
+- **Depende de:** `RF-09`, `RF-11`, `RF-13`.
+- **Problema técnico detallado:** En entornos sin SMTP configurado, el backend operaba en modo `mock` retornando `200 OK` sin indicar en la respuesta HTTP ni en `/api/version` que los correos no salían a la red.
+- **Entregable:**
+  1. Cabecera `X-Centinela-Email-Provider: mock` en respuestas de `auth_handler.go`, `user_handler.go` y `account_handler.go` cuando el proveedor es mock.
+  2. Campo `"emailProvider"` en `GET /api/version`.
+- **Criterio de éxito:** `TestFIX140_ProveedorDeEmailVisible` pasa al 100% en verde.
+
