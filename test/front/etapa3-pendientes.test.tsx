@@ -10,13 +10,16 @@ import Auditoria from '@/pages/Auditoria';
 import RecoverPassword from '@/pages/RecoverPassword';
 import InstanceResourceUsage from '@/components/features/instances/components/detail/InstanceResourceUsage';
 import { SnapshotsTabContent } from '@/components/features/instances/components/detail/SnapshotsTabContent';
+import { AUDIT_ACTION_OPTIONS } from '@/utils/auditActionLabels';
 import { withAppProviders } from './app-providers';
 
 // Pruebas de aceptación de tareas pendientes de documentacion/actual.md sin cobertura previa:
-// FIX-127, FIX-131, FIX-132 y FRN-32. Metodología TDD: en rojo hasta implementar.
+// FIX-127, FIX-131, FIX-132, FRN-32 y FIX-144. Metodología TDD: en rojo hasta implementar.
 
 const frontendSrc = path.resolve(__dirname, '../../frontend/centinela/src');
+const backendSrc = path.resolve(__dirname, '../../backend');
 const read = (relative: string) => fs.readFileSync(path.join(frontendSrc, relative), 'utf-8');
+const readBackend = (relative: string) => fs.readFileSync(path.join(backendSrc, relative), 'utf-8');
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -254,6 +257,41 @@ describe('FRN-32 - Exportación de reportes de auditoría', () => {
     });
   });
 });
+
+describe('FIX-144 - Alineación de filtros, contadores y diccionario de acciones de auditoría en Frontend con el enum cerrado del Backend (RF-08 / FRN-31)', () => {
+  it('AUDIT_ACTION_OPTIONS en auditActionLabels.ts coincide 1 a 1 con las constantes Accion* de backend/internal/core/ports/audit_port.go', () => {
+    const auditPort = readBackend('internal/core/ports/audit_port.go');
+    const backendActions = Array.from(auditPort.matchAll(/Accion\w+\s*(?:\w+)?\s*=\s*"([^"]+)"/g), (m) => m[1]);
+    const frontendOptions = AUDIT_ACTION_OPTIONS.map((o) => o.value);
+
+    // Ninguna opción del filtro del frontend puede enviar un código inexistente en ports/audit_port.go (ej. CAMBIAR_CONTRASENA vs PASSWORD_CHANGED)
+    const missingInBackend = frontendOptions.filter((code) => !backendActions.includes(code));
+    expect(missingInBackend).toEqual([]);
+
+    // Todas las constantes activas de ports/audit_port.go deben estar representadas en el filtro del frontend
+    const missingInFrontend = backendActions.filter((code) => !frontendOptions.includes(code));
+    expect(missingInFrontend).toEqual([]);
+  });
+
+  it('Auditoria.tsx y Usuarios.tsx consultan un único conjunto cerrado de resultado alineado con ports/audit_port.go', () => {
+    const auditPort = readBackend('internal/core/ports/audit_port.go');
+    const backendResults = Array.from(new Set(Array.from(auditPort.matchAll(/Resultado\w+\s*(?:\w+)?\s*=\s*"([^"]+)"/g), (m) => m[1])));
+
+    // El backend no debe mezclar las dos familias (EXITO/FALLA junto con SUCCESS/FAILED)
+    const hasSpanish = backendResults.includes('EXITO') || backendResults.includes('FALLA');
+    const hasEnglish = backendResults.includes('SUCCESS') || backendResults.includes('FAILED');
+    expect(hasSpanish && hasEnglish).toBe(false);
+
+    // Auditoria.tsx y Usuarios.tsx deben usar la misma familia canónica y no familias contradictorias entre sí
+    const auditoriaSrc = read('pages/Auditoria.tsx');
+    const usuariosSrc = read('pages/Usuarios.tsx');
+
+    const auditoriaUsesSuccess = /resultado:\s*['"]SUCCESS['"]|<option value=['"]SUCCESS['"]/.test(auditoriaSrc);
+    const usuariosUsesExito = /resultado:\s*['"]EXITO['"]/.test(usuariosSrc);
+    expect(auditoriaUsesSuccess && usuariosUsesExito).toBe(false);
+  });
+});
+
 
 
 

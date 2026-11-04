@@ -72,6 +72,36 @@ const sampleAuditItems = [
     resultado: 'FAILED',
     detalles: { snapname: 'pre_deploy_2026', motivo: 'PROXMOX_ERROR', error: 'lock timeout' },
   },
+  {
+    id: 'aud-etapa3-4',
+    usuarioId: 'usr-admin-1',
+    nombreUsuario: 'Admin Principal',
+    fechaHora: '2026-10-24T10:30:00Z',
+    accion: 'SNAPSHOT_DELETE',
+    resourceType: 'SNAPSHOT',
+    resourceId: 'inst_k8Pq2v',
+    recursoTipo: 'SNAPSHOT',
+    recursoId: 'inst_k8Pq2v',
+    instanciaId: 'inst_k8Pq2v',
+    instanciaNombre: 'web-01',
+    resultado: 'SUCCESS',
+    detalles: { snapname: 'old_snap_2026' },
+  },
+  {
+    id: 'aud-etapa3-5',
+    usuarioId: 'usr-admin-1',
+    nombreUsuario: 'Admin Principal',
+    fechaHora: '2026-10-24T10:35:00Z',
+    accion: 'CONFIG_UPDATED',
+    resourceType: 'INSTANCE',
+    resourceId: 'inst_k8Pq2v',
+    recursoTipo: 'INSTANCE',
+    recursoId: 'inst_k8Pq2v',
+    instanciaId: 'inst_k8Pq2v',
+    instanciaNombre: 'web-01',
+    resultado: 'SUCCESS',
+    detalles: { cores: 4 },
+  },
 ];
 
 function renderAuditoria() {
@@ -105,19 +135,19 @@ afterEach(() => {
 
 describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y exportación CSV/JSON', () => {
   it('renderiza badges diferenciados por severidad/resultado: SUCCESS (verde), WARNING (amarillo) y FAILED (rojo)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       total: sampleAuditItems.length,
       pagina: 1,
       items: sampleAuditItems,
-    }));
+    })));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAuditoria();
 
     const table = await screen.findByRole('table');
-    const successBadge = await within(table).findByText(/éxito|exito|success/i);
-    const warningBadge = await within(table).findByText(/advertencia|warning/i);
-    const failedBadge = await within(table).findByText(/falla|fallido|failed/i);
+    const [successBadge] = await within(table).findAllByText(/éxito|exito|success/i);
+    const [warningBadge] = await within(table).findAllByText(/advertencia|warning/i);
+    const [failedBadge] = await within(table).findAllByText(/falla|fallido|failed/i);
 
     expect(successBadge.closest('span')?.className ?? successBadge.className).toMatch(/emerald|green/);
     expect(warningBadge.closest('span')?.className ?? warningBadge.className).toMatch(/amber|yellow/);
@@ -125,26 +155,30 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
   });
 
   it('ofrece controles accesibles de rango de fechas (Desde y Hasta), filtro por recursoTipo y acciones de Etapa 3 (SNAPSHOT_CREATE, SNAPSHOT_ROLLBACK, SNAPSHOT_DELETE, ALERT_TRIGGERED, CONFIG_UPDATED)', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       total: sampleAuditItems.length,
       pagina: 1,
       items: sampleAuditItems,
-    }));
+    })));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     renderAuditoria();
     await screen.findByRole('table');
+    await within(screen.getByRole('table')).findAllByText('Admin Principal');
 
     // El botón "Filtros" es opcional: la especificación solo exige los controles accesibles.
     const filtrosBtn = screen.queryByRole('button', { name: /filtros/i });
     if (filtrosBtn) await user.click(filtrosBtn);
 
-    // Controles accesibles de rango de fechas ("Desde" y "Hasta", actual.md:309)
-    const desdeControl = screen.queryByLabelText(/desde/i);
-    const hastaControl = screen.queryByLabelText(/hasta/i);
-    expect(desdeControl, 'falta el control accesible "Desde" para el rango de fechas (FRN-31)').not.toBeNull();
-    expect(hastaControl, 'falta el control accesible "Hasta" para el rango de fechas (FRN-31)').not.toBeNull();
+    // Controles accesibles de rango de fechas ("Desde" y "Hasta" o selector unificado "Desde / Hasta", actual.md:309)
+    await waitFor(() => {
+      const rangeButton = screen.queryByRole('button', { name: /desde.*hasta/i });
+      const desdeControl = screen.queryByLabelText(/desde/i) ?? rangeButton;
+      const hastaControl = screen.queryByLabelText(/hasta/i) ?? rangeButton;
+      expect(desdeControl, 'falta el control accesible "Desde" para el rango de fechas (FRN-31)').not.toBeNull();
+      expect(hastaControl, 'falta el control accesible "Hasta" para el rango de fechas (FRN-31)').not.toBeNull();
+    });
 
     // Filtro por tipo de recurso (recursoTipo: INSTANCE, SNAPSHOT, NODE, USER)
     const resourceTypeFilter = screen.queryByLabelText(/tipo de recurso|recurso/i)
@@ -169,17 +203,17 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
   });
 
   it('al hacer clic en "Ver detalles" abre un modal o visor con el payload JSON de detalles formateado', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       total: sampleAuditItems.length,
       pagina: 1,
       items: sampleAuditItems,
-    }));
+    })));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 
     renderAuditoria();
     const table = await screen.findByRole('table');
-    await within(table).findByText('Admin Principal');
+    await within(table).findAllByText('Admin Principal');
 
     const detailButtons = within(table).getAllByRole('button', { name: /ver detalles/i });
     await user.click(detailButtons[0]);

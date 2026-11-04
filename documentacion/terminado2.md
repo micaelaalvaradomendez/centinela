@@ -716,6 +716,21 @@ Verificadas contra frontend `594a4e0` y backend `908522e`.
   2. Pruebas unitarias en `instance_handler_test.go` y `test/back/etapa3_fixes_pendientes_test.go`.
 - **Criterio de éxito:** `POST /api/instances` acepta peticiones con `"vlan": 0` como interfaz de red sin etiquetar (*untagged*).
 
+#### `FIX-142` - Restauración de `FRN-22` (`useInstanceMetrics`, `getWsTicket`, `metricsWebSocket`) revertida en `4f743e4` e integración de pestaña `"Métricas"`, modo `"En vivo"` y gráfico de Red en `FRN-23` (Frontend)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, frontend `1e5ec49`): implementada y con tests en verde.** Commits `fa74412`, `07bd415`, `c9c5308`, `fa92405` y `26af24f` (PR #182). Se restauraron `metrics.types.ts`, `metricsService.ts` (`getWsTicket()`), `metricsWebSocket.ts`, `useInstanceMetrics.ts` e `instance-metrics.test.tsx`, y se integraron la pestaña `"Métricas"`, la opción `"En vivo"`, el estado `"Instancia detenida"` y la 4.ª serie de `"Tráfico de Red"` en `InstanceDetailContent.tsx` e `InstanceResourceUsage.tsx`. Pasan al 100% `test/front/frn-22-use-instance-metrics.test.tsx` (9/9 ✅), `test/front/frn-23-metrics-charts.test.tsx` (9/9 ✅) y `frontend/centinela/src/test/instance-metrics.test.tsx` (14/14 ✅).
+
+- **Área:** Frontend
+- **Asignado:** Luz / Cristian / Belinda
+- **Estimación:** 2.5 h
+- **Depende de:** `FRN-21`, `FRN-22`, `FRN-23`, `BAC-35`, `BAC-36`.
+- **Entregable:**
+  1. Restauración de `getWsTicket()`, `metricsWebSocket.ts` y `useInstanceMetrics(instanceRef)` con soporte para `InstanceRef` opacos.
+  2. Pestaña `"Métricas"`, modo `"En vivo"`, gráfico de Tráfico de Red (`netInBps`/`netOutBps`) y estado `"Instancia detenida"` en `InstanceDetailContent.tsx` e `InstanceResourceUsage.tsx`.
+- **Criterio de éxito:** `test/front/frn-22-use-instance-metrics.test.tsx` (9/9) y `test/front/frn-23-metrics-charts.test.tsx` (9/9) pasan al 100% en verde.
+
+
 
 
 

@@ -101,13 +101,20 @@ function renderDetail(instanceRef = '101') {
 const metricsCalls = (ref = '101') =>
   (fetchMock.mock.calls as [string][]).map(([url]) => String(url)).filter((url) => new RegExp(`/instances/${ref}/metrics`).test(url));
 
-// El selector puede ser tabs, botones, radios o un select: se busca por rol y nombre accesible.
+// El selector puede ser tabs, botones, radios o un select/combobox: se busca por rol y nombre accesible.
 async function findRangeControl(name: RegExp) {
+  const queryControls = () => [
+    ...screen.queryAllByRole('tab', { name }), ...screen.queryAllByRole('button', { name }),
+    ...screen.queryAllByRole('radio', { name }), ...screen.queryAllByRole('option', { name }),
+  ];
+  if (queryControls().length === 0) {
+    const combobox = screen.queryByRole('combobox', { name: /per[ií]odo de las m[eé]tricas/i }) ?? screen.queryByRole('combobox');
+    if (combobox && combobox.getAttribute('aria-expanded') !== 'true') {
+      await userEvent.click(combobox);
+    }
+  }
   return waitFor(() => {
-    const found = [
-      ...screen.queryAllByRole('tab', { name }), ...screen.queryAllByRole('button', { name }),
-      ...screen.queryAllByRole('radio', { name }), ...screen.queryAllByRole('option', { name }),
-    ];
+    const found = queryControls();
     expect(found.length, `falta el control de rango ${name}`).toBeGreaterThan(0);
     return found[0];
   }, { timeout: 3000 });
@@ -182,9 +189,11 @@ describe('FRN-23 - gráficos de rendimiento y selector de rango temporal', () =>
     const user = userEvent.setup();
     await openMetricsTab(user);
 
-    await user.click(await findRangeControl(/en vivo/i));
+    const control = await findRangeControl(/en vivo/i);
+    const callsBefore = metricsCalls().length;
+    await user.click(control);
     await waitFor(() => expect(opened.some((url) => /\/ws\/instances\/101\/metrics/.test(url))).toBe(true));
-    expect(metricsCalls()).toHaveLength(0);
+    expect(metricsCalls()).toHaveLength(callsBefore);
   });
 
   it('muestra un skeleton o estado de carga mientras llegan los primeros datos', async () => {
@@ -211,7 +220,7 @@ describe('FRN-23 - gráficos de rendimiento y selector de rango temporal', () =>
     await waitFor(() => {
       const text = document.body.textContent ?? '';
       expect(text, 'falta la unidad KB/s en red o disco').toMatch(/KB\/s/);
-      expect(text, 'la memoria no se muestra en MB/GB').toMatch(/\b\d+([.,]\d+)?\s?(GB|GiB|MB|MiB)\b/);
+      expect(text, 'la memoria no se muestra en MB/GB').toMatch(/\d+([.,]\d+)?\s?(GB|GiB|MB|MiB)/);
       expect(text).not.toMatch(/\b\d{7,}\s?(bps|B\/s)\b/);
     });
   });

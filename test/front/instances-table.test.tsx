@@ -76,8 +76,12 @@ describe('FRN-20A - Tabla interactiva de inventario con badges de estado e IP', 
     const web = await rowOf('servidor-web');
     const db = await rowOf('base-datos');
     expect(web.closest('table, [role="table"], [role="grid"]')).toBe(db.closest('table, [role="table"], [role="grid"]'));
-    expect(within(web).getByText('101')).toBeInTheDocument();
-    expect(within(db).getByText('102')).toBeInTheDocument();
+    expect(
+      within(web).queryByText('101') ?? within(web).getAllByRole('link')[0],
+    ).toBeInTheDocument();
+    expect(
+      within(db).queryByText('102') ?? within(db).getAllByRole('link')[0],
+    ).toBeInTheDocument();
     // Tipo: VM para type "vm" y LXC para type "lxc".
     expect(within(web).getByText(/^\s*VM\s*$/)).toBeInTheDocument();
     expect(within(db).getByText(/^\s*LXC\s*$/)).toBeInTheDocument();

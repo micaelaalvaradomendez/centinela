@@ -3,7 +3,7 @@
 Para cumplir con la directiva de desglosar más el tablero y que nadie pueda escudarse en que una tarea es "demasiado grande" o "depende de otro", dividí las épicas en subtareas de 2 a 4 horas:
 
 > [!IMPORTANT]
-> **Estado del tablero (03/11/2026):** según la última sincronización de submódulos (`backend` `fb8a41c` y `frontend` `877eddd`), en este archivo quedan únicamente las tareas **pendientes de implementación** de la Etapa 2, Etapa 3 y etapa adaptacion-proxmox. Lo ya verificado con las suites está en [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md) / [`terminado3.md`](terminado3.md), y las correcciones de las tareas implementadas cuyos tests fallan están documentadas en [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md) / [`futuro3.md`](futuro3.md).
+> **Estado del tablero (04/11/2026):** según la última sincronización de submódulos (`backend` `4011b08` y `frontend` `1e5ec49`), en este archivo quedan únicamente las tareas **pendientes de implementación** de la Etapa 2, Etapa 3 y etapa adaptacion-proxmox. Lo ya verificado con las suites está en [`terminado-1.md`](terminado-1.md) / [`terminado2.md`](terminado2.md) / [`terminado3.md`](terminado3.md), y las correcciones de las tareas implementadas cuyos tests fallan están documentadas en [`futuro-1.md`](futuro-1.md) / [`futuro2.md`](futuro2.md) / [`futuro3.md`](futuro3.md).
 >
 > **Pasados a `terminado-1.md` / `terminado2.md` (Etapa 1 y 2):**
 > - `FIX-104B` / `FIX-105` y `FIX-102` (resueltos y con tests en verde el 21/10/2026).
@@ -14,11 +14,11 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > - `FIX-111B` y `FIX-115B` (resueltos y con tests en verde el 22/10/2026: modal de reautenticación y claves hasta 128 chars).
 > - `FRN-24` y `FRN-25` (cerradas el 22/10/2026: implementación funcional y pruebas alineadas al contrato real).
 > - `FIX-117B` (resuelto y con tests en verde el 24/10/2026: adaptación de Dashboard para operador; `fix-117b-dashboard-operador.test.tsx` 4/4 en verde).
-> - `FRN-26`, `FRN-27` y `FRN-28` (resueltos y con tests en verde; `FRN-22` y `FRN-23` tienen seguimiento en `FIX-142` de [`futuro2.md`](futuro2.md) tras la reversión en `4f743e4`).
+> - `FRN-22`, `FRN-23`, `FRN-26`, `FRN-27`, `FRN-28` y `FIX-142` (resueltos y con tests en verde el 04/11/2026 en `26af24f`: restauración de `useInstanceMetrics`/`getWsTicket`, pestaña `"Métricas"`, modo `"En vivo"`, estado `"Instancia detenida"` y gráfico de Red; `frn-22-use-instance-metrics.test.tsx` 9/9 y `frn-23-metrics-charts.test.tsx` 9/9 en verde).
 > - `FIX-91` (resuelto y con tests en verde el 30/10/2026: eliminación de código muerto `InstanceTester.tsx`; `fix-91-dead-code.test.tsx` 2/2 en verde).
 > - `FIX-108` y `FIX-124` (resueltos y con tests en verde el 30/10/2026: identificadores opacos `InstanceRef` y sanitización estricta anti-traversal; `fix-108-ids-ofuscados.test.tsx` 11/11 y `ids-ofuscados.test.tsx` 14/14 en verde).
 > - `FRN-36` (resuelto y con tests en verde el 30/10/2026: modularización de `InstanceDetailPage`, tabs transitorios y bloqueo de cabecera; `frn-36-29-snapshots-ui.test.tsx` en verde).
-> - `FIX-127` (resuelto el 03/11/2026 en `83a19b5`/`14db393`/`30a79a5`/`109f266`: `useOptionalEventsContext` y `instanceRef ?? vmid`; seguimiento de mocks internos y ruta `:vmid` en `FIX-141` de [`futuro2.md`](futuro2.md)).
+> - `FIX-127` (resuelto el 03/11/2026 en `83a19b5`/`14db393`/`30a79a5`/`109f266`: `useOptionalEventsContext` y `instanceRef ?? vmid`; seguimiento de mocks internos en `FIX-141` de [`futuro2.md`](futuro2.md)).
 > - `FIX-128` (Backend VLAN 0, resuelto y con tests en verde el 03/11/2026 en `b2d5fec`: normalización de `*input.VLAN == 0` a `nil`).
 >
 > **Pasados a `terminado3.md` (Etapa 3):**
@@ -33,18 +33,23 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 > - `FRN-32` (resuelto y con tests en verde el 03/11/2026 en `404c784`: menú desplegable `AuditExportButton` CSV/JSON con estado de carga, Toast y transferencia de filtros).
 > - `BAC-55` (`BRG-15-SIM`, resuelto y con tests en verde el 03/11/2026 en `61b973d`/`ec5922c`: switch `PROXMOX_SIM_TARGET_VERSION`).
 > - `FIX-128` (`FRN-31`, resuelto y con tests en verde el 03/11/2026 en `b38ab17`: `SNAPSHOT_DELETE`, `ALERT_TRIGGERED`, `'Revertir snapshot'` y exportación en `Auditoria.tsx`).
+> - `FIX-131` (resuelto y con tests en verde el 04/11/2026 en `fa92405`/`26af24f`: `netInBps`/`netOutBps` y tarjeta `"Tráfico de Red"` en `InstanceResourceUsage.tsx`; 3/3 en `test/front/etapa3-pendientes.test.tsx`).
 > - `FIX-132` (resuelto y con tests en verde el 03/11/2026 en `3d06236`: discriminación de `SAME_PASSWORD` / `WEAK_PASSWORD` en `RecoverPassword.tsx`).
 > - `FIX-133` (resuelto y con tests en verde el 03/11/2026 en `fb8a41c`: CPU Overcommit permitido en escalado vertical cuando $\Delta\text{RAM} \le 0$).
+> - `FIX-134` (resuelto y con tests en verde el 04/11/2026 en `42093c3`: soporte operativo para instancias en estado `paused` en `stop`, `resume` y `EliminarInstancia`; `TestFIX134_InstanciasPausadas` 4/4 en verde).
+> - `FIX-135` (resuelto y con tests en verde el 04/11/2026 en `5f8bb5e`: reconciliación con tareas de Proxmox en `explicadaPorCentinela`, auditoría `SYSTEM_INSTANCE_STOPPED_EXTERNALLY` y `ALERT_IGNORE_EXTERNAL_SHUTDOWN`; `TestFIX135_AlertasParadasExternas` 3/3 en verde).
+> - `FIX-136` (resuelto y con tests en verde el 04/11/2026 en `08126ae`: parametrización de umbrales `ConfigAlertas` y `ALERT_THRESHOLD_*` / `ALERT_CYCLES_COUNT`; `TestFIX136_UmbralesDeAlertaConfigurables` 4/4 en verde).
 > - `FIX-138` (resuelto y con tests en verde el 03/11/2026 en `3fe055b`: ampliación de `CaracteresEspeciales` NIST SP 800-63B en `password.go`).
 > - `FIX-140` (resuelto y con tests en verde el 03/11/2026 en `4e4d2c4`: `emailProvider` en `/api/version` y cabecera `X-Centinela-Email-Provider: mock`).
+> - `FIX-143` (resuelto y con tests en verde el 04/11/2026 en `4011b08`: vocabulario cerrado de `auditoria.accion` y `auditoria.resultado`, enums publicados en Swagger y `contrato-etapa1.md`, test `TestContratoVocabularioAuditoria` y migración histórica `20261104_vocabulario_auditoria.sql`; `TestFIX143_VocabularioAuditoriaContratoCerrado` 4/4 en verde).
 >
 > **Pasados a `terminado3.md` (Etapa Adaptación Proxmox PVE 8.4):**
 > - `ADP-01`, `ADP-02`, `ADP-03`, `ADP-04`, `ADP-05` y `ADP-08` (resueltos y con tests en verde el 01/11/2026).
 > - `ADP-06` (`SIM-PVE8-02`, resuelto y con tests en verde el 03/11/2026 en `aee232a`: catálogo de plantillas e ISOs Debian 12 Bookworm en `storage.go`).
 >
-> **Seguimiento de Fixes en `futuro2.md`:**
-> - `FIX-141` (en [`futuro2.md`](futuro2.md): actualizar mocks de `@/context/EventsContext` con `useOptionalEventsContext` en 2 tests internos de `frontend/centinela/src/test/`).
-> - `FIX-142` (en [`futuro2.md`](futuro2.md): restaurar `FRN-22` revertido en `4f743e4` —`useInstanceMetrics`, `getWsTicket`, `metricsWebSocket`— y completar `FRN-23` con pestaña `"Métricas"`, modo `"En vivo"` y serie de Red).
+> **Seguimiento de Fixes en `futuro2.md` y `futuro3.md`:**
+> - `FIX-141` (en [`futuro2.md`](futuro2.md): sincronizar tests unitarios internos de `frontend/centinela/src/test/` con los cambios recientes de mocks y UI).
+> - `FIX-144` (Frontend, en [`futuro3.md`](futuro3.md) y en este tablero: Alineación 1 a 1 de `auditActionLabels.ts`, `Auditoria.tsx` y `Usuarios.tsx` con el enum cerrado de `auditoria.accion` y `auditoria.resultado` del Backend y retiro de lectura doble).
 
 ---
 
@@ -73,70 +78,37 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 - **Criterio de éxito:** `GET /api/node/templates` responde con el catálogo real sin errores de permisos.
 
 
-### `FIX-141` - Actualización de mocks de `@/context/EventsContext` (`useOptionalEventsContext`) en tests unitarios internos del submódulo `frontend` (`FIX-127`) (Testing Frontend)
+### `FIX-141` - Actualización de mocks de `@/context/EventsContext` (`useOptionalEventsContext`) y sincronización de expectativas UI en tests unitarios internos del submódulo `frontend` (`FIX-127` / `99c7a18` / `b93654b`) (Testing Frontend)
 
 - **Área:** Frontend (Tests internos del submódulo)
 - **Asignado:** Cristian / Luz
-- **Estimación:** 0.25 h
+- **Estimación:** 0.5 h
 - **Depende de:** `FIX-127`, `FRN-29`.
-- **Nota de diagnóstico:** La implementación de producto de `FIX-127` en `EventsContext.tsx`, `SnapshotsTabContent.tsx` e `InstanceDetailPage.tsx` **está bien implementada** y pasa las pruebas de aceptación (`test/front/etapa3-pendientes.test.tsx` 3/3 ✅ y `test/front/instance-detail.test.tsx` 3/3 ✅). El fallo ocurre únicamente en 2 archivos de test internos del submódulo `frontend/centinela/src/test/`.
+- **Nota de diagnóstico:** La implementación de producto de `FIX-127` en `EventsContext.tsx`, `SnapshotsTabContent.tsx` e `InstanceDetailPage.tsx` **está bien implementada** y pasa las pruebas de aceptación (`test/front/etapa3-pendientes.test.tsx` 3/3 ✅ y `test/front/instance-detail.test.tsx` 3/3 ✅). El fallo ocurre únicamente en archivos de test internos del submódulo `frontend/centinela/src/test/` que quedaron desincronizados tras cambios recientes:
 - **Tests internos del submódulo que fallan actualmente:**
-  - `frontend/centinela/src/test/snapshots.test.tsx` (4/4 fallan con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
-  - `frontend/centinela/src/test/instance-transient-states.test.tsx` (1/5 falla con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
-- **Problema técnico detallado (Por qué fallan los tests del submódulo):**
-  En el commit `14db393` (`FIX-127`), `frontend/centinela/src/components/features/instances/components/detail/SnapshotsTabContent.tsx:69` reemplazó `useEventsContext()` por `useOptionalEventsContext()`. Sin embargo, los mocks manuales `vi.mock('@/context/EventsContext', ...)` definidos en `frontend/centinela/src/test/snapshots.test.tsx:15-17` y `frontend/centinela/src/test/instance-transient-states.test.tsx:15-18` quedaron con la exportación vieja (`useEventsContext`) sin exportar `useOptionalEventsContext`.
+  1. `frontend/centinela/src/test/snapshots.test.tsx` (4/4 fallan con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
+  2. `frontend/centinela/src/test/instance-transient-states.test.tsx` (1/3 falla con `Error: [vitest] No "useOptionalEventsContext" export is defined on the "@/context/EventsContext" mock`)
+  3. `frontend/centinela/src/test/instances-table.test.tsx` (3 tests fallan tras el commit `99c7a18` que eliminó las columnas `Checkbox` e `ID` de `Instances.tsx` sin actualizar ese test interno).
+  4. `frontend/centinela/src/test/dashboard-node-status.test.tsx` (3 tests fallan tras renombrar los botones `"Ver todas"` y `"Ver todo"` a `"Ver todas las instancias"` y `"Ver toda la actividad"` en el Dashboard).
+  5. `frontend/centinela/src/test/accessibility.test.tsx` (1 test falla porque `button.tsx` reemplazó `focus-visible:ring-4` por `focus-visible:ring-0 focus-visible:bg-[#93c5fdbd]`).
 - **Solución técnica paso a paso:**
-  En `frontend/centinela/src/test/snapshots.test.tsx:15-17` y `frontend/centinela/src/test/instance-transient-states.test.tsx:15-18`, agregar `useOptionalEventsContext` al objeto devuelto por `vi.mock('@/context/EventsContext')`:
-  ```ts
-  vi.mock('@/context/EventsContext', () => ({
-      useEventsContext: () => ({ ultimoMensaje: null }),
-      useOptionalEventsContext: () => ({ ultimoMensaje: null }),
-      useEventSubscription: () => {},
-  }));
-  ```
+  1. En `frontend/centinela/src/test/snapshots.test.tsx:15-17` y `frontend/centinela/src/test/instance-transient-states.test.tsx:15-18`, agregar `useOptionalEventsContext` al objeto devuelto por `vi.mock('@/context/EventsContext')`:
+     ```ts
+     vi.mock('@/context/EventsContext', () => ({
+         useEventsContext: () => ({ ultimoMensaje: null }),
+         useOptionalEventsContext: () => ({ ultimoMensaje: null }),
+         useEventSubscription: () => {},
+     }));
+     ```
+  2. Sincronizar las aserciones de `instances-table.test.tsx`, `dashboard-node-status.test.tsx` y `accessibility.test.tsx` con los cambios visuales introducidos en `99c7a18` y `b93654b`.
 - **Criterio de éxito:**
-  - `frontend/centinela/src/test/snapshots.test.tsx` (4/4) y `frontend/centinela/src/test/instance-transient-states.test.tsx` (5/5) pasan al 100% en verde.
-
----
-
-### `FIX-142` - Restauración de `FRN-22` (`useInstanceMetrics`, `getWsTicket`, `metricsWebSocket`) revertida en `4f743e4` e integración de pestaña `"Métricas"`, modo `"En vivo"` y gráfico de Red en `FRN-23` (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Luz / Cristian / Belinda
-- **Estimación:** 2.5 h
-- **Depende de:** `FRN-21`, `FRN-22`, `FRN-23`, `BAC-35`, `BAC-36`.
-- **Tests que fallan actualmente:**
-  - `test/front/frn-22-use-instance-metrics.test.tsx` (5/5 fallan: `no hay un servicio exportado getWsTicket() en el frontend`, `no existe el hook useInstanceMetrics en el frontend (FRN-22)`)
-  - `test/front/frn-23-metrics-charts.test.tsx` (7/7 fallan: `la vista de detalle no tiene la pestaña "Métricas"`)
-- **Problema técnico detallado (Por qué fallan los tests):**
-  1. **Reversión de `FRN-22` en `origin/main` (`4f743e4`):** La tarea `FRN-22` fue implementada originalmente en el commit `60833b3` (`🌱 feat(instances):se implementa telemetría en tiempo real de instancias.`) y pasada a `terminado2.md`. Sin embargo, en el commit `4f743e4` (`Revert "🌱 feat(instances):se implementa telemetría en tiempo real de instancias."`) se eliminaron por completo del árbol `src/` los 5 archivos de la tarea:
-     - `src/components/features/instances/metrics/metrics.types.ts`
-     - `src/components/features/instances/metrics/metricsService.ts` (`getWsTicket()`)
-     - `src/components/features/instances/metrics/metricsWebSocket.ts`
-     - `src/components/features/instances/metrics/useInstanceMetrics.ts` (`useInstanceMetrics(vmid)`)
-     - `src/test/instance-metrics.test.tsx`
-     Como consecuencia, `useInstanceMetrics` y `getWsTicket` no existen actualmente en `origin/main` (`877eddd`).
-  2. **Incumplimiento de entregables de `FRN-23` en `InstanceDetailContent.tsx` e `InstanceResourceUsage.tsx`:**
-     - En `frontend/centinela/src/components/features/instances/components/detail/InstanceDetailContent.tsx:116-120`, las pestañas se nombraron `"Resumen"`, `"Recursos"`, `"Red"` y `"Snapshots"`, omitiendo la pestaña **`"Métricas"`** exigida por `FRN-21` y `FRN-23` (`test/front/frn-23-metrics-charts.test.tsx:118`).
-     - En `frontend/centinela/src/components/features/instances/components/detail/InstanceResourceUsage.tsx:19-22`, el selector de rango (`timeframeOptions`) solo ofrece `'2h'` (`"Últimas 2 horas"`) y `'24h'` (`"Últimas 24 horas"`), omitiendo la opción **`"En vivo"`** conectada al WebSocket de `useInstanceMetrics` (`FRN-23` entregable 2).
-     - En `InstanceResourceUsage.tsx:28-57`, solo se grafican 3 métricas (`CPU`, `Memoria`, `Disco`), omitiendo el gráfico de **Tráfico de Red (`netInBps` / `netOutBps`)** (`FRN-23` entregable 1 y `FIX-131`).
-     - Cuando la instancia está detenida (`detail.status === 'stopped'` o muestras con `cpuPercent: null` y `ramUsedBytes: null`), `InstanceResourceUsage.tsx` no muestra el estado vacío explícito **`"Instancia detenida"`** (`FRN-23` entregable 5).
-- **Solución técnica paso a paso:**
-  1. Restaurar desde el commit `60833b3` (o `01c1567`) los módulos `metrics.types.ts`, `metricsService.ts` (exportando `getWsTicket()` que invoca `POST /auth/ws-ticket`), `metricsWebSocket.ts`, `useInstanceMetrics.ts` y `src/test/instance-metrics.test.tsx`, adaptándolos para aceptar `InstanceRef` (`string | number`) sin convertir IDs opacos a `Number`.
-  2. En `InstanceDetailContent.tsx:116-120`, exponer la pestaña `"Métricas"` (o incluir `"Métricas"` en el nombre accesible / pestaña dedicada que renderice `InstanceResourceUsage`).
-  3. En `InstanceResourceUsage.tsx` y `useInstanceDetail.ts`:
-     - Añadir la opción `{ value: 'live', label: 'En vivo' }` en `timeframeOptions`, consumiendo `useInstanceMetrics(detail.reference)` cuando `timeframe === 'live'` y `GET /api/instances/:ref/metrics?timeframe=2h|24h` en los modos históricos.
-     - Incorporar la 4.ª tarjeta/gráfico de **Tráfico de red** (`netInBps` / `netOutBps` formateados en `KB/s` o `MB/s`).
-     - Mostrar el aviso `"Instancia detenida"` cuando `detail.status === 'stopped'` o todos los puntos de CPU/RAM sean `null`, sin producir `NaN` ni invocar `.toFixed()` sobre `null`.
-- **Criterio de éxito:**
-  - `test/front/frn-22-use-instance-metrics.test.tsx` (5/5) pasa al 100% en verde.
-  - `test/front/frn-23-metrics-charts.test.tsx` (7/7) pasa al 100% en verde.
+  - `npm --prefix frontend/centinela test -- --run` pasa los 43 archivos de test al 100% en verde.
 
 ---
 # ETAPA 3: Tareas Pendientes de Implementación
 ---
 
-*Las tareas `BAC-44`, `BAC-45`, `BAC-48`, `BAC-54`, `BAC-55`, `FRN-29`, `FRN-30`, `FRN-32`, `FRN-34`, `FIX-128` (`FRN-31`), `FIX-132`, `FIX-133`, `FIX-138` (Backend) y `FIX-140` fueron completadas y verificadas en [`terminado3.md`](terminado3.md). Restan las siguientes tareas pendientes de la Etapa 3:*
+*Las tareas `BAC-44`, `BAC-45`, `BAC-48`, `BAC-54`, `BAC-55`, `FRN-29`, `FRN-30`, `FRN-32`, `FRN-34`, `FIX-128` (`FRN-31`), `FIX-131`, `FIX-132`, `FIX-133`, `FIX-134`, `FIX-135`, `FIX-136`, `FIX-138` (Backend) y `FIX-140` fueron completadas y verificadas en [`terminado3.md`](terminado3.md). Restan las siguientes tareas pendientes de la Etapa 3:*
 
 #### `FRN-33` - Centro de Notificaciones y banners contextuales de alerta por saturación
 - **Área:** Frontend
@@ -256,179 +228,6 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
 
 ---
 
-
-
----
-
-### `FIX-131` - Incorporación de métricas y gráfico de Tráfico de Red (`netin`/`netout`) en detalle de instancia (`CU-05`) (Frontend)
-
-- **Área:** Frontend
-- **Asignado:** Belinda / Cristian
-- **Estimación:** 1.5 h
-- **Depende de:** `FRN-22`, `FRN-23`.
-- **Problema técnico detallado:**
-  En el flujo de **CU-05** (`casosdeuso.md:275`), se especifica que:
-  > *"El frontend renderiza gráficos de líneas (CPU, RAM y Tráfico de Red) mostrando la evolución temporal."*
-  
-  El backend en `domain.PuntoMetricaDTO` ya expone `netInBps` y `netOutBps` provenientes de Proxmox RRDdata. Sin embargo, en el frontend (`frontend/centinela/src/components/features/instances/types/instanceDetail.ts`), la interfaz `InstanceMetricPoint` omite las propiedades de red, y `InstanceResourceUsage.tsx` sólo instancia columnas y curvas para CPU, Memoria y Disco, dejando sin cobertura la gráfica de tráfico de red exigida por el caso de uso.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `instanceDetail.ts`:
-     - Agregar a `InstanceMetricPoint`: `netInBps: number | null; netOutBps: number | null;`.
-  2. En `instanceDetailService.ts`:
-     - Normalizar los campos `netInBps` y `netOutBps` en el mapeador de puntos métricos.
-  3. En `InstanceResourceUsage.tsx`:
-     - Incorporar la métrica y columna de **Tráfico de Red** utilizando el icono `Network` o `ArrowUpDown`, formateando las tasas con una función auxiliar `formatNetworkRate(bytesPerSec)` (`KB/s`, `MB/s`) e instanciando un `InstanceResourceChart` para la serie de tráfico de red combinado (`(netInBps ?? 0) + (netOutBps ?? 0)` o líneas segregadas de entrada/salida).
-- **Criterio de éxito:**
-  Al ingresar a la vista de detalle de una instancia con métricas históricas (2h o 24h), la grilla de uso de recursos renderiza las 4 métricas (CPU, Memoria, Disco y Tráfico de Red) con sus respectivos gráficos de evolución temporal.
-
----
-
-### `FIX-134` - Soporte operativo para instancias en estado `paused` y prevención de deadlocks en controles de energía y borrado (`RF-03` / `RF-04` / `CU-04`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lucas / Nico
-- **Estimación:** 2.0 h
-- **Depende de:** `RF-03`, `RF-04`, `CU-04`.
-- **Problema técnico detallado:**
-  En `documentacion/archvios/centinela.md` (línea 67) y `casosdeuso.md` (CU-03/CU-04), se define explícitamente que las instancias pueden presentar los estados `Running`, `Stopped` o `Paused`. Un hipervisor Proxmox puede pausar una VM automáticamente ante saturación de almacenamiento (I/O freeze), operaciones de backup/snapshot en suspensión, o por intervención manual de un sysadmin en la GUI nativa de Proxmox.
-  
-  Sin embargo, en `internal/adapters/primary/http/instance_handler.go:209-253`:
-  ```go
-  var estadosRequeridosPorAccion = map[string]string{
-      "start":    "stopped",
-      "stop":     "running",
-      "shutdown": "running",
-      "reboot":   "running",
-  }
-  ```
-  Y en `EliminarInstancia` (`instance_handler.go:1016`):
-  ```go
-  if instancia.Estado != "stopped" {
-      SendError(c, http.StatusConflict, "INSTANCE_INVALID_STATE", "La instancia debe estar detenida...")
-  }
-  ```
-  Si una instancia se encuentra en estado `"paused"`:
-  1. `POST /instances/:ref/start` falla con `409 INSTANCE_INVALID_STATE` (exige `stopped`).
-  2. `POST /instances/:ref/stop` (apagado forzado) falla con `409 INSTANCE_INVALID_STATE` (exige `running`).
-  3. `POST /instances/:ref/status/shutdown` y `reboot` fallan con `409 INSTANCE_INVALID_STATE`.
-  4. `DELETE /instances/:ref` falla con `409 INSTANCE_INVALID_STATE`.
-  5. La acción `resume` o `unpause` no existe en `CambiarEstado`.
-  
-  Esto crea un **deadlock operativo completo (falso positivo de incompatibilidad de estado)**: una vez que una máquina se pausa en el hipervisor, El Centinela no permite iniciarla, ni apagarla forzosamente para recuperarla, ni eliminarla.
-- **Qué debe hacer el equipo de backend:**
-  1. En `instance_handler.go`:
-     - Modificar la función `validarEstadoParaAccion` y la matriz `estadosRequeridosPorAccion` para que la acción **`stop` (apagado forzado)** admita tanto `running` como `paused`:
-       ```go
-       func esEstadoCompatible(accion, estadoActual string) bool {
-           switch accion {
-           case "start":
-               return estadoActual == "stopped"
-           case "stop":
-               return estadoActual == "running" || estadoActual == "paused"
-           case "shutdown", "reboot":
-               return estadoActual == "running"
-           case "resume":
-               return estadoActual == "paused"
-           default:
-               return false
-           }
-       }
-       ```
-     - En `CambiarEstado`, incorporar la acción `"resume"` en el selector de acciones admitidas, despachando la llamada `resume` a Proxmox VE (`POST /nodes/{node}/{type}/{vmid}/status/resume`).
-  2. En `internal/adapters/secondary/proxmox/client.go`:
-     - Implementar el método `Resume(ctx context.Context, node string, vmid int, vmType string) (string, error)` que envíe la petición al endpoint `/status/resume` de Proxmox y retorne el `UPID` de la tarea.
-  3. Actualizar `ports.ProxmoxPort` y las pruebas de `instance_handler_test.go` para cubrir la recuperación de VMs pausadas mediante `stop` forzado y mediante `resume`.
-- **Criterio de éxito:**
-  Una máquina virtual en estado `paused` puede ser reanudada exitosamente mediante `POST /api/instances/:ref/status/resume` o apagada forzosamente mediante `POST /api/instances/:ref/stop`, retornando `202 Accepted` con su respectivo `tareaId`, sin ser bloqueada con `409 INSTANCE_INVALID_STATE`.
-
----
-
-### `FIX-135` - Reconciliación con tareas de Proxmox en Evaluador de Alertas para prevenir falsos positivos de `instance_down` ante paradas directas en el hipervisor (`RF-11` / `CU-11`) (Backend)
-
-- **Área:** Backend
-- **Asignado:** Lucas / Belinda
-- **Estimación:** 2.0 h
-- **Depende de:** `RF-11`, `CU-11`.
-- **Problema técnico detallado:**
-  En `internal/core/services/alert_evaluator_worker.go:249-251`:
-  ```go
-  if antes, ok := anterior[vmid]; ok && antes.Estado == "running" && !e.explicadaPorCentinela(ctx, vmid) {
-      e.disparar(ctx, activa, m, TipoAlertaCaida, fmt.Sprintf("La instancia %s se detuvo sin una orden de El Centinela.", ahora.Nombre))
-  }
-  ```
-  La función `explicadaPorCentinela()` consulta exclusivamente la tabla local `tareas_asincronas` de PostgreSQL dentro de una ventana de 10 minutos (`ventanaTareasCentinela`).
-  
-  En infraestructuras reales, administradores de sistemas y operadores de nivel superior realizan frecuentemente tareas de mantenimiento directamente en Proxmox VE (desde la consola web oficial, comandos CLI como `qm stop`, `pct stop`, o scripts automáticos de backup en frío del clúster). Debido a que estas tareas legítimas no se originan en la base de datos de El Centinela, el worker asume erróneamente que la máquina se cayó por un fallo catastrófico, disparando una **alerta CRITICAL (`instance_down`)** y despachando correos masivos a todos los administradores (`📧 [ALERTAS] correo de la alerta ... enviado`).
-  
-  Esto representa un **falso positivo severo de alarma de caída** que deteriora la confianza operativa en el sistema de alertas.
-- **Qué debe hacer el equipo de backend:**
-  1. En `internal/core/services/alert_evaluator_worker.go`:
-     - En `explicadaPorCentinela()`, si la base de datos local no registra una tarea reciente, agregar una verificación secundaria contra la API de tareas de Proxmox VE (`GET /nodes/{node}/tasks?vmid={vmid}`).
-     - Si Proxmox reporta una tarea reciente de tipo `qmstop`, `qmshutdown`, `vzstop` o `vzdump` finalizada con estado `OK` en los últimos 10 minutos:
-       - No clasificar el evento como caída no autorizada (`instance_down`).
-       - En su lugar, registrar un evento de auditoría informativa `SYSTEM_INSTANCE_STOPPED_EXTERNALLY` (Severidad `INFO`), sin disparar la alerta crítica ni enviar correos SMTP de emergencia.
-  2. Agregar una variable de entorno opcional `ALERT_IGNORE_EXTERNAL_SHUTDOWN=true|false` (por defecto `false` para entornos donde Centinela es el único gestor, `true` para entornos híbridos).
-  3. Crear tests unitarios en `alert_evaluator_test.go` simulando la parada de una VM con tarea externa en Proxmox, comprobando que se inhibe la alerta `instance_down`.
-- **Criterio de éxito:**
-  Cuando una VM se apaga mediante una orden directa en el nodo Proxmox, el evaluador de alertas no emite un evento `ALERT_TRIGGERED` con tipo `instance_down` ni despacha correos críticos a los administradores.
-
----
-
-### `FIX-136` - Parametrización por variables de entorno de umbrales hardcodeados y persistencia en el Evaluador de Alertas (`RF-11` / `RNF-07`) (Backend / Infraestructura)
-
-- **Área:** Backend / Infraestructura
-- **Asignado:** Nico / Lucas
-- **Estimación:** 1.5 h
-- **Depende de:** `RF-11`, `RNF-07`.
-- **Problema técnico detallado:**
-  En `internal/core/services/alert_evaluator_worker.go:24-35`, todos los umbrales de saturación y parámetros de histéresis están codificados como constantes fijas en el código Go:
-  ```go
-  const (
-      umbralHostRAM       = 85.0
-      umbralHostCPU       = 90.0
-      umbralHostDisco     = 90.0
-      umbralInstanciaMem  = 95.0
-      umbralInstanciaCPU  = 95.0
-      umbralRecuperacion  = 80.0
-      ciclosParaAlertar   = 2
-      ttlAlertaActiva     = 24 * time.Hour
-      ventanaTareasCentinela = 10 * time.Minute
-  )
-  ```
-  En servidores de cómputo intensivo o bases de datos, operar al 88% de RAM o 92% de CPU es un comportamiento esperado y regular. Al no poder configurar estos valores desde `.env`, el sistema genera **falsos positivos continuos de saturación** (`host_saturation`, `resource_saturation`), saturando el registro de auditoría y la casilla de correo de los administradores. Asimismo, en hosts de pruebas con recursos limitados no es posible ajustar umbrales más bajos para verificar las alertas.
-- **Qué debe hacer el equipo de backend:**
-  1. En `internal/core/services/alert_evaluator_worker.go`:
-     - Crear un struct de configuración inyectable:
-       ```go
-       type ConfigAlertas struct {
-           UmbralHostRAM       float64
-           UmbralHostCPU       float64
-           UmbralHostDisco     float64
-           UmbralInstanciaMem  float64
-           UmbralInstanciaCPU  float64
-           UmbralRecuperacion  float64
-           CiclosParaAlertar   int
-           VentanaTareas       time.Duration
-           Intervalo           time.Duration
-       }
-       ```
-     - En `NewEvaluadorAlertas`, recibir `ConfigAlertas` en lugar de leer constantes directas.
-  2. En `cmd/api/main.go`:
-     - Leer las variables de entorno con fallbacks a los defaults recomendados:
-       - `ALERT_THRESHOLD_HOST_RAM` (default: 85.0)
-       - `ALERT_THRESHOLD_HOST_CPU` (default: 90.0)
-       - `ALERT_THRESHOLD_HOST_DISK` (default: 90.0)
-       - `ALERT_THRESHOLD_VM_RAM` (default: 95.0)
-       - `ALERT_THRESHOLD_VM_CPU` (default: 95.0)
-       - `ALERT_THRESHOLD_RECOVERY` (default: 80.0)
-       - `ALERT_CYCLES_COUNT` (default: 2)
-  3. En `backend/.env.example` y `SETUP.md`:
-     - Documentar los nuevos parámetros opcionales del Evaluador de Alertas.
-- **Criterio de éxito:**
-  Al configurar `ALERT_THRESHOLD_HOST_RAM=92` en el archivo `.env`, el host operando al 88% de memoria RAM no dispara ninguna alerta crítica `host_saturation`.
-
----
-
 ### `FIX-137` - Saneamiento de código inerte: eliminación de stub documental `PausarInstancia` y simplificación de residuos multi-tenancy (`RF-12` / `RNF-05`) (Backend)
 
 - **Área:** Backend
@@ -484,5 +283,49 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
   3. Probar el escenario mediante un test en `seguimiento_tareas_test.go` que simule un reinicio del proceso con tareas `RUNNING` pendientes cuya ejecución ya finalizó en Proxmox.
 - **Criterio de éxito:**
   Al reiniciar el backend con tareas huérfanas en la base de datos, las tareas finalizadas en Proxmox son saneadas inmediatamente al iniciar y las instancias quedan operables sin demoras de 3 minutos ni respuestas `409 INSTANCE_BUSY`.
+
+---
+---
+
+### `FIX-144` - Alineación de filtros, contadores y diccionario de acciones de auditoría con el enum cerrado del Backend y retiro de lectura doble (`RF-08` / `FRN-31` / `FRN-12`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-143`, `FRN-31`, `FRN-12`.
+- **Objetivo:**
+  Sincronizar 1 a 1 el diccionario de acciones (`auditActionLabels.ts`), los contadores/filtros de resultado de la vista de Auditoría (`Auditoria.tsx`) y la consulta del historial de bajas de usuarios (`Usuarios.tsx`) con el único enum cerrado de `auditoria.accion` y `auditoria.resultado` publicado por el Backend en `FIX-143`, retirando los códigos fantasma y la lectura doble temporal.
+
+- **Contexto y Problemática Técnica Detallada (Frontend):**
+  Debido a la coexistencia de dos familias de códigos en el backend antes de `FIX-143`, el frontend presenta hoy tres defectos concretos de integración:
+
+  1. **Contradicción y pérdida de registros al filtrar por `resultado` entre `Auditoria.tsx` y `Usuarios.tsx`:**
+     - **En [`Auditoria.tsx:220-237`](file:///home/micaela/centinela/frontend/centinela/src/pages/Auditoria.tsx#L220-L237) (`loadResultCounts`) y líneas [`425-438`](file:///home/micaela/centinela/frontend/centinela/src/pages/Auditoria.tsx#L425-L438):** Las pestañas rápidas `"Exitosos"` / `"Fallidos"`, los contadores superiores y el `<select aria-label="Resultado">` envían `resultado=SUCCESS` y `resultado=FAILED`. Como PostgreSQL filtra por igualdad exacta (`WHERE a.resultado = ?`), al filtrar por `"Exitosos"` **no se cuentan ni listan los 8.041 registros de `LOGIN`, `LOGOUT`, `2FA`, `CREAR_USUARIO`, `ELIMINAR_USUARIO` y `ASIGNAR_PERMISOS`** (guardados como `EXITO`), y al filtrar por `"Fallidos"` **no aparece ningún intento fallido de login o 2FA** (guardados como `FALLA`).
+     - **En [`Usuarios.tsx:244-246`](file:///home/micaela/centinela/frontend/centinela/src/pages/Usuarios.tsx#L244-L246):** El historial de usuarios eliminados consulta `getAuditLogs({ accion: 'ELIMINAR_USUARIO', resultado: 'EXITO' })`, usando la familia opuesta a `Auditoria.tsx`.
+
+  2. **Códigos fantasma, duplicados y faltantes en `AUDIT_ACTION_ORDER` ([`auditActionLabels.ts:55-86`](file:///home/micaela/centinela/frontend/centinela/src/utils/auditActionLabels.ts#L55-L86)):**
+     - El selector de filtro de acciones en el frontend ofrece **4 códigos que no existen en `ports/audit_port.go` del backend**:
+       - `CAMBIAR_CONTRASENA`: el backend emite `PASSWORD_CHANGED` (`audit_port.go:106`), por lo que filtrar por `"Contraseña actualizada"` en la UI envía `accion=CAMBIAR_CONTRASENA` y devuelve **0 resultados**.
+       - `START_VM` y `STOP_VM`: conviven en `AUDIT_ACTION_ORDER` junto con `INICIAR_VM` y `DETENER_VM`, duplicando en el desplegable las opciones `"Instancia iniciada"` e `"Instancia detenida"` con códigos que el backend no escribe.
+       - `EXPORTAR_AUDITORIA`, `SUSPENDER_VM`, `REANUDAR_VM` y `ACTUALIZAR_PERFIL`: se ofrecen en el filtro aunque ningún servicio del backend los persiste.
+     - A la inversa, `AUDIT_ACTION_ORDER` **omite 3 acciones reales emitidas por el backend**: `UPDATE_PROFILE_EMAIL_REQUESTED`, `UPDATE_PROFILE_EMAIL_CONFIRMED` e `INSTANCE_PERMISSIONS_PURGED` (que sí están en `AUDIT_ACTION_LABELS` en las líneas 18-20 pero fueron omitidas de `AUDIT_ACTION_ORDER`).
+
+- **Especificación Técnica (Qué debe hacer el equipo de Frontend):**
+  1. **En [`frontend/centinela/src/utils/auditActionLabels.ts`](file:///home/micaela/centinela/frontend/centinela/src/utils/auditActionLabels.ts):**
+     - Alinear `AUDIT_ACTION_ORDER` y `AUDIT_ACTION_LABELS` **1 a 1** con el enum cerrado de `auditoria.accion` publicado por el backend en `FIX-143`:
+       - Reemplazar `CAMBIAR_CONTRASENA` por el código canónico del backend (`PASSWORD_CHANGED`, o el código unificado en `FIX-143`).
+       - Eliminar de `AUDIT_ACTION_ORDER` los códigos duplicados/inexistentes (`START_VM`, `STOP_VM`, `EXPORTAR_AUDITORIA`, `SUSPENDER_VM`, `REANUDAR_VM`, `ACTUALIZAR_PERFIL`).
+       - Incorporar en `AUDIT_ACTION_ORDER` las acciones activas faltantes (`INSTANCE_PERMISSIONS_PURGED`, `UPDATE_PROFILE_EMAIL_REQUESTED`, `UPDATE_PROFILE_EMAIL_CONFIRMED`).
+       - Una vez ejecutada la normalización histórica de `FIX-143`, retirar los alias temporales (`START`, `STOP`, `SHUTDOWN`, `REBOOT`, `CREAR_INSTANCIA`, `CREAR_VM`, `CREAR_LXC`, `CONFIG_INSTANCE`) señalados en el comentario de la línea 26.
+  2. **En [`frontend/centinela/src/pages/Auditoria.tsx`](file:///home/micaela/centinela/frontend/centinela/src/pages/Auditoria.tsx) y [`frontend/centinela/src/pages/Usuarios.tsx`](file:///home/micaela/centinela/frontend/centinela/src/pages/Usuarios.tsx):**
+     - Actualizar `ResultFilter`, `loadResultCounts` (`Auditoria.tsx:220-237`), las pestañas de filtro rápido (`Auditoria.tsx:425-428`), las opciones del `<select aria-label="Resultado">` (`Auditoria.tsx:436-438`), el badge de estado (`resultLabel`) y la consulta de historial de bajas en `Usuarios.tsx:244-246` para que utilicen **exclusivamente el único enum cerrado de `auditoria.resultado`** definido en `FIX-143` (sin mezclar `SUCCESS` en una vista y `EXITO` en otra).
+
+- **Criterios de Aceptación (DoD — Frontend):**
+  1. `AUDIT_ACTION_OPTIONS` en `auditActionLabels.ts` coincide 1 a 1 con el enum cerrado de `auditoria.accion` del backend, sin opciones repetidas ni códigos inexistentes.
+  2. `Auditoria.tsx` (contadores, pestañas y selector de resultado) y `Usuarios.tsx` (historial de usuarios eliminados) consultan exactamente los códigos del enum cerrado de `auditoria.resultado`.
+  3. La suite `FIX-144` en [`test/front/etapa3-pendientes.test.tsx`](file:///home/micaela/centinela/test/front/etapa3-pendientes.test.tsx#L261-L293) pasa íntegramente en verde.
+
+
+
 
 

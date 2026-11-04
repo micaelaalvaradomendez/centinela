@@ -341,3 +341,120 @@ func TestFIX140_ProveedorDeEmailVisible(t *testing.T) {
 		}
 	})
 }
+
+// TestFIX143_VocabularioAuditoriaContratoCerrado verifica FIX-143 (RF-08 / BAC-44 / BAC-45):
+// vocabulario de auditoria.accion y auditoria.resultado en un único conjunto cerrado,
+// sin códigos duplicados entre caminos, publicado como enum en Swagger y en docs/contrato-etapa1.md,
+// y validado por docs/contrato_etapa1_test.go.
+func TestFIX143_VocabularioAuditoriaContratoCerrado(t *testing.T) {
+	auditPort := backendSrc(t, "internal/core/ports/audit_port.go")
+	auditHandler := backendSrc(t, "internal/adapters/primary/http/audit_handler.go")
+	swaggerRaw := backendSrc(t, "docs/swagger.json")
+	contratoDoc := backendSrc(t, "docs/contrato-etapa1.md")
+	contratoTest := backendSrc(t, "docs/contrato_etapa1_test.go")
+
+	reResultados := regexp.MustCompile(`Resultado\w+\s*(?:\w+)?\s*=\s*"([^"]+)"`)
+	matchesRes := reResultados.FindAllStringSubmatch(auditPort, -1)
+	if len(matchesRes) == 0 {
+		t.Fatalf("FIX-143: no se encontraron constantes Resultado* en internal/core/ports/audit_port.go")
+	}
+	resultadosMap := map[string]bool{}
+	var resultadosList []string
+	for _, m := range matchesRes {
+		if !resultadosMap[m[1]] {
+			resultadosMap[m[1]] = true
+			resultadosList = append(resultadosList, m[1])
+		}
+	}
+
+	reAcciones := regexp.MustCompile(`Accion\w+\s*(?:\w+)?\s*=\s*"([^"]+)"`)
+	matchesAcc := reAcciones.FindAllStringSubmatch(auditPort, -1)
+	if len(matchesAcc) == 0 {
+		t.Fatalf("FIX-143: no se encontraron constantes Accion* en internal/core/ports/audit_port.go")
+	}
+	accionesMap := map[string]bool{}
+	var accionesList []string
+	for _, m := range matchesAcc {
+		if !accionesMap[m[1]] {
+			accionesMap[m[1]] = true
+			accionesList = append(accionesList, m[1])
+		}
+	}
+
+	t.Run("resultado tiene un único conjunto cerrado sin familias duplicadas (EXITO/FALLA vs SUCCESS/FAILED)", func(t *testing.T) {
+		tieneEspanol := resultadosMap["EXITO"] || resultadosMap["FALLA"]
+		tieneIngles := resultadosMap["SUCCESS"] || resultadosMap["FAILED"]
+		if tieneEspanol && tieneIngles {
+			t.Errorf("FIX-143: ports/audit_port.go define dos familias duplicadas para auditoria.resultado (%v); debe existir un único conjunto cerrado", resultadosList)
+		}
+		if strings.Contains(auditHandler, `"SUCCESS"`) && strings.Contains(auditHandler, `"EXITO"`) {
+			t.Errorf("FIX-143: validarConsultaAuditoria en audit_handler.go acepta ambas familias simultáneamente (SUCCESS/FAILED y EXITO/FALLA) en lugar de un único enum cerrado")
+		}
+	})
+
+	t.Run("accion no contiene códigos muertos o duplicados por renombre en ports/audit_port.go", func(t *testing.T) {
+		if accionesMap["CREATE_INSTANCE"] && (accionesMap["CREAR_VM"] || accionesMap["CREAR_LXC"]) {
+			t.Errorf("FIX-143: ports/audit_port.go mantiene constantes duplicadas de creación (CREATE_INSTANCE junto con CREAR_VM/CREAR_LXC)")
+		}
+		// Toda constante Accion* declarada en audit_port.go debe tener al menos un escritor o pertenecer al enum cerrado documentado
+		archivosEscritores := []string{
+			"internal/core/services/audit_service.go",
+			"internal/core/services/auth_service.go",
+			"internal/core/services/user_service.go",
+			"internal/core/services/email_change.go",
+			"internal/core/services/eventos_service.go",
+			"internal/core/services/configuracion_instancias.go",
+			"internal/core/services/snapshot_service.go",
+			"internal/core/services/seguimiento_tareas.go",
+			"internal/core/services/alert_evaluator_worker.go",
+			"internal/adapters/primary/http/instance_handler.go",
+			"internal/adapters/primary/http/instance_config_handler.go",
+			"internal/adapters/primary/http/snapshot_handler.go",
+			"internal/adapters/primary/http/events_handler.go",
+			"internal/adapters/primary/http/account_handler.go",
+			"internal/adapters/primary/http/user_handler.go",
+			"internal/adapters/primary/http/auth_handler.go",
+			"internal/adapters/secondary/postgres/instance_repository.go",
+			"internal/adapters/secondary/postgres/tarea_repository.go",
+			"internal/adapters/secondary/postgres/user_repository.go",
+		}
+		codigoEscritores := ""
+		for _, rel := range archivosEscritores {
+			codigoEscritores += backendSrc(t, rel) + "\n"
+		}
+		reConstNames := regexp.MustCompile(`(Accion\w+)\s*(?:\w+)?\s*=\s*"([^"]+)"`)
+		for _, m := range reConstNames.FindAllStringSubmatch(auditPort, -1) {
+			constName, constVal := m[1], m[2]
+			if !strings.Contains(codigoEscritores, constName) {
+				t.Errorf("FIX-143: la constante ports.%s (%q) no es emitida por ningún servicio/worker activo (código muerto o duplicado en el vocabulario)", constName, constVal)
+			}
+		}
+	})
+
+	t.Run("el enum de auditoria.accion y auditoria.resultado se publica en Swagger y se documenta en contrato-etapa1.md", func(t *testing.T) {
+		// Verificar que swagger.json declare enum para resultado y accion en el DTO o parámetros de /admin/audit
+		if !regexp.MustCompile(`"resultado"\s*:\s*\{[^}]*"enum"\s*:`).MatchString(swaggerRaw) {
+			t.Errorf("FIX-143: docs/swagger.json no publica el campo 'resultado' de auditoría con un 'enum' cerrado")
+		}
+		if !regexp.MustCompile(`"accion"\s*:\s*\{[^}]*"enum"\s*:`).MatchString(swaggerRaw) {
+			t.Errorf("FIX-143: docs/swagger.json no publica el campo 'accion' de auditoría con un 'enum' cerrado")
+		}
+		for _, acc := range accionesList {
+			if !strings.Contains(contratoDoc, acc) {
+				t.Errorf("FIX-143: la acción %q de ports/audit_port.go no está documentada en docs/contrato-etapa1.md", acc)
+			}
+		}
+		for _, res := range resultadosList {
+			if !strings.Contains(contratoDoc, res) {
+				t.Errorf("FIX-143: el resultado %q de ports/audit_port.go no está documentado en docs/contrato-etapa1.md", res)
+			}
+		}
+	})
+
+	t.Run("docs/contrato_etapa1_test.go afirma el conjunto cerrado de auditoría", func(t *testing.T) {
+		if !strings.Contains(contratoTest, "/admin/audit") && !strings.Contains(contratoTest, "AuditoriaDTO") && !strings.Contains(contratoTest, "ItemAuditoriaResponse") {
+			t.Errorf("FIX-143: docs/contrato_etapa1_test.go no valida el enum de auditoria.accion ni auditoria.resultado")
+		}
+	})
+}
+

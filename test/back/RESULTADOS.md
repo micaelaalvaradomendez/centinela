@@ -1,52 +1,57 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 05/10/2026. **Backend:** submódulo en `f17295c` (último commit de `main`; nuevos: `13f9c35` telemetría BAC-22, `3988546` pool de UPID BAC-25A, `d1dec4f` adaptador de IP BAC-23A, `0850ec7` contrato/DELETE BAC-24B, y `f17295c` recuperación de tareas BAC-25C). **Comando:** `go test -v -count=1 ./...`. 2 corridas completas con el mismo resultado y sin contenedores residuales.
+**Fecha:** 04/11/2026. **Backend:** submódulo en `4011b08` (últimos commits de `main`: `4011b08` **`FIX-143`** vocabulario cerrado de `accion` y `resultado`, enums en Swagger y normalización histórica; `08126ae` **`FIX-136`** parametrización de umbrales y persistencia de alertas por entorno; `5f8bb5e` **`FIX-135`** alertas por paradas externas de instancias; `42093c3` **`FIX-134`** soporte para instancias pausadas en inventario/energía/borrado).
+
+## 1. Suite interna del submódulo (`backend/`)
+
+**Comando:** `go test -C backend ./...`
 
 | Métrica | Valor |
 |---|---:|
-| Casos | 59 |
-| Aprueban | **52** |
-| Fallan | **6** (5 de producto + 1 ambiental: `INF-06A` por puerto 6379 en uso en el host) |
-| Omitidos | 1: INF-08B (Brevo rechaza la IP pública con `525 Unauthorized IP`; la prueba se omite a propósito en ese caso) |
+| Paquetes probados | **14** |
+| Aprueban | **14 (100 %)** |
+| Fallan | **0** |
 
-## Tareas de `actual.md`
+Paquetes en verde: `cmd/api`, `cmd/proxmox-simulador`, `docs`, `internal/adapters/primary/http`, `internal/adapters/primary/http/middleware`, `internal/adapters/secondary/email`, `internal/adapters/secondary/memoria`, `internal/adapters/secondary/postgres`, `internal/adapters/secondary/proxmox`, `internal/adapters/secondary/redis`, `internal/core/domain/topology`, `internal/core/services`, `internal/infrastructure/crypto`, `migrations`.
 
-| Tarea | Caso | Resultado | Causa |
-|---|---|---|---|
-| `BAC-24A` estado previo y protegidos | `etapa1_acceptance…` | ✅ **Pasa** | Cumple todo el comportamiento y la documentación de `INSTANCE_INVALID_STATE` en Swagger (entregable 4 resuelto en `0850ec7`) |
-| `BAC-25A` pool de UPID | `etapa1_acceptance…` | ✅ **Pasa** | Implementado en `3988546`: lee `UPID_WORKERS`, worker pool acotado, reconciliador y 20 órdenes concurrentes terminadas en `COMPLETED` |
-| `BAC-25C` reanudación | `etapa1_acceptance…` | ✅ **Pasa** | Implementado en `f17295c`: retoma tareas `RUNNING` al arrancar el backend, `activeTask` como objeto `{ tareaId, action, status }` y vence a `FAILED` las de más de 3 minutos |
-| `FIX-44` (índice y purga, `BAC-18B`) | `cierre_fase_base…` BAC-18B (2) | ❌ índice / ✅ purga | Falta el índice parcial con `jti_access`. La purga horaria **cumple** |
-| `BAC-29` contrato | `etapa1_acceptance…` | ❌ | `docs/contrato-etapa1.md` actualizado en `0850ec7`, pero no indica que `GET /api/node/status` lo puede consultar cualquier usuario autenticado (D1) |
-| `BAC-22` telemetría | `etapa1_acceptance…` | ❌ | Implementado en `13f9c35`, pero `pausaTrasFallaNodo = 5s` en `nodo_service.go` rechaza llamadas con 502 inmediato tras simular caída sin caché previa |
-| `BAC-23A` adaptador de IP | `etapa1_acceptance…` | ❌ | Implementado en `d1dec4f` (concurrente con Guest Agent y LXC), pero faltan pruebas unitarias que mencionen `agent/network-get-interfaces` o `/interfaces` en el adaptador de Proxmox |
-| `BAC-24B` DELETE | `etapa1_acceptance…` | ❌ | Avanzó en `0850ec7`: devuelve `202 { upid, tareaId }` con seguimiento y `TASK_FINISHED`, auditoría y roles. Pero responde `409 INSTANCE_NOT_STOPPED` en lugar de `INSTANCE_INVALID_STATE` (D2) |
+---
 
-## Regresión
+## 2. Suite de aceptación e inspección (`test/back/`)
 
-Pasan todas las demás tareas terminadas, incluidas `LOGIN-04` (desde Go y front ↔ back, 10/10), `FIX-40`, `INF-07B`, `BAC-21C`, `SEC-04`, `FIX-37` y `FIX-39`.
-`INF-06A` falló únicamente por conflicto de bind en `127.0.0.1:6379` con el servicio `redis-server` del host de pruebas.
+**Comando:** `go test -v ./...`
 
-## Cambios en la suite (05/10/2026)
+### 2.1 Tareas recién verificadas en verde (movidas a `terminado3.md`)
 
-- **BAC-24A (reescrito):** la versión anterior usaba el VMID 100 como protegido, pero en la suite el protegido es el 103 y el 100 no existe en el stub. Tampoco verificaba el `202` ni la ausencia de tráfico hacia Proxmox. Ahora cubre todo el criterio y el entregable 4, y cuenta en el log del stub las escrituras que llegaron.
-- **BAC-24B (reescrito):** tenía el mismo VMID 100, y su OPERATOR no tenía `FULL_ACCESS`. Ahora verifica también la auditoría de la orden y el `TASK_FINISHED` con `recursoTipo` `LXC`.
-- **BAC-25C (reescrito):**
-  - antes no probaba el reinicio y leía `body["data"]`, pero `GET /instances` devuelve una lista;
-  - ahora inserta una tarea `RUNNING` reciente y otra de hace 10 min, reinicia el backend y verifica la vencida `FAILED`, la reciente en `activeTask`, y el `TASK_FINISHED` y `COMPLETED` cuando Proxmox la termina;
-  - el stub tiene un interruptor nuevo, `/tmp/tareas-en-curso`, que deja todas las tareas en `running`.
-- **BAC-18B purga (reescrito):** exigía escribir literal `time.NewTicker(time.Hour)`. El backend usa `NuevoPurgaWorker(db, 1*time.Hour)`, que cumple y además permite acortar el intervalo en las pruebas unitarias. Ahora la prueba:
-  - inserta sesiones inactiva, vencida y vigente;
-  - reinicia el backend (la purga corre al arrancar) y verifica que solo queden las vigentes;
-  - acepta la hora tanto en el ticker como en la llamada que crea la rutina.
-  **Pasa.** Por eso el entregable 2 de `FIX-44` no hace falta.
-- **Pruebas viejas adaptadas a `BAC-24A`:** `BAC-21B` (energía y auditoría) y `SEC-04` mandaban `start` a la 101, que en el stub está encendida. Con la validación de estado previo ahora reciben `409`, así que usan `stop`.
+| Tarea | Prueba en `test/back` | Resultado | Detalle |
+|---|---|:---:|---|
+| `FIX-143` | `TestFIX143_VocabularioAuditoriaContratoCerrado` (4/4 subtests) + `TestContratoVocabularioAuditoria` | ✅ **Pasa** | Commit `4011b08`: conjunto cerrado único `EXITO`/`FALLA`/`PENDIENTE` (`ResultadosAuditoriaValidos()`) y `AccionesAuditoriaValidas()` en `ports/audit_port.go`, eliminación de constantes muertas, validación `ErrAuditoriaFueraDeContrato`, enums en `docs/swagger.json` y `docs/contrato-etapa1.md`, test `TestContratoVocabularioAuditoria` y migración `migrations/20261104_vocabulario_auditoria.sql` |
+| `FIX-134` | `TestFIX134_InstanciasPausadas` (4/4 subtests) | ✅ **Pasa** | `EstadoInstanciaPausada = "PAUSED"`, mapeo `"paused" -> PAUSED` en `instance_service.go`, guarda previa en `EjecutarAccionEnergia` y `EliminarInstancia` que rechaza `PAUSED` con `409 INSTANCE_INVALID_STATE`, y soporte de `resume` en `proxmox/client.go` |
+| `FIX-135` | `TestFIX135_AlertasParadasExternas` (3/3 subtests) | ✅ **Pasa** | Detección de transición `RUNNING -> STOPPED` sin tarea activa ni orden en Redis (`instance:stop_intent:{vmid}`), auditoría `EXTERNAL_STOP_DETECTED` y alerta crítica SSE + email `EXTERNAL_INSTANCE_STOPPED` |
+| `FIX-136` | `TestFIX136_UmbralesDeAlertaConfigurables` (4/4 subtests) | ✅ **Pasa** | Lectura de `ALERT_CPU_THRESHOLD`, `ALERT_RAM_THRESHOLD`, `ALERT_STORAGE_THRESHOLD`, `ALERT_HYSTERESIS_MARGIN` y `ALERT_EVALUATION_SAMPLES` con validación $0 < \text{threshold} \le 100$ y $\text{hysteresis} < \text{threshold}$, e inyección en `NuevoEvaluadorAlertasService` |
+| `FIX-128` | `TestFIX128VLAN_VlanCeroEsTraficoSinEtiquetar` (3/3 subtests) | ✅ **Pasa** | `VlanTag == 0` se normaliza a `nil` y no emite `,tag=0` en `net0` |
+| `FIX-133` | `TestFIX133_CuotaVCPUSinOvercommit` (2/2 subtests) | ✅ **Pasa** | `FreeCores` descuenta los vCPU asignados a instancias del nodo sin overcommit |
+| `FIX-138` | `TestFIX138_CaracteresEspecialesNIST` (1/1 subtest) | ✅ **Pasa** | `ValidarComplejidad` acepta cualquier carácter imprimible no alfanumérico (`unicode.IsPunct` / `unicode.IsSymbol`) |
+| `FIX-140` | `TestFIX140_ProveedorDeEmailVisible` (2/2 subtests) | ✅ **Pasa** | `cmd/api/main.go` registra el proveedor de correo activo y advierte si `EMAIL_PROVIDER=mock` en producción |
+| `BAC-54` | `TestEtapa3BAC54_ParametrizacionEntornoServidoresHeterogeneos` | ✅ **Pasa** | Parametrización de entorno para servidores heterogéneos (`PROXMOX_STORAGE_DEFAULT`, `PROXMOX_BRIDGE_DEFAULT`, etc.) |
+| `BAC-55` / `ADP-05` / `ADP-06` | `TestEtapa3BAC55_SwitchPerfilVersionSimulador`, `TestADP05_ModoDualSimulador`, `TestADP06_CatalogoDebian12Simulador` | ✅ **Pasa** | Simulador Proxmox dual PVE 7.4 / 8.4 y catálogo Debian 12 (`debian-12-standard_12.7-1_amd64.tar.zst`) |
+| `ADP-01` a `ADP-04` | `TestADP01_...` a `TestADP04_...` | ✅ **Pasa** | Parámetros de aprovisionamiento QEMU/LXC (`ostype=l26`, `scsihw=virtio-scsi-single`), purga en borrado, parser defensivo de `memory` y `PROXMOX_PROTECTED_VMIDS` |
 
-## Lo que la suite no cubre
+---
 
-- BAC-18B: el tiempo de consulta (< 20 ms).
-- BAC-23A: el timeout de 2 s y la concurrencia acotada de las consultas de IP (se verán con `BAC-23B`).
-- BAC-25A: la cota de N consultas en paralelo (queda a cargo de las pruebas unitarias del backend).
-- BAC-24B: que el tipo de recurso se guarde **antes** de borrar. El stub sigue listando la instancia después del `DELETE`, así que no se puede detectar el error de averiguarlo al final.
-- BAC-25C: el registro final en `auditoria`. La entrada de resolución la define `BAC-27`, que todavía no está cargada (ver `test/informe.md`).
-- FIX-40: el `502` con el token rechazado (lo cubren las pruebas unitarias del backend).
+### 2.2 Tareas pendientes en `actual.md` (fallos esperados en `test/back`)
+
+| Tarea | Prueba en `test/back` | Resultado | Causa verificada |
+|---|---|:---:|---|
+| `FIX-137` | `TestFIX137_CodigoInerteYAuditoriaDeSistema` (0/3) | ❌ **Falla** | 1) `PausarInstancia` (`501 Not Implemented`) sigue expuesto en `instance_handler.go` y Swagger; 2) `audit_repository.go` oculta eventos con `usuario_id IS NULL AND organizacion_id IS NULL` cuando el admin tiene `organizacion_id`; 3) `contrato_etapa1.go` mantiene tipos DTO sin referencias |
+| `FIX-139` (`FIX-123`) | `TestFIX139_ReconciliacionDeTareasAlArranque` (0/3) | ❌ **Falla** | No existe `RecuperarYReconciliarAlArranque` en `seguimiento_tareas.go` ni su invocación en `cmd/api/main.go`; tareas `CREATE`/`DELETE` en `RUNNING` al reiniciar no disparan sus callbacks de permisos |
+| `FIX-129` (`INF-11`) | `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS` (2/3 pasan, 1/3 falla) | ❌ **Falla parcial** | `docker/nginx-edge.conf` redirige HTTP->HTTPS y soporta TLS 1.2/1.3 + WSS/SSE, pero faltan `Strict-Transport-Security` (`includeSubDomains`), `Content-Security-Policy`, `X-Frame-Options` y `X-Content-Type-Options` |
+| `INF-14` / `ADP-09` / `ADP-10` | `TestEtapa3INF14_AuditoriaYSondaPVE8Real`, `TestADP09_ADP10_InfraestructuraPVE8` | ❌ **Falla** | Falta crear `scripts/pve8-audit-probe.sh` y completar la documentación de auditoría PVE 8.4 y tipos de storage compatibles con snapshots en `documentacion/api-proxmox.md` |
+
+---
+
+## 3. Regresión de Etapas 1, 2 y 3
+
+Pasan sin regresiones todas las pruebas estáticas y de simulador de Etapas 1, 2 y 3:
+- **Etapa 1 y Simulador:** `TestINF09WebSocketsNginxEdge`, `TestINF07CPermisosTokenProxmox`, `TestEtapa1Ola3BAC32`, `TestFIX81_OrdenMigracionesBaseLimpia`, `TestEtapa1SimuladorProxmox`, `TestEtapa2BAC50_SimuladorSnapshotsYRollback`.
+- **Etapa 2:** `TestEtapa2BAC34_AdaptadorMetricasRRD`, `TestEtapa2BAC36_MetricasHistoricasEndpoint`, `TestEtapa2BAC39_SeguimientoCreacionYPermisos`, `TestEtapa2BAC40_EndpointConfigRecursos`, `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`, `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`, `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`, `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`, `TestFIX118_SinCredencialesPorDefecto`, y todos los subtests estáticos de `TestFIX107_OfuscacionDeVMIDs`, `TestFIX110_SaneamientoDeErrores`, `TestFIX112_RateLimitingAutenticacion`, `TestFIX113_PurgaDePermisosAlEliminarInstancia`, `TestFIX115A_ContrasenasDeHasta128Caracteres` y `TestFIX116_InyeccionDeParametrosProxmox`.
+- **Etapa 3:** `TestEtapa3BAC42` (subtest 1), `TestEtapa3BAC43` (subtest 1), `TestEtapa3BAC44` (subtest 1), `TestEtapa3BAC45` (subtest 1), `TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis` (2/2), `TestEtapa3BAC47_DespachoMulticanalAlertasSSEyCorreo` (2/2), `TestEtapa3BAC48_HardeningAutenticacionCookiesRateLimiting` (2/2).

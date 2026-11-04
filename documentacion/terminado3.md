@@ -394,3 +394,120 @@ Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
   2. Campo `"emailProvider"` en `GET /api/version`.
 - **Criterio de éxito:** `TestFIX140_ProveedorDeEmailVisible` pasa al 100% en verde.
 
+#### `FIX-131` - Incorporación de métricas y gráfico de Tráfico de Red (`netin`/`netout`) en detalle de instancia (`CU-05`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, frontend `1e5ec49`): implementada y con tests en verde.** Commits `fa92405` y `26af24f` (PR #182). `InstanceMetricPoint` declara `netInBps` y `netOutBps`, `instanceDetailService.ts` los normaliza y `InstanceResourceUsage.tsx` renderiza las 4 tarjetas y curvas (`CPU`, `Memoria`, `Disco`, `Tráfico de Red`). Pasan 3/3 subtests de `FIX-131` en `test/front/etapa3-pendientes.test.tsx` y 9/9 en `test/front/frn-23-metrics-charts.test.tsx`.
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian / Luz
+- **Estimación:** 1.5 h
+- **Depende de:** `FRN-22`, `FRN-23`.
+- **Entregable:** Propiedades `netInBps`/`netOutBps` en `instanceDetail.ts`, normalización en `instanceDetailService.ts` y 4.ª columna `"Tráfico de Red"` en `InstanceResourceUsage.tsx`.
+- **Criterio de éxito:** La grilla de uso de recursos renderiza las 4 métricas (`CPU`, `Memoria`, `Disco` y `Tráfico de Red`) con sus gráficos de evolución temporal.
+
+#### `FIX-134` - Soporte operativo para instancias en estado `paused` y prevención de deadlocks en controles de energía y borrado (`RF-03` / `RF-04` / `CU-04`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, backend `08126ae`): implementada y con tests en verde.** Commit `42093c3` (`fix: admitir instancias pausadas en controles de energía y borrado`). Se implementaron `esEstadoCompatible` admitiendo `paused` en `stop` y `resume`, el método `Resume` en `ProxmoxPort` / `client.go` / simulador y la admisión de `paused` al eliminar instancia. Pasan 4/4 subtests de `TestFIX134_InstanciasPausadas` en `test/back/etapa3_fixes_pendientes_test.go` y la suite interna del backend.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Nico / Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `RF-03`, `RF-04`, `CU-04`.
+- **Entregable:** Soporte de acción `resume` (`/status/resume`), admisión de estado `paused` en `stop` y en `EliminarInstancia`, e implementación de `Resume` en `ProxmoxPort` y cliente Proxmox.
+- **Criterio de éxito:** `TestFIX134_InstanciasPausadas` pasa 4/4 en verde.
+
+#### `FIX-135` - Reconciliación con tareas de Proxmox en Evaluador de Alertas para prevenir falsos positivos de `instance_down` ante paradas directas en el hipervisor (`RF-11` / `CU-11`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, backend `08126ae`): implementada y con tests en verde.** Commit `5f8bb5e` (`fix: conciliar paradas externas de Proxmox para evitar falsas alertas`). `alert_evaluator_worker.go` verifica tareas recientes del nodo Proxmox (`qmstop`, `qmshutdown`, `vzstop`, `vzdump`), registra `SYSTEM_INSTANCE_STOPPED_EXTERNALLY` y parametrizó `ALERT_IGNORE_EXTERNAL_SHUTDOWN`. Pasan 3/3 subtests de `TestFIX135_AlertasParadasExternas` en `test/back/etapa3_fixes_pendientes_test.go` y `alert_evaluator_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Belinda / Tayra
+- **Estimación:** 2.0 h
+- **Depende de:** `RF-11`, `CU-11`.
+- **Entregable:** Consulta secundaria a tareas de Proxmox en `explicadaPorCentinela`, auditoría `SYSTEM_INSTANCE_STOPPED_EXTERNALLY` y variable `ALERT_IGNORE_EXTERNAL_SHUTDOWN`.
+- **Criterio de éxito:** `TestFIX135_AlertasParadasExternas` pasa 3/3 en verde.
+
+#### `FIX-136` - Parametrización por variables de entorno de umbrales hardcodeados y persistencia en el Evaluador de Alertas (`RF-11` / `RNF-07`) (Backend / Infraestructura)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, backend `08126ae`): implementada y con tests en verde.** Commit `08126ae` (`fix: parametrizar umbrales y persistencia de alertas por entorno`). Se incorporó `ConfigAlertas` en `alert_evaluator_worker.go`, lectura de `ALERT_THRESHOLD_HOST_RAM`, `ALERT_THRESHOLD_HOST_CPU`, `ALERT_THRESHOLD_HOST_DISK`, `ALERT_THRESHOLD_VM_RAM`, `ALERT_THRESHOLD_VM_CPU`, `ALERT_THRESHOLD_RECOVERY` y `ALERT_CYCLES_COUNT` en `cmd/api/main.go` y documentación en `.env.example`. Pasan 4/4 subtests de `TestFIX136_UmbralesDeAlertaConfigurables` en `test/back/etapa3_fixes_pendientes_test.go`.
+
+- **Área:** Backend / Infraestructura
+- **Asignado:** Nico / Lucas / Tayra
+- **Estimación:** 1.5 h
+- **Depende de:** `RF-11`, `RNF-07`.
+- **Entregable:** Struct `ConfigAlertas` inyectable en `NewEvaluadorAlertas`, variables `ALERT_THRESHOLD_*` y `ALERT_CYCLES_COUNT` en `main.go` y `.env.example`.
+- **Criterio de éxito:** `TestFIX136_UmbralesDeAlertaConfigurables` pasa 4/4 en verde.
+
+#### `FIX-143` - Vocabulario de auditoría con contrato cerrado, eliminación de códigos duplicados, normalización histórica y publicación de enums en Swagger (`RF-08` / `BAC-44` / `BAC-45`) (Backend / Base de Datos)
+
+> [!NOTE]
+> **Estado verificado (04/11/2026, backend `4011b08`): implementada y con tests en verde.** Commit `4011b08` (`fix(auditoria): vocabulario cerrado de accion y resultado, enums en Swagger y normalización histórica`). Se unificaron `auditoria.resultado` (`EXITO`, `FALLA`, `PENDIENTE`) y `auditoria.accion` mediante `AccionesAuditoriaValidas()` y `ResultadosAuditoriaValidos()` en `ports/audit_port.go`, se eliminaron las constantes muertas (`CREAR_VM`, `CREAR_LXC`, `SUSPENDER_VM`, `ACTUALIZAR_PERFIL`, `ResultadoSuccess`, `ResultadoFailed`), se agregaron validación de contrato en repositorio (`ErrAuditoriaFueraDeContrato`), enums en `docs/swagger.json`, tabla en `docs/contrato-etapa1.md`, `TestContratoVocabularioAuditoria` en `docs/contrato_etapa1_test.go` y la migración `migrations/20261104_vocabulario_auditoria.sql`. Pasan 4/4 subtests de `TestFIX143_VocabularioAuditoriaContratoCerrado` en `test/back/etapa3_fixes_pendientes_test.go` y la suite interna del backend.
+
+- **Área:** Backend / Base de Datos
+- **Asignado:** Lisandro / Lucas / Nico
+- **Estimación:** 2.0 h
+- **Depende de:** `RF-08`, `BAC-44`, `BAC-45`.
+- **Entregable:** Vocabulario cerrado en `ports/audit_port.go`, validación estricta en `audit_handler.go` y `audit_repository.go`, enums en Swagger y `docs/contrato-etapa1.md`, test `TestContratoVocabularioAuditoria` y migración histórica `20261104_vocabulario_auditoria.sql`.
+- **Criterio de éxito:** `TestFIX143_VocabularioAuditoriaContratoCerrado` (4/4) y `TestContratoVocabularioAuditoria` pasan al 100 % en verde.
+
+
+
+### `FIX-143` - Vocabulario de auditoría con contrato cerrado, eliminación de códigos duplicados, normalización histórica y publicación de enums en Swagger (`RF-08` / `BAC-44` / `BAC-45`) (Backend / Base de Datos)
+
+- **Área:** Backend / Base de Datos
+- **Asignado:** Lucas / Nico
+- **Estimación:** 2.0 h
+- **Depende de:** `RF-08`, `BAC-44`, `BAC-45`.
+- **Objetivo:**
+  Dejar en un **único conjunto cerrado, tipado y documentado** en el Backend los códigos que se escriben y filtran en `auditoria.accion` y `auditoria.resultado`, publicando sus enums en Swagger (`docs/swagger.json`) y en `docs/contrato-etapa1.md`, validándolos con un test de contrato y normalizando las filas históricas de la base de datos.
+
+- **Contexto y Problemática Técnica Detallada (Backend y Base de Datos):**
+  Actualmente los campos `accion` y `resultado` se exponen tal cual en `GET /api/admin/audit` y `GET /api/admin/audit/export`, sin `enum` en Swagger ni tabla de contrato en `docs/contrato-etapa1.md`, y sin un test de contrato que fije el conjunto cerrado. Esto permitió que distintas capas del backend escribieran **dos familias incompatibles de códigos**:
+
+  1. **Esquizofrenia en `auditoria.resultado` (dos familias activas en paralelo):**
+     - En [`backend/internal/core/ports/audit_port.go`](file:///home/micaela/centinela/backend/internal/core/ports/audit_port.go#L73) y líneas [`130-146`](file:///home/micaela/centinela/backend/internal/core/ports/audit_port.go#L130-L146), el propio puerto declara dos vocabularios simultáneos:
+       ```go
+       Resultado string // Ciclo de vida: PENDIENTE/SUCCESS/FAILED; otras operaciones: EXITO/FALLA.
+       ...
+       ResultadoExito     = "EXITO"
+       ResultadoFalla     = "FALLA"
+       ResultadoPendiente = "PENDIENTE"
+       ResultadoSuccess   = "SUCCESS"
+       ResultadoFailed    = "FAILED"
+       ```
+     - **Servicios de Autenticación y Usuarios** (`auth_service.go:121, 146, 162, 232, 315, 360, 405, 444, 480, 520, 560` y `user_service.go:186, 297, 369, 467`) persisten `EXITO` y `FALLA`.
+     - **Servicios y Handlers de Instancias, Snapshots, Tareas y Alertas** (`audit_service.go:285-330`, `instance_handler.go`, `configuracion_instancias.go`, `snapshot_service.go`, `seguimiento_tareas.go`, `alert_evaluator_worker.go`) persisten `PENDIENTE`, `SUCCESS` y `FAILED`.
+     - **Evidencia en base de datos de pruebas:** `EXITO` (8.041 filas), `FALLA` (87 filas), `PENDIENTE` (45 filas), `SUCCESS` (39 filas), `PENDING` (33 filas), `FAILED` (8 filas).
+     - En [`audit_handler.go:409-413`](file:///home/micaela/centinela/backend/internal/adapters/primary/http/audit_handler.go#L409-L413), `validarConsultaAuditoria` acepta la mezcla de 5 literales (`"SUCCESS", "FAILED", "PENDIENTE", "EXITO", "FALLA"`) y rechaza `"PENDING"` con `400 Bad Request`.
+     - En [`audit_repository.go:267-269`](file:///home/micaela/centinela/backend/internal/adapters/secondary/postgres/audit_repository.go#L267-L269), `aplicarFiltros` filtra por igualdad exacta (`WHERE a.resultado = ?`) sin traducción ni agrupación.
+
+  2. **Acciones duplicadas o muertas en `auditoria.accion`:**
+     - Antecedente de regresión cruzada: el commit `86e3k5fqp` (05/10) había unificado a `START`/`STOP` + `EXITO`/`FALLA`, y el commit `d76eb35` de `RF-08` (10/10) lo revirtió parcialmente a `INICIAR_VM` + `SUCCESS`/`FAILED`, dejando en la base `START` (31) vs `INICIAR_VM` (47) y `STOP` (27) vs `DETENER_VM`.
+     - En [`ports/audit_port.go:98-128`](file:///home/micaela/centinela/backend/internal/core/ports/audit_port.go#L98-L128) coexisten constantes en español (`CREAR_USUARIO`, `ACTUALIZAR_USUARIO`, `ELIMINAR_USUARIO`, `ASIGNAR_PERMISOS`, `INICIAR_VM`, `DETENER_VM`, `APAGAR_VM`, `REINICIAR_VM`, `ELIMINAR_VM`), constantes en inglés (`CREATE_INSTANCE`, `CONFIG_UPDATED`, `PASSWORD_CHANGED`, `SNAPSHOT_CREATE`, `SNAPSHOT_ROLLBACK`, `SNAPSHOT_DELETE`, `ALERT_TRIGGERED`, `ALERT_RESOLVED`, `INSTANCE_PERMISSIONS_PURGED`, `UPDATE_PROFILE_EMAIL_REQUESTED`, `UPDATE_PROFILE_EMAIL_CONFIRMED`) y **7 constantes declaradas en `audit_port.go` sin ningún escritor activo en servicios/handlers** (`AccionEventosConexion = "EVENTOS_CONEXION"`, `AccionEventosCierre = "EVENTOS_CIERRE"`, `AccionActualizarPerfil = "ACTUALIZAR_PERFIL"`, `AccionCrearVM = "CREAR_VM"`, `AccionCrearLXC = "CREAR_LXC"`, `AccionSuspenderVM = "SUSPENDER_VM"`, `AccionResumeVM = "REANUDAR_VM"`).
+
+- **Especificación Técnica (Qué debe hacer el equipo de Backend):**
+  1. **Contrato cerrado en `internal/core/ports/audit_port.go` y servicios:**
+     - Definir un **único conjunto cerrado para `resultado`** (se recomienda mirar el volumen persistido y unificar en `EXITO`, `FALLA`, `PENDIENTE` —8.173 filas vs 80 filas—, o el conjunto único que el equipo acuerde, eliminando la familia paralela).
+     - Definir un **único conjunto cerrado para `accion`** en `ports/audit_port.go`, eliminando las constantes muertas o duplicadas sin escritor activo (`CREAR_VM`, `CREAR_LXC`, `SUSPENDER_VM`, `REANUDAR_VM`, `ACTUALIZAR_PERFIL`, `EVENTOS_CONEXION`, `EVENTOS_CIERRE`) y exponiendo funciones/slices canónicos (`AccionesAuditoriaValidas() []string` y `ResultadosAuditoriaValidos() []string`).
+     - Reemplazar todos los usos de la familia descartada en `audit_service.go`, `instance_handler.go`, `configuracion_instancias.go`, `snapshot_service.go`, `seguimiento_tareas.go`, `alert_evaluator_worker.go`, `auth_service.go` y `user_service.go` para que **ningún escritor pueda emitir un valor fuera del conjunto cerrado** ni existan literales sueltos fuera de las constantes de `ports`.
+  2. **Validación HTTP y publicación de Enums en Swagger y Contrato:**
+     - En [`audit_handler.go:409-413`](file:///home/micaela/centinela/backend/internal/adapters/primary/http/audit_handler.go#L409-L413) (`validarConsultaAuditoria`), validar `f.Resultado` (y `f.Accion` cuando se envíe) estrictamente contra el conjunto cerrado de `ports`, devolviendo `400 Bad Request` (`INVALID_PARAMETERS`) para cualquier valor fuera del enum.
+     - En `audit_handler.go` / `responses.go`, declarar las anotaciones Swagger `enums(...)` tanto en los `@Param accion` y `@Param resultado` de `GET /admin/audit` y `GET /admin/audit/export` como en los campos `accion` y `resultado` de `ItemAuditoriaResponse` / `ports.AuditoriaDTO`, y regenerar `backend/docs/swagger.json`.
+     - Documentar la tabla oficial del vocabulario cerrado de `auditoria.accion` y `auditoria.resultado` en [`backend/docs/contrato-etapa1.md`](file:///home/micaela/centinela/backend/docs/contrato-etapa1.md).
+     - En [`backend/docs/contrato_etapa1_test.go`](file:///home/micaela/centinela/backend/docs/contrato_etapa1_test.go), agregar una aserción con `verificarEnum` sobre `swagger.json` y `contrato-etapa1.md` que falle si se agrega, renombra o quita un código en `ports` sin actualizar Swagger y el documento de contrato.
+  3. **Normalización de filas históricas en Base de Datos:**
+     - Dado que la tabla `auditoria` es particionada y *append-only* (protegida por el trigger `trg_auditoria_inmutable`), crear una migración SQL controlada en `backend/migrations/` (para ejecutar con backup previo y ventana) que dentro de una transacción atómica deshabilite temporalmente el trigger de inmutabilidad, normalice las filas históricas al conjunto cerrado elegido (`SUCCESS -> EXITO`, `FAILED -> FALLA`, `PENDING -> PENDIENTE`, `START -> INICIAR_VM`, `STOP -> DETENER_VM`, etc.) y rehabilite el trigger antes del `COMMIT`.
+  4. **Fuera de alcance:**
+     - `detalles.accion` del evento SSE (`/api/events`), que pertenece al contrato de seguimiento de tareas en tiempo real.
+
+- **Criterios de Aceptación (DoD — Backend):**
+  1. Toda fila nueva en `auditoria` usa únicamente códigos del conjunto cerrado de `ports`; ningún escritor emite valores de otra familia ni literales sueltos.
+  2. El enum de `accion` y `resultado` está publicado en `backend/docs/swagger.json` y documentado como tabla en `backend/docs/contrato-etapa1.md`.
+  3. El test de contrato `backend/docs/contrato_etapa1_test.go` y la prueba `TestFIX143_VocabularioAuditoriaContratoCerrado` en [`test/back/etapa3_fixes_pendientes_test.go`](file:///home/micaela/centinela/test/back/etapa3_fixes_pendientes_test.go#L345-L461) pasan en verde (y fallan si se agrega, cambia o quita un código sin documentarlo o si coexisten dos familias de `resultado`).
+  4. El filtro `resultado` en `GET /api/admin/audit` y `GET /api/admin/audit/export` acepta exactamente el conjunto cerrado y devuelve `400 Bad Request` para cualquier otro valor.
+  5. Aviso al equipo de frontend cuando el conjunto quede fijo y desplegado para ejecutar `FIX-144`.
+

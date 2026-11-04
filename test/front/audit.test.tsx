@@ -44,11 +44,11 @@ afterEach(() => {
 describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', () => {
   it('realiza la petición GET /api/admin/audit?pagina=1&tamano=10 con cabecera Authorization: Bearer', async () => {
     window.sessionStorage.setItem('centinela_access', 'token-bearer-test');
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       total: 0,
       pagina: 1,
       items: [],
-    }));
+    })));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAuditoria();
@@ -63,7 +63,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
   it('renderiza registros devueltos por la API real en lugar de datos estáticos', async () => {
     window.sessionStorage.setItem('centinela_access', 'token-bearer-test');
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
       total: 1,
       pagina: 1,
       items: [{
@@ -77,7 +77,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
         resultado: 'EXITO',
         detalles: '{"ip":"192.168.1.10"}',
       }],
-    }));
+    })));
     vi.stubGlobal('fetch', fetchMock);
 
     renderAuditoria();
@@ -92,9 +92,9 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     window.sessionStorage.setItem('centinela_access', 'token-bearer-test');
     const fetchMock = vi.fn().mockImplementation((_url: string) => {
       return Promise.resolve(jsonResponse({
-        total: 0,
+        total: 1,
         pagina: 1,
-        items: [],
+        items: [{ id: 'aud-1', accion: 'LOGIN', resultado: 'EXITO' }],
       }));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -103,9 +103,16 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
     renderAuditoria();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    // Cambiar filtro de acción mediante el selector de Acción
-    const accionSelect = screen.getByLabelText(/acci[oó]n/i);
-    await user.selectOptions(accionSelect, 'LOGIN');
+    // Cambiar filtro de acción mediante el selector de Acción o menú Filtros
+    const filtrosBtn = screen.queryByRole('button', { name: /filtros/i });
+    if (filtrosBtn) {
+      await user.click(filtrosBtn);
+      const loginItem = await screen.findByRole('menuitemradio', { name: /inicio de sesi[oó]n|login/i });
+      await user.click(loginItem);
+    } else {
+      const accionSelect = screen.getByLabelText(/acci[oó]n/i);
+      await user.selectOptions(accionSelect, 'LOGIN');
+    }
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls as [string, RequestInit][];
@@ -116,7 +123,7 @@ describe('FRN-14 - Suite de pruebas para vista de Auditoría (Auditoria.tsx)', (
 
   it('el filtro de resultado y el rango de fechas se envían como query params', async () => {
     window.sessionStorage.setItem('centinela_access', 'token-bearer-test');
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ total: 0, pagina: 1, items: [] }));
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ total: 0, pagina: 1, items: [] })));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
 

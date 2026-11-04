@@ -158,7 +158,9 @@ describe('FRN-22 - useInstanceMetrics y cliente WebSocket', () => {
     const delays: number[] = [];
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-      act(() => socket.serverOpen());
+      if (attempt === 0) {
+        act(() => socket.serverOpen());
+      }
       const before = FakeWebSocket.instances.length;
       act(() => socket.serverClose(1006));
       expect(statusOf(result.current)).toMatch(/reconectando|reconnecting/i);
