@@ -10,7 +10,7 @@ import Auditoria from '@/pages/Auditoria';
 import RecoverPassword from '@/pages/RecoverPassword';
 import InstanceResourceUsage from '@/components/features/instances/components/detail/InstanceResourceUsage';
 import { SnapshotsTabContent } from '@/components/features/instances/components/detail/SnapshotsTabContent';
-import { AUDIT_ACTION_OPTIONS } from '@/utils/auditActionLabels';
+import { AUDIT_ACTION_LABELS, AUDIT_ACTION_OPTIONS, HIDDEN_AUDIT_ACTIONS } from '@/utils/auditActionLabels';
 import { withAppProviders } from './app-providers';
 
 // Pruebas de aceptación de tareas pendientes de documentacion/actual.md sin cobertura previa:
@@ -259,21 +259,27 @@ describe('FRN-32 - Exportación de reportes de auditoría', () => {
 });
 
 describe('FIX-144 - Alineación de filtros, contadores y diccionario de acciones de auditoría en Frontend con el enum cerrado del Backend (RF-08 / FRN-31)', () => {
-  it('AUDIT_ACTION_OPTIONS en auditActionLabels.ts coincide 1 a 1 con las constantes Accion* de backend/internal/core/ports/audit_port.go', () => {
+  it('AUDIT_ACTION_LABELS y AUDIT_ACTION_OPTIONS en auditActionLabels.ts coinciden con las constantes Accion* de backend/internal/core/ports/audit_port.go', () => {
     const auditPort = readBackend('internal/core/ports/audit_port.go');
     const backendActions = Array.from(auditPort.matchAll(/Accion\w+\s*(?:\w+)?\s*=\s*"([^"]+)"/g), (m) => m[1]);
+    const labelKeys = Object.keys(AUDIT_ACTION_LABELS);
     const frontendOptions = AUDIT_ACTION_OPTIONS.map((o) => o.value);
 
-    // Ninguna opción del filtro del frontend puede enviar un código inexistente en ports/audit_port.go (ej. CAMBIAR_CONTRASENA vs PASSWORD_CHANGED)
-    const missingInBackend = frontendOptions.filter((code) => !backendActions.includes(code));
+    // Ninguna opción del catálogo o filtro del frontend puede enviar un código inexistente en ports/audit_port.go
+    const missingInBackend = labelKeys.filter((code) => !backendActions.includes(code));
     expect(missingInBackend).toEqual([]);
 
-    // Todas las constantes activas de ports/audit_port.go deben estar representadas en el filtro del frontend
-    const missingInFrontend = backendActions.filter((code) => !frontendOptions.includes(code));
-    expect(missingInFrontend).toEqual([]);
+    // Todas las constantes activas de ports/audit_port.go deben estar en AUDIT_ACTION_LABELS y (salvo HIDDEN_AUDIT_ACTIONS) en AUDIT_ACTION_OPTIONS
+    const missingInLabels = backendActions.filter((code) => !labelKeys.includes(code));
+    expect(missingInLabels).toEqual([]);
+
+    const missingInOptions = backendActions
+      .filter((code) => !HIDDEN_AUDIT_ACTIONS.includes(code))
+      .filter((code) => !frontendOptions.includes(code));
+    expect(missingInOptions).toEqual([]);
   });
 
-  it('Auditoria.tsx y Usuarios.tsx consultan un único conjunto cerrado de resultado alineado con ports/audit_port.go', () => {
+  it('Auditoria.tsx y deletedUsersService.ts consultan un único conjunto cerrado de resultado alineado con ports/audit_port.go', () => {
     const auditPort = readBackend('internal/core/ports/audit_port.go');
     const backendResults = Array.from(new Set(Array.from(auditPort.matchAll(/Resultado\w+\s*(?:\w+)?\s*=\s*"([^"]+)"/g), (m) => m[1])));
 
@@ -282,13 +288,14 @@ describe('FIX-144 - Alineación de filtros, contadores y diccionario de acciones
     const hasEnglish = backendResults.includes('SUCCESS') || backendResults.includes('FAILED');
     expect(hasSpanish && hasEnglish).toBe(false);
 
-    // Auditoria.tsx y Usuarios.tsx deben usar la misma familia canónica y no familias contradictorias entre sí
+    // Auditoria.tsx y deletedUsersService.ts deben usar la misma familia canónica (EXITO/FALLA/PENDIENTE)
     const auditoriaSrc = read('pages/Auditoria.tsx');
-    const usuariosSrc = read('pages/Usuarios.tsx');
+    const deletedUsersSrc = read('components/features/users/services/deletedUsersService.ts');
 
-    const auditoriaUsesSuccess = /resultado:\s*['"]SUCCESS['"]|<option value=['"]SUCCESS['"]/.test(auditoriaSrc);
-    const usuariosUsesExito = /resultado:\s*['"]EXITO['"]/.test(usuariosSrc);
-    expect(auditoriaUsesSuccess && usuariosUsesExito).toBe(false);
+    const auditoriaUsesSuccess = /resultado:\s*['"]SUCCESS['"]|value=['"]SUCCESS['"]/.test(auditoriaSrc);
+    const deletedUsersUsesExito = /resultado:\s*['"]EXITO['"]/.test(deletedUsersSrc);
+    expect(auditoriaUsesSuccess).toBe(false);
+    expect(deletedUsersUsesExito).toBe(true);
   });
 });
 

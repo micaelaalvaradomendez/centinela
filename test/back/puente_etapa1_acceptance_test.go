@@ -36,10 +36,16 @@ func TestPuenteEtapa1(t *testing.T) {
 	suffix := time.Now().UnixNano()
 	operatorID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("op_puente_%d", suffix), fmt.Sprintf("op.puente.%d@elcentinela.com", suffix), "OPERATOR")
 	operatorToken := signedAccessToken(t, operatorID, "OPERATOR", orgID)
+
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+	ref102 := instanceRefByVMID(t, adminToken, 102)
+	vmidToRef := map[int]string{101: ref101, 102: ref102}
+	refToVmid := map[string]int{ref101: 101, ref102: 102}
+
 	permEndpoint := "/admin/users/" + operatorID + "/permissions"
 	if status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"permisos": []map[string]any{
-		{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
-		{"vmid": 102, "nivelAcceso": "READ_ONLY"},
+		{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"},
+		{"vmid": ref102, "nivelAcceso": "READ_ONLY"},
 	}}); status != http.StatusNoContent {
 		t.Fatalf("precondición: asignar permisos 101 FULL_ACCESS y 102 READ_ONLY, esperado 204, recibido %d: %#v", status, body)
 	}
@@ -49,10 +55,17 @@ func TestPuenteEtapa1(t *testing.T) {
 		if status != http.StatusOK || len(list) != 2 {
 			t.Fatalf("GET /instances con OPERATOR: esperado 200 con 101 y 102, recibido %d: %#v", status, list)
 		}
-		byID := map[float64]map[string]any{}
+		byID := map[int]map[string]any{}
 		for _, item := range list {
 			instance := item.(map[string]any)
-			byID[instance["id"].(float64)] = instance
+			switch idVal := instance["id"].(type) {
+			case float64:
+				byID[int(idVal)] = instance
+			case string:
+				if vmid, ok := refToVmid[idVal]; ok {
+					byID[vmid] = instance
+				}
+			}
 			for _, field := range []string{"id", "name", "type", "node", "status"} {
 				if _, ok := instance[field]; !ok {
 					t.Errorf("campo %q de BAC-14 ausente (rompe FIX-14): %#v", field, instance)
@@ -80,7 +93,11 @@ func TestPuenteEtapa1(t *testing.T) {
 	// BAC-29 y contrato Etapa 1: la ruta canónica y estricta es /instances/:vmid/status/:action.
 	// No se permiten rutas ambiguas o de legado.
 	canonicalEnergyPath := func(vmid int, action string) string {
-		return fmt.Sprintf("/instances/%d/status/%s", vmid, action)
+		vRef := vmidToRef[vmid]
+		if vRef == "" {
+			vRef = fmt.Sprint(vmid)
+		}
+		return fmt.Sprintf("/instances/%s/status/%s", vRef, action)
 	}
 
 	t.Run("BAC-21B las acciones de energía exigen FULL_ACCESS y quedan en tareas_asincronas", func(t *testing.T) {
@@ -139,7 +156,7 @@ func TestPuenteEtapa1(t *testing.T) {
 			t.Errorf("el UPID privado de Proxmox no debe exponerse en la respuesta pública (BAC-29)")
 		}
 		upid := strings.ReplaceAll(queryDatabase(t, fmt.Sprintf("SELECT upid_proxmox FROM tareas_asincronas WHERE id = '%s';", tareaID)), "'", "''")
-		query := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE (instancia_id = '101' OR detalles::text LIKE '%%101%%') AND detalles::text LIKE '%%%s%%';", upid)
+		query := fmt.Sprintf("SELECT count(*) FROM auditoria WHERE (instancia_id = '101' OR detalles::text LIKE '%%101%%') AND (upid = '%s' OR detalles::text LIKE '%%%s%%');", upid, tareaID)
 		for attempt := 0; attempt < 30; attempt++ {
 			if queryDatabase(t, query) != "0" {
 				return
@@ -152,13 +169,13 @@ func TestPuenteEtapa1(t *testing.T) {
 	t.Run("BAC-21B DELETE /instances/:vmid solo ADMIN y 409 si la instancia está encendida", func(t *testing.T) {
 		// El endpoint de borrado lo crea BAC-24B (Etapa 1); BAC-21B solo fija sus reglas de acceso.
 		// Si todavía no existe, no hay regla que verificar y el caso se omite.
-		if status, _ := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil); status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+		if status, _ := requestJSON(t, http.MethodDelete, "/instances/"+ref102, adminToken, nil); status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
 			t.Skipf("DELETE /instances/:vmid todavía no existe (responde %d); sus reglas se verifican cuando llegue BAC-24B", status)
 		}
-		if status, body := requestJSON(t, http.MethodDelete, "/instances/101", operatorToken, nil); status != http.StatusForbidden {
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/"+ref101, operatorToken, nil); status != http.StatusForbidden {
 			t.Errorf("DELETE con OPERATOR (aun con FULL_ACCESS): esperado 403, recibido %d: %#v", status, body)
 		}
-		if status, body := requestJSON(t, http.MethodDelete, "/instances/101", adminToken, nil); status != http.StatusConflict {
+		if status, body := requestJSON(t, http.MethodDelete, "/instances/"+ref101, adminToken, nil); status != http.StatusConflict {
 			t.Errorf("DELETE de la 101 (running) con ADMIN: esperado 409, recibido %d: %#v", status, body)
 		}
 	})
@@ -222,12 +239,12 @@ func TestPuenteEtapa1(t *testing.T) {
 		// backend-lento (compose.yaml) apunta a proxmox-lento, que acepta la conexión y nunca contesta:
 		// el cliente corta a los 10 s (requestTimeout) y eso tiene que llegar como 504 con su propio código.
 		// El cliente de la prueba espera 20 s: más que los 10 s del backend, para que corte el backend.
-		request, _ := http.NewRequest(http.MethodGet, envOrDefault("BACKEND_TEST_SLOW_API_URL", "http://127.0.0.1:18082/api")+"/instances/101", nil)
+		request, _ := http.NewRequest(http.MethodGet, envOrDefault("BACKEND_TEST_SLOW_API_URL", "http://127.0.0.1:18082/api")+"/instances/"+ref101, nil)
 		request.Header.Set("Authorization", "Bearer "+adminToken)
 		started := time.Now()
 		response, err := (&http.Client{Timeout: 20 * time.Second}).Do(request)
 		if err != nil {
-			t.Fatalf("GET /instances/101 en backend-lento falló sin respuesta HTTP: %v", err)
+			t.Fatalf("GET /instances/%s en backend-lento falló sin respuesta HTTP: %v", ref101, err)
 		}
 		var body map[string]any
 		_ = json.NewDecoder(response.Body).Decode(&body)
@@ -238,7 +255,7 @@ func TestPuenteEtapa1(t *testing.T) {
 
 		// Contraprueba: con el stub caído (la conexión falla enseguida) sigue siendo 502 PROXMOX_UNAVAILABLE.
 		stopProxmoxStub(t)
-		status, body := requestJSON(t, http.MethodGet, "/instances/101", adminToken, nil)
+		status, body := requestJSON(t, http.MethodGet, "/instances/"+ref101, adminToken, nil)
 		startProxmoxStub(t)
 		if status != http.StatusBadGateway || body["errorCode"] != "PROXMOX_UNAVAILABLE" {
 			t.Errorf("Proxmox caído: esperado 502 PROXMOX_UNAVAILABLE, recibido %d: %#v", status, body)
@@ -331,7 +348,7 @@ func TestPuenteEtapa1(t *testing.T) {
 		}()
 
 		// 102 (lxc) está detenida en el stub: start es válido con la ruta canónica /status/start (BAC-21B).
-		status, body = edgeRequest(http.MethodPost, "/instances/102/status/start")
+		status, body = edgeRequest(http.MethodPost, "/instances/"+ref102+"/status/start")
 		if status != http.StatusAccepted {
 			t.Fatalf("start de la 102 por el borde: esperado 202, recibido %d: %#v", status, body)
 		}
@@ -351,8 +368,8 @@ func TestPuenteEtapa1(t *testing.T) {
 				if event["tipo"] != "TASK_FINISHED" || detalles["tareaId"] != tareaID {
 					continue
 				}
-				if event["recursoId"] != "102" {
-					t.Errorf("TASK_FINISHED de la tarea %s con recursoId %v, esperado 102", tareaID, event["recursoId"])
+				if event["recursoId"] != "102" && event["recursoId"] != ref102 {
+					t.Errorf("TASK_FINISHED de la tarea %s con recursoId %v, esperado %s (102)", tareaID, event["recursoId"], ref102)
 				}
 				t.Logf("TASK_FINISHED recibido por el borde %v después del 202", time.Since(dispatched).Round(time.Millisecond))
 				return
@@ -402,7 +419,7 @@ func TestPuenteEtapa1(t *testing.T) {
 			}
 		}()
 
-		reqAction, err := http.NewRequest(http.MethodPost, smtpURL+"/instances/102/status/start", nil)
+		reqAction, err := http.NewRequest(http.MethodPost, smtpURL+"/instances/"+ref102+"/status/start", nil)
 		if err != nil {
 			t.Fatalf("error creando request a backend 2: %v", err)
 		}
@@ -426,8 +443,8 @@ func TestPuenteEtapa1(t *testing.T) {
 			case ev := <-events:
 				detalles, _ := ev["detalles"].(map[string]any)
 				if ev["tipo"] == "TASK_FINISHED" && detalles["tareaId"] == tareaID {
-					if ev["recursoId"] != "102" {
-						t.Errorf("TASK_FINISHED recibido con recursoId %v, esperado 102", ev["recursoId"])
+					if ev["recursoId"] != "102" && ev["recursoId"] != ref102 {
+						t.Errorf("TASK_FINISHED recibido con recursoId %v, esperado %s (102)", ev["recursoId"], ref102)
 					}
 					t.Logf("RNF-07 verificado: evento de tarea %s emitido por backend 2 recibido en SSE de backend 1 vía Redis Pub/Sub", tareaID)
 					return

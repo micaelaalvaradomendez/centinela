@@ -99,6 +99,8 @@ async function toNetworkStep(user: ReturnType<typeof userEvent.setup>, type: 'vm
 
 async function toOperatingSystemStep(user: ReturnType<typeof userEvent.setup>, type: 'vm' | 'lxc') {
   await toNetworkStep(user, type);
+  await user.click(screen.getByRole('radio', { name: /dhcp/i }));
+  await waitFor(() => expect(next()).toBeEnabled());
   await user.click(next());
   await screen.findByRole('radiogroup', { name: /template del sistema operativo/i });
 }
@@ -218,13 +220,17 @@ describe('FRN-25 - Pasos 3 (red), 4 (sistema operativo) y 5 (resumen)', () => {
     const user = userEvent.setup();
     await toNetworkStep(user, 'vm');
 
+    const staticRadio = screen.getByRole('radio', { name: /ip est[aá]tica/i });
     const dhcp = screen.getByRole('radio', { name: /dhcp/i });
+    expect(staticRadio).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(dhcp);
     expect(dhcp).toHaveAttribute('aria-checked', 'true');
     // En modo DHCP los campos de IP fija existen pero están deshabilitados.
     expect(screen.getByLabelText(/direcci[oó]n ip/i)).toBeDisabled();
     expect(screen.getByLabelText(/gateway|puerta de enlace/i)).toBeDisabled();
 
-    await user.click(screen.getByRole('radio', { name: /ip est[aá]tica/i }));
+    await user.click(staticRadio);
     const ip = await screen.findByLabelText(/direcci[oó]n ip/i);
     await user.type(ip, 'no-es-una-ip');
     await user.type(screen.getByLabelText(/prefijo/i), '24');

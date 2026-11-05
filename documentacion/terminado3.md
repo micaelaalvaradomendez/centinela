@@ -511,3 +511,48 @@ Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
   4. El filtro `resultado` en `GET /api/admin/audit` y `GET /api/admin/audit/export` acepta exactamente el conjunto cerrado y devuelve `400 Bad Request` para cualquier otro valor.
   5. Aviso al equipo de frontend cuando el conjunto quede fijo y desplegado para ejecutar `FIX-144`.
 
+#### `FIX-137` - Saneamiento de código inerte: eliminación de stub documental `PausarInstancia` y simplificación de residuos multi-tenancy (`RF-12` / `RNF-05`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (05/11/2026, backend `d0f3f57`): implementada y con tests en verde.** Commit `5b3ac80` (`fix: elimina endpoints fantasma e incluye auditorías globales`). Se eliminó el stub `PausarInstancia` y la ruta `/pause` de Swagger, se actualizó `audit_repository.go` para incluir eventos globales del sistema (`a.organizacion_id IS NULL`) y se limpiaron los tipos DTO huérfanos en `contrato_etapa1.go`. Pasa `TestFIX137_CodigoInerteYAuditoriaDeSistema` (3/3 subtests ✅) en `test/back/etapa3_fixes_pendientes_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Micaela
+- **Estimación:** 1.5 h
+- **Depende de:** `RF-12`, `RNF-05`.
+- **Entregable:**
+  1. Eliminación del stub `PausarInstancia` y sus anotaciones Swagger en `instance_handler.go` y `docs/swagger.json`.
+  2. Inclusión de eventos del sistema (`a.organizacion_id IS NULL`) en `audit_repository.go`.
+  3. Eliminación de tipos DTO huérfanos en `contrato_etapa1.go`.
+- **Criterio de éxito:** `TestFIX137_CodigoInerteYAuditoriaDeSistema` (3/3) en verde.
+
+#### `FIX-139` - Reconciliación inmediata de tareas al inicio del backend para mitigar falsos positivos de `409 INSTANCE_BUSY` (`RF-04` / `RNF-04`) (Backend)
+
+> [!NOTE]
+> **Estado verificado (05/11/2026, backend `d0f3f57`): implementada y con tests en verde.** Commit `d92a568` (`fix: reconcilia tareas antes de abrir la API`). Se incorporó `RecuperarYReconciliarAlArranque` en `seguimiento_tareas.go`, se invoca en `cmd/api/main.go` antes de iniciar el servidor HTTP y se agregaron pruebas unitarias del arranque con tareas `RUNNING`. Pasa `TestFIX139_ReconciliacionDeTareasAlArranque` (3/3 subtests ✅) en `test/back/etapa3_fixes_pendientes_test.go`.
+
+- **Área:** Backend
+- **Asignado:** Lucas / Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `RF-04`, `RNF-04`.
+- **Entregable:**
+  1. Método `RecuperarYReconciliarAlArranque(ctx context.Context)` en `seguimiento_tareas.go`.
+  2. Invocación en `cmd/api/main.go` antes de `srv.ListenAndServe()`.
+  3. Pruebas unitarias en `seguimiento_tareas_test.go`.
+- **Criterio de éxito:** `TestFIX139_ReconciliacionDeTareasAlArranque` (3/3) en verde.
+
+#### `FIX-144` - Alineación de filtros, contadores y diccionario de acciones de auditoría con el enum cerrado del Backend y retiro de lectura doble (`RF-08` / `FRN-31` / `FRN-12`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (05/11/2026, frontend `bed77ff`): implementada y con tests en verde.** Commits `a2a2761`, `798a93f`, `7ca0558`, `af78395`, `efd59a5` y `c110791` (PR #192). Se sincronizó `AUDIT_ACTION_LABELS` (31/31 códigos del backend) y `AUDIT_ACTION_OPTIONS` en `auditActionLabels.ts`, y se unificaron `Auditoria.tsx`, `auditFilters.ts`, `auditService.ts` y `deletedUsersService.ts` con el vocabulario cerrado `EXITO`, `FALLA`, `PENDIENTE`, retirando la lectura doble temporal. Pasan el bloque `FIX-144` en `test/front/etapa3-pendientes.test.tsx` (2/2 ✅), `test/front/frn-31-audit-etapa3.test.tsx` (4/4 ✅) y `frontend/centinela/src/test/audit-action-labels.test.ts` (3/3 ✅).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Cristian
+- **Estimación:** 1.0 h
+- **Depende de:** `FIX-143`, `FRN-31`, `FRN-12`.
+- **Entregable:**
+  1. Alineación 1 a 1 de `auditActionLabels.ts` con el enum cerrado de `auditoria.accion` del backend.
+  2. Unificación de `Auditoria.tsx` y `deletedUsersService.ts` sobre el enum cerrado `EXITO`, `FALLA`, `PENDIENTE`.
+- **Criterio de éxito:** Suite `FIX-144` en `test/front/etapa3-pendientes.test.tsx` (2/2) en verde.
+
+

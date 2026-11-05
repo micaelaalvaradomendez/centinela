@@ -16,6 +16,11 @@ const testJWTSecret = "test-only-jwt-secret-at-least-32-characters"
 func TestTareasBackendEIntegracion(t *testing.T) {
 	requireIntegration(t)
 
+	originalAdminHash := queryDatabase(t, "SELECT contrasena_hash FROM usuarios WHERE email_usuario = 'admin@elcentinela.com';")
+	t.Cleanup(func() {
+		queryDatabase(t, fmt.Sprintf("UPDATE usuarios SET contrasena_hash = '%s' WHERE email_usuario = 'admin@elcentinela.com';", originalAdminHash))
+	})
+
 	t.Run("BAC-01 crea esquema roles y usuario de prueba", func(t *testing.T) {
 		tables := queryDatabase(t, `
 SELECT table_name
@@ -193,7 +198,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 	t.Run("BAC-10 BAC-11 impiden reemplazar TOTP y validan el secreto persistido", func(t *testing.T) {
 		status, relogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
-			"email": "admin@elcentinela.com", "password": "Admin123!",
+			"email": "admin@elcentinela.com", "password": initialAdminPassword(t),
 		})
 		if status != http.StatusOK {
 			t.Fatalf("login posterior esperado 200, recibido %d: %#v", status, relogin)
@@ -225,7 +230,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// BAC-11: el código usado en la vinculación no debe aceptarse como replay en otra sesión en la misma ventana de tiempo.
 		replayLoginStatus, replayLogin := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
-			"email": "admin@elcentinela.com", "password": "Admin123!",
+			"email": "admin@elcentinela.com", "password": initialAdminPassword(t),
 		})
 		if replayLoginStatus != http.StatusOK {
 			t.Fatalf("login para probar replay esperado 200, recibido %d: %#v", replayLoginStatus, replayLogin)
@@ -246,7 +251,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 
 		// 2. Cambiar contraseña temporal llamando a PUT /api/account/password
 		changeStatus, changeResp := requestJSON(t, http.MethodPut, "/account/password", accessToken, map[string]any{
-			"contrasenaActual": "Admin123!",
+			"contrasenaActual": initialAdminPassword(t),
 			"contrasenaNueva":  "AdminNew123!",
 		})
 		if changeStatus != http.StatusOK {

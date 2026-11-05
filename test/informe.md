@@ -1,55 +1,46 @@
 # Informe de Estado de Tareas Verificado por Pruebas
 
-**Fecha de ejecución:** 04/11/2026 (tras actualizar los submódulos a los últimos commits de `origin/main` y ejecutar todas las suites de pruebas)  
+**Fecha de ejecución:** 05/11/2026 (tras actualizar los submódulos a los últimos commits de `origin/main` y ejecutar todas las suites de pruebas)  
 **Alcance:** Evaluación integral de las tareas de [documentacion/actual.md](../documentacion/actual.md), verificación de las tareas recién completadas y movidas a [documentacion/terminado2.md](../documentacion/terminado2.md) y [documentacion/terminado3.md](../documentacion/terminado3.md), y estado de regresión en las suites `test/front`, `test/back`, `frontend/centinela` y `backend`.
 
 | Submódulo | Revisión probada (`origin/main`) | Últimos commits incorporados |
 |---|---|---|
-| **Backend** | `4011b08` (`fix(auditoria): vocabulario cerrado de accion y resultado, enums en Swagger y normalización histórica`) | `4011b08` (**`FIX-143`**: vocabulario cerrado de `auditoria.accion` y `auditoria.resultado`, enums en Swagger y `contrato-etapa1.md`, `TestContratoVocabularioAuditoria` y migración `20261104_vocabulario_auditoria.sql`), `08126ae` (**`FIX-136`**: umbrales e histéresis de alertas configurables por entorno), `5f8bb5e` (**`FIX-135`**: detección y alerta de paradas externas de instancias), `42093c3` (**`FIX-134`**: soporte para instancias `PAUSED`). |
-| **Frontend** | `1e5ec49` (`Merge pull request #189`) | `1e5ec49` / `edd581c` (mejoras en `Auditoria.tsx`), `26af24f` (**`FIX-142` + `FIX-131`**: normalización de `AlertEventPayload` en `eventsClient.ts`, banner crítico `role="alert"` en `Home.tsx`, tarjeta de almacenamiento para `OPERATOR` y selector `"En vivo"` en `InstanceResourceUsage.tsx`), `99c7a18` (`Instances.tsx`). |
+| **Backend** | `d0f3f57` (`Merge pull request #30`) | `d0f3f57` / `df4cada` (no crear en VMID protegidos y exigir pertenencia para borrar), `d92a568` (**`FIX-139`**: reconcilia tareas antes de abrir la API), `5b3ac80` (**`FIX-137`**: elimina endpoints fantasma e incluye auditorías globales), `4011b08` (**`FIX-143`**: vocabulario cerrado de `auditoria.accion` y `auditoria.resultado`). |
+| **Frontend** | `bed77ff` (`Merge pull request #196`) | `bed77ff` / `0bf4f33` y `020b499` / `1b7e7d4` / `bc44649` (**`FIX-141`**: alinea pruebas de paneles, tablas y mocks internos en `frontend/centinela`), `c110791` / `efd59a5`..`a2a2761` (**`FIX-144`**: alinea auditoría con el vocabulario cerrado `EXITO`/`FALLA`/`PENDIENTE` y retira lectura doble), `5370f31` (red estática por defecto en el asistente de creación y manejo de `403 INSTANCE_NOT_OWNED`). |
 
 ---
 
 ## 1. Tareas Verificadas al 100% y Movidas a `terminado2.md` / `terminado3.md`
 
-En esta corrida se verificaron con pruebas automatizadas y se cerraron las siguientes **6 tareas** que estaban en `actual.md`:
+En esta corrida se verificaron con pruebas automatizadas y se cerraron las siguientes **4 tareas** que estaban pendientes en `actual.md`:
 
-1. **`FIX-143`** — Vocabulario de auditoría con contrato cerrado, eliminación de códigos duplicados, normalización histórica y publicación de enums en Swagger (`Backend / Base de Datos`, movida a [terminado3.md](../documentacion/terminado3.md)):
-   - **Evidencia:** Commit `4011b08` en `ports/audit_port.go`, `audit_handler.go`, `audit_repository.go`, `docs/swagger.json`, `docs/contrato-etapa1.md`, `docs/contrato_etapa1_test.go` y `migrations/20261104_vocabulario_auditoria.sql`. Unifica `auditoria.resultado` en `EXITO`, `FALLA`, `PENDIENTE`, elimina constantes muertas/duplicadas, publica los `enum` en Swagger y documenta la tabla oficial en `contrato-etapa1.md`.
-   - **Prueba:** `TestFIX143_VocabularioAuditoriaContratoCerrado` (4/4 subtests) en `test/back/etapa3_fixes_pendientes_test.go` y `TestContratoVocabularioAuditoria` en `backend/docs/contrato_etapa1_test.go` — **PASS**.
-2. **`FIX-142`** — Tarjeta de almacenamiento en Dashboard para rol `OPERATOR` (`Frontend`, movida a [terminado2.md](../documentacion/terminado2.md)):
-   - **Evidencia:** Commit `26af24f` en `Home.tsx`, `NodeCapacitySection.tsx` y `node.types.ts`. El bloque de almacenamiento se renderiza tanto para `ADMIN` como para `OPERATOR` consumiendo `nodeStatus.storage`.
-   - **Prueba:** `test/front/fix-117b-dashboard-operador.test.tsx` (4/4 pruebas) — **PASS**.
-3. **`FIX-131`** — Selector `"En vivo"` (WebSocket) y gráfico de Tráfico de Red en detalle de instancia (`Frontend`, movida a [terminado3.md](../documentacion/terminado3.md)):
-   - **Evidencia:** Commit `26af24f` en `InstanceResourceUsage.tsx`. Incorpora la opción `"En vivo"` en el selector de período, invoca `useInstanceMetrics(instanceId, { enabled: timeframe === 'live' })` y muestra el badge de estado de conexión (`En vivo` / `Reconectando...`).
-   - **Prueba:** `test/front/frn-23-metrics-charts.test.tsx` (9/9 pruebas) y `test/front/frn-22-use-instance-metrics.test.tsx` (9/9 pruebas) — **PASS**.
-4. **`FIX-134`** — Soporte completo para instancias en estado `PAUSED` (`Backend`, movida a [terminado3.md](../documentacion/terminado3.md)):
-   - **Evidencia:** Commit `42093c3` en `instance.go`, `instance_service.go`, `proxmox_port.go` y `client.go`. Mapea `"paused"` a `EstadoInstanciaPausada = "PAUSED"`, rechaza `start`/`stop`/`shutdown`/`reboot` y `DELETE` sobre instancias pausadas con `409 Conflict (INSTANCE_INVALID_STATE)` y agrega soporte para `resume`.
-   - **Prueba:** `TestFIX134_InstanciasPausadas` (4/4 subtests) en `test/back/etapa3_fixes_pendientes_test.go` — **PASS**.
-5. **`FIX-135`** — Detección y alerta de paradas externas de instancias (`Backend`, movida a [terminado3.md](../documentacion/terminado3.md)):
-   - **Evidencia:** Commit `5f8bb5e` en `instance_service.go`, `seguimiento_tareas.go` y `alert_evaluator_service.go`. Registra intención de parada en Redis (`instance:stop_intent:{vmid}`), detecta transiciones `RUNNING -> STOPPED` no iniciadas desde Centinela, audita `SYSTEM_INSTANCE_STOPPED_EXTERNALLY` y despacha alerta crítica por SSE y correo.
-   - **Prueba:** `TestFIX135_AlertasParadasExternas` (3/3 subtests) en `test/back/etapa3_fixes_pendientes_test.go` — **PASS**.
-6. **`FIX-136`** — Parametrización por entorno de umbrales e histéresis del evaluador de alertas (`Backend`, movida a [terminado3.md](../documentacion/terminado3.md)):
-   - **Evidencia:** Commit `08126ae` en `cmd/api/main.go` y `alert_evaluator_worker.go`. Lee los umbrales y ciclos de persistencia desde variables de entorno con validación de rango e inyección en `NewEvaluadorAlertas`.
-   - **Prueba:** `TestFIX136_UmbralesDeAlertaConfigurables` (4/4 subtests) en `test/back/etapa3_fixes_pendientes_test.go` — **PASS**.
+1. **`FIX-137`** — Saneamiento de código inerte: eliminación de stub documental `PausarInstancia`, inclusión de auditorías globales del sistema (`organizacion_id IS NULL`) y limpieza de tipos DTO huérfanos (`Backend`, movida a [terminado3.md](../documentacion/terminado3.md)):
+   - **Evidencia:** Commit `5b3ac80` en `instance_handler.go`, `audit_repository.go`, `contrato_etapa1.go` y `docs/swagger.json`.
+   - **Prueba:** `TestFIX137_CodigoInerteYAuditoriaDeSistema` (3/3 subtests) en `test/back/etapa3_fixes_pendientes_test.go` — **PASS**.
+2. **`FIX-139`** — Reconciliación inmediata de tareas al inicio del backend para mitigar falsos positivos de `409 INSTANCE_BUSY` (`Backend`, movida a [terminado3.md](../documentacion/terminado3.md)):
+   - **Evidencia:** Commit `d92a568` en `seguimiento_tareas.go`, `seguimiento_tareas_test.go` y `cmd/api/main.go`. Expone `RecuperarYReconciliarAlArranque`, la invoca antes de abrir la API HTTP e incluye tests unitarios.
+   - **Prueba:** `TestFIX139_ReconciliacionDeTareasAlArranque` (3/3 subtests) en `test/back/etapa3_fixes_pendientes_test.go` — **PASS**.
+3. **`FIX-141`** — Actualización de mocks de `@/context/EventsContext` (`useOptionalEventsContext`) y sincronización de expectativas UI en tests unitarios internos del submódulo `frontend` (`Testing Frontend`, movida a [terminado2.md](../documentacion/terminado2.md)):
+   - **Evidencia:** Commits `bc44649`, `1b7e7d4`, `020b499` (PR #193) y `0bf4f33`, `bed77ff` (PR #196).
+   - **Prueba:** `npm --prefix frontend/centinela test -- --run` (**43/43 archivos y 277/277 pruebas individuales**) — **100 % PASS**.
+4. **`FIX-144`** — Alineación de filtros, contadores y diccionario de acciones de auditoría con el enum cerrado del Backend y retiro de lectura doble (`Frontend`, movida a [terminado3.md](../documentacion/terminado3.md)):
+   - **Evidencia:** Commits `a2a2761`, `798a93f`, `7ca0558`, `af78395`, `efd59a5` y `c110791` (PR #192) en `auditActionLabels.ts`, `Auditoria.tsx`, `auditFilters.ts`, `auditService.ts` y `deletedUsersService.ts`.
+   - **Prueba:** Bloque `FIX-144` en `test/front/etapa3-pendientes.test.tsx` (2/2 pruebas), `test/front/frn-31-audit-etapa3.test.tsx` (4/4 pruebas) y `frontend/centinela/src/test/audit-action-labels.test.ts` (3/3 pruebas) — **PASS**.
 
 ---
 
-## 2. Estado de las 11 Tareas Pendientes en `documentacion/actual.md`
+## 2. Estado de las Tareas Pendientes en `documentacion/actual.md`
+
+*(Todas las tareas de **Backend** en `actual.md` ya están implementadas y en verde; solo restan 2 tareas de Frontend y las tareas de Infraestructura/Documentación de Proxmox físico y Nginx).*
 
 | # | Tarea | Etapa | Área | Estado en Pruebas | Diagnóstico y Trabajo Pendiente |
 |---|---|---|---|:---:|---|
-| 1 | **`FIX-141`** | Etapa 2 | Frontend | 🔴 **Pendiente** (`5 archivos / 12 tests FAIL` en `frontend/centinela`) | Desalineación en la suite interna del submódulo `frontend/centinela`: mocks incompletos en `Auditoria.test.tsx`, `useInstanceDetail.test.ts`, `InstanceSummarySection.test.tsx`, assertions obsoletas en `Home.test.tsx` (`OPERATOR`) y validación de `validateInstanceRef` en `instanceService.test.ts`. |
-| 2 | **`ADP-07` (`FRN-37`)** | PVE 8.4 | Frontend | 🔴 **Pendiente** (`2/3 PASS, 1/3 FAIL` en `frn-37-adp-07-wizard-debian12.test.tsx`) | `extractTemplateMetadata()` en `instances.service.ts:276-306` solo reconoce Ubuntu (`24.04`/`22.04`) y devuelve `'—'` como sistema operativo para `local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst` en lugar de `operatingSystem: 'Debian'` y `version: '12'`. |
-| 3 | **`FRN-33`** | Etapa 3 | Frontend | 🟠 **Parcial** (`1/2 PASS, 1/2 FAIL` en `frn-33-alerts-center.test.tsx`) | `eventsClient.ts` ya normaliza `AlertEventPayload` (`metric`, `value`, `threshold`, `severity`, `message`) y `Home.tsx` renderiza el banner, pero falta que el contenedor de alerta crítica se renderice en la cabecera ante cualquier `ALERT_TRIGGERED` sin depender de que el texto libre contenga la subcadena `'crítica'` con tilde (`severity === 'CRITICAL'`). |
-| 4 | **`FIX-137`** | Etapa 3 | Backend | 🔴 **Pendiente** (`0/3 PASS` en `TestFIX137_CodigoInerteYAuditoriaDeSistema`) | 1) El stub `PausarInstancia` (`501 Not Implemented`) sigue expuesto en `instance_handler.go` y Swagger; 2) `audit_repository.go` oculta eventos del sistema con `usuario_id IS NULL AND organizacion_id IS NULL` cuando el admin tiene `organizacion_id`; 3) `contrato_etapa1.go` conserva structs DTO huérfanos. |
-| 5 | **`FIX-139` (`FIX-123`)** | Etapa 3 | Backend | 🔴 **Pendiente** (`0/3 PASS` en `TestFIX139_ReconciliacionDeTareasAlArranque`) | No existe `RecuperarYReconciliarAlArranque` en `seguimiento_tareas.go` ni se invoca en `cmd/api/main.go`. Además, las tareas `CREATE` y `DELETE` retomadas tras un reinicio pierden su callback de autoasignación/purga de permisos. |
-| 6 | **`FIX-144`** | Etapa 3 | Frontend | 🔴 **Pendiente** (`0/2 PASS` en `etapa3-pendientes.test.tsx` bloque `FIX-144`) | Ya cerrado `FIX-143` en el backend (`EXITO`/`FALLA`/`PENDIENTE`), falta sincronizar el frontend: 1) `AUDIT_ACTION_OPTIONS` en `auditActionLabels.ts` aún incluye códigos inexistentes (`START_VM`, `STOP_VM`, `CAMBIAR_CONTRASENA`, `EXPORTAR_AUDITORIA`, `SUSPENDER_VM`, `ACTUALIZAR_PERFIL`) y omite acciones reales (`INSTANCE_PERMISSIONS_PURGED`, `UPDATE_PROFILE_EMAIL_REQUESTED`, `UPDATE_PROFILE_EMAIL_CONFIRMED`, `SYSTEM_INSTANCE_STOPPED_EXTERNALLY`, `EVENTOS_CONEXION`, `EVENTOS_CIERRE`); 2) `Auditoria.tsx` sigue filtrando con `SUCCESS`/`FAILED`/`PENDING` en lugar de `EXITO`/`FALLA`/`PENDIENTE`. |
-| 7 | **`FIX-129` (`INF-11`)** | Etapa 3 | Infra | 🟠 **Parcial** (`2/3 PASS, 1/3 FAIL` en `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`) | `docker/nginx-edge.conf` ya tiene redirección `301` HTTP->HTTPS, `TLSv1.2 TLSv1.3`, WSS y SSE sin buffering, pero le faltan las 4 cabeceras de seguridad: `Strict-Transport-Security` (`includeSubDomains`), `Content-Security-Policy`, `X-Frame-Options` y `X-Content-Type-Options`. |
-| 8 | **`FIX-123` (original)** | Etapa 3 | Docs / Back | ➡️ **Reemplazada por `FIX-139`** | El usuario indicó referenciarla bajo el identificador `FIX-139` en `actual.md`. |
-| 9 | **`INF-14`** | Etapa 3 | Infra / Docs | 🔴 **Pendiente** (`FAIL` en `TestEtapa3INF14_AuditoriaYSondaPVE8Real`) | Falta el script `scripts/pve8-audit-probe.sh` y la sección de auditoría empírica PVE 8.4 en `documentacion/api-proxmox.md`. |
-| 10 | **`ADP-09`** | PVE 8.4 | Infra | 🔴 **Pendiente** (`FAIL` en `TestADP09_ADP10_InfraestructuraPVE8`) | Falta aprovisionar la plantilla `debian-12-standard` e ISO Debian 12 en el hipervisor y documentar los volúmenes verificados en `documentacion/api-proxmox.md`. |
-| 11 | **`ADP-10`** | PVE 8.4 | Infra / QA | 🔴 **Pendiente** (`FAIL` en `TestADP09_ADP10_InfraestructuraPVE8`) | Falta documentar en `documentacion/api-proxmox.md` la matriz de validación E2E contra el servidor Proxmox VE 8.4 real. |
+| 1 | **`ADP-07` (`FRN-37`)** | PVE 8.4 | Frontend | 🔴 **Pendiente** (`2/3 PASS, 1/3 FAIL` en `frn-37-adp-07-wizard-debian12.test.tsx`) | `extractTemplateMetadata()` en `instances.service.ts` solo reconoce Ubuntu (`24.04`/`22.04`) y devuelve `'—'` como sistema operativo para `local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst` en lugar de `operatingSystem: 'Debian'` y `version: '12'`. |
+| 2 | **`FRN-33`** | Etapa 3 | Frontend | 🟠 **Parcial** (`1/2 PASS, 1/2 FAIL` en `frn-33-alerts-center.test.tsx`) | `eventsClient.ts` ya normaliza `AlertEventPayload` y `Home.tsx` renderiza el banner, pero falta que el contenedor de alerta crítica (`role="alert"`) se renderice en la cabecera ante cualquier `ALERT_TRIGGERED` sin depender de que el texto libre contenga la subcadena `'crítica'` con tilde (`severity === 'CRITICAL'`). |
+| 3 | **`FIX-129` (`INF-11`)** | Etapa 3 | Infra | 🟠 **Parcial** (`2/3 PASS, 1/3 FAIL` en `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS`) | `docker/nginx-edge.conf` ya tiene redirección `301` HTTP->HTTPS, `TLSv1.2 TLSv1.3`, WSS y SSE sin buffering, pero le faltan las 4 cabeceras de seguridad: `Strict-Transport-Security` (`includeSubDomains`), `Content-Security-Policy`, `X-Frame-Options` y `X-Content-Type-Options`. |
+| 4 | **`FIX-123`** | Etapa 2 | Infra | ⚪ **Omitida sin host físico** (`SKIP` en `TestFIX123_PlantillasEISOsEnProxmoxReal`) | Requiere `PROXMOX_REAL_URL`, `PROXMOX_REAL_TOKEN_ID` y `PROXMOX_REAL_TOKEN_SECRET` contra el servidor Proxmox VE físico. |
+| 5 | **`INF-14`** | Etapa 3 | Infra / Docs | 🔴 **Pendiente** (`FAIL` en `TestEtapa3INF14_AuditoriaYSondaPVE8Real`) | Falta el script `scripts/pve8-audit-probe.sh` y la sección de auditoría empírica PVE 8.4 en `documentacion/api-proxmox.md`. |
+| 6 | **`ADP-09` / `ADP-10`** | PVE 8.4 | Infra / Docs | 🔴 **Pendiente** (`FAIL` en `TestADP09_ADP10_InfraestructuraPVE8`) | Falta el script `scripts/pve8-audit-probe.sh` y documentar en `documentacion/api-proxmox.md` los volúmenes y permisos verificados en PVE 8.4.21. |
 
 ---
 
@@ -57,7 +48,7 @@ En esta corrida se verificaron con pruebas automatizadas y se cerraron las sigui
 
 | Suite | Comando | Archivos / Paquetes | Pruebas Individuales | Estado |
 |---|---|---|---|---|
-| **Aceptación Frontend (`test/front`)** | `npm --prefix test/front test` | **49 archivos** (**44 PASS**, **3 FAIL**, **2 SKIPPED** E2E) | **316 pruebas** (**296 PASS**, **4 FAIL**, **16 SKIPPED**) | 🟢 **98,7 % de pruebas ejecutadas en verde** (los únicos 4 fallos son las 3 tareas pendientes de front en `actual.md`: `FRN-33`, `ADP-07`/`FRN-37` y `FIX-144`). |
-| **Interna Frontend (`frontend/centinela`)** | `npm --prefix frontend/centinela test -- --run` | **43 archivos** (**38 PASS**, **5 FAIL**) | **272 pruebas** (**260 PASS**, **12 FAIL**) | 🟠 Los 12 fallos internos están documentados y rastreados en **`FIX-141`**. |
-| **Interna Backend (`backend`)** | `go test -C backend ./...` | **14 paquetes** (**14 PASS**, **0 FAIL**) | **100 % PASS** | 🟢 **100 % en verde** (incluyendo `TestContratoVocabularioAuditoria` y `migrations/embed_test.go`). |
-| **Aceptación Backend (`test/back`)** | `go test -C test/back -v ./...` | **24 archivos de test** | Todas las pruebas de Etapas 1, 2, 3 y PVE 8.4 ejecutadas | 🟢 Pasan todas las tareas cerradas (`FIX-143`, `FIX-134`, `FIX-135`, `FIX-136`, `FIX-128`, `FIX-133`, `FIX-138`, `FIX-140`, `BAC-42..55`, `ADP-01..06`); fallan únicamente las pruebas de las tareas aún abiertas en `actual.md` (`FIX-137`, `FIX-139`, `FIX-129`/`INF-11`, `INF-14`, `ADP-09`/`ADP-10`). |
+| **Aceptación Frontend (`test/front`)** | `npm --prefix test/front test` | **49 archivos** (**45 PASS**, **2 FAIL**, **2 SKIPPED** E2E) | **316 pruebas** (**298 PASS**, **2 FAIL**, **16 SKIPPED**) | 🟢 **99,3 % de pruebas ejecutadas en verde** (los únicos 2 fallos son las 2 tareas pendientes de front en `actual.md`: `FRN-33` y `ADP-07`/`FRN-37`). |
+| **Interna Frontend (`frontend/centinela`)** | `npm --prefix frontend/centinela test -- --run` | **43 archivos** (**43 PASS**, **0 FAIL**) | **277 pruebas** (**277 PASS**, **0 FAIL**) | 🟢 **100 % en verde** (**`FIX-141`** cerrado). |
+| **Interna Backend (`backend`)** | `go test -C backend ./...` | **14 paquetes** (**14 PASS**, **0 FAIL**) | **100 % PASS** | 🟢 **100 % en verde** (incluyendo `TestContratoVocabularioAuditoria`, `seguimiento_tareas_test.go` y `migrations/embed_test.go`). |
+| **Aceptación Backend (`test/back`)** | `go test -C test/back -v ./...` | **24 archivos de test** | Todas las pruebas de Etapas 1, 2, 3 y PVE 8.4 ejecutadas | 🟢 **100 % de las tareas de Backend en verde** (`FIX-128`, `FIX-133`..`FIX-140`, `FIX-143`, `BAC-42`..`BAC-55`, `ADP-01`..`ADP-06`); en pruebas sin Docker solo fallan las 3 tareas de Infra/Docs abiertas en `actual.md` (`FIX-129`/`INF-11`, `INF-14`, `ADP-09`/`ADP-10`). |

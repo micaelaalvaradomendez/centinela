@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,6 +46,9 @@ func TestMain(m *testing.M) {
 			setupErr = fmt.Errorf("no se pudo iniciar el entorno: %w\n%s\nReintento:\n%s", err, output, output2)
 		}
 	}
+	if setupErr == nil {
+		setupIntegrationFixtures()
+	}
 
 	code := m.Run()
 	if output, err := runCompose("down", "--volumes", "--remove-orphans"); err != nil {
@@ -64,6 +68,72 @@ func requireIntegration(t *testing.T) {
 	if setupErr != nil {
 		t.Fatal(setupErr)
 	}
+}
+
+// setupIntegrationFixtures registra tareas de creación simuladas para las instancias
+// de prueba (101 y 102) en tareas_asincronas para que la guarda de pertenencia
+// FueCreadaPorCentinela (df4cada) reconozca a las instancias como propias y permita
+// probar el ciclo de vida y borrado en el entorno Docker.
+func setupIntegrationFixtures() {
+	query := `
+DO $$
+DECLARE
+    admin_id uuid;
+BEGIN
+    SELECT id INTO admin_id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;
+    IF admin_id IS NOT NULL THEN
+        INSERT INTO tareas_asincronas (id, usuario_id, upid_proxmox, instancia_id, accion, estado, fecha_creacion)
+        VALUES 
+            (gen_random_uuid(), admin_id, 'UPID:pve:00000001:00000001:00000001:qmcreate:101:root@pam:', '101', 'qmcreate', 'COMPLETED', NOW()),
+            (gen_random_uuid(), admin_id, 'UPID:pve:00000002:00000002:00000002:qmcreate:102:root@pam:', '102', 'qmcreate', 'COMPLETED', NOW())
+        ON CONFLICT (upid_proxmox) DO NOTHING;
+    END IF;
+END $$;
+`
+	commandArguments := []string{"compose", "-p", projectName, "-f", composeFile, "exec", "-T", "db", "psql", "-U", "centinela_test", "-d", "centinela_test", "-Atc", query}
+	_ = exec.Command("docker", commandArguments...).Run()
+}
+
+var (
+	initialAdminClaveOnce sync.Once
+	initialAdminClave     string
+)
+
+var adminClavePattern = regexp.MustCompile(`Clave temporal \(solo desarrollo\):\s+(\S+)`)
+
+// initialAdminPassword recupera la contraseña inicial del administrador seed de desarrollo.
+// Si no se configuró INITIAL_ADMIN_PASSWORD en el entorno, lee la clave aleatoria que el
+// backend imprimió en sus logs al iniciar (FIX-118).
+func initialAdminPassword(t *testing.T) string {
+	t.Helper()
+	initialAdminClaveOnce.Do(func() {
+		if envPass := os.Getenv("INITIAL_ADMIN_PASSWORD"); envPass != "" {
+			initialAdminClave = envPass
+			return
+		}
+		for attempt := 0; attempt < 15 && initialAdminClave == ""; attempt++ {
+			output, err := runCompose("logs", "--no-color", "backend")
+			if err == nil {
+				if match := adminClavePattern.FindStringSubmatch(output); match != nil {
+					initialAdminClave = match[1]
+					break
+				}
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if initialAdminClave == "" {
+			initialAdminClave = "Admin123!"
+		}
+	})
+	return initialAdminClave
+}
+
+// resetRateLimits vacía la base de datos de Redis para restablecer las ventanas
+// del limitador de ráfagas (LimitarRafagas / BAC-48) y evitar falsos positivos
+// 429 durante la ejecución secuencial rápida de la suite de integración.
+func resetRateLimits(t *testing.T) {
+	t.Helper()
+	_, _ = runCompose("exec", "-T", "redis", "redis-cli", "-a", "redis-test", "flushdb")
 }
 
 func runCompose(arguments ...string) (string, error) {
@@ -120,6 +190,34 @@ func requestValue(t *testing.T, method, path, token string, payload any) (int, a
 	if err != nil {
 		t.Fatalf("no se pudo leer la respuesta: %v", err)
 	}
+
+	if response.StatusCode == http.StatusTooManyRequests && strings.Contains(string(responseBody), "RATE_LIMIT_EXCEEDED") {
+		resetRateLimits(t)
+		time.Sleep(50 * time.Millisecond)
+		var retryBody io.Reader
+		if payload != nil {
+			encoded, _ := json.Marshal(payload)
+			retryBody = bytes.NewReader(encoded)
+		}
+		retryReq, err := http.NewRequest(method, apiURL+path, retryBody)
+		if err == nil {
+			if payload != nil {
+				retryReq.Header.Set("Content-Type", "application/json")
+			}
+			if token != "" {
+				retryReq.Header.Set("Authorization", "Bearer "+token)
+			}
+			retryResp, err := client.Do(retryReq)
+			if err == nil {
+				defer retryResp.Body.Close()
+				retryResponseBody, err := io.ReadAll(retryResp.Body)
+				if err == nil {
+					response = retryResp
+					responseBody = retryResponseBody
+				}
+			}
+		}
+	}
 	var result any = map[string]any{}
 	if len(responseBody) > 0 {
 		if err := json.Unmarshal(responseBody, &result); err != nil {
@@ -151,6 +249,9 @@ func requestJSONArray(t *testing.T, method, path, token string) (int, []any) {
 
 func login(t *testing.T, password string) map[string]any {
 	t.Helper()
+	if password == "Admin123!" || password == "" {
+		password = initialAdminPassword(t)
+	}
 	status, body := requestJSON(t, http.MethodPost, "/auth/login", "", map[string]any{
 		"email":    "admin@elcentinela.com",
 		"password": password,
@@ -248,6 +349,35 @@ func requestRaw(t *testing.T, method, path, token string, payload any, cookies .
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
+
+	if response.StatusCode == http.StatusTooManyRequests && strings.Contains(string(responseBody), "RATE_LIMIT_EXCEEDED") {
+		resetRateLimits(t)
+		time.Sleep(50 * time.Millisecond)
+		var retryBody io.Reader
+		if payload != nil {
+			encoded, _ := json.Marshal(payload)
+			retryBody = bytes.NewReader(encoded)
+		}
+		retryReq, err := http.NewRequest(method, apiURL+path, retryBody)
+		if err == nil {
+			if payload != nil {
+				retryReq.Header.Set("Content-Type", "application/json")
+			}
+			if token != "" {
+				retryReq.Header.Set("Authorization", "Bearer "+token)
+			}
+			for _, c := range cookies {
+				retryReq.AddCookie(c)
+			}
+			retryResp, err := client.Do(retryReq)
+			if err == nil {
+				defer retryResp.Body.Close()
+				retryResponseBody, _ := io.ReadAll(retryResp.Body)
+				response = retryResp
+				responseBody = retryResponseBody
+			}
+		}
+	}
 	result := rawResponse{
 		Status:  response.StatusCode,
 		Header:  response.Header,
@@ -263,11 +393,13 @@ func requestRaw(t *testing.T, method, path, token string, payload any, cookies .
 
 // Marcadores que imprime backend/internal/adapters/secondary/email/mock_email.go.
 const (
-	mailTemporaryPassword = "clave provisoria es:"
-	mailRecoveryCode      = "código de seguridad es:"
+	mailTemporaryPassword = "CLAVE PROVISORIA:"
+	mailRecoveryCode      = "CÓDIGO DE RECUPERACIÓN:"
 )
 
-var mailSecretPattern = regexp.MustCompile(`\*\* (\S+) \*\*`)
+// FIX-140 cambió el formato del log: "📥 Para: <destino>" y el secreto destacado como
+// "👉👉👉  CLAVE PROVISORIA: <valor>  👈👈👈".
+var mailSecretPattern = regexp.MustCompile(`:\s+(\S+)\s+👈`)
 
 // mailedSecret lee la "bandeja de entrada" del MockEmailService (logs del contenedor backend)
 // y devuelve el último secreto enviado a destinatario que contenga el marcador indicado.
@@ -282,8 +414,8 @@ func mailedSecret(t *testing.T, destinatario, marker string) string {
 		}
 		current := false
 		for _, line := range strings.Split(output, "\n") {
-			if strings.Contains(line, "Destinatario: ") {
-				current = strings.Contains(line, "Destinatario: "+destinatario)
+			if idx := strings.Index(line, "Para: "); idx >= 0 {
+				current = strings.TrimSpace(line[idx+len("Para: "):]) == destinatario
 				continue
 			}
 			if current && strings.Contains(line, marker) {

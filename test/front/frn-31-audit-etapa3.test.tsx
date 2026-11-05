@@ -39,7 +39,7 @@ const sampleAuditItems = [
     recursoId: 'inst_k8Pq2v',
     instanciaId: 'inst_k8Pq2v',
     instanciaNombre: 'web-01',
-    resultado: 'SUCCESS',
+    resultado: 'EXITO',
     detalles: { snapname: 'pre_deploy_2026', vmstate: false, duracionMs: 1420 },
   },
   {
@@ -54,7 +54,7 @@ const sampleAuditItems = [
     recursoId: 'nodo-a1',
     instanciaId: 'nodo-a1',
     instanciaNombre: 'nodo-a1',
-    resultado: 'WARNING',
+    resultado: 'PENDIENTE',
     detalles: { metric: 'CPU', usagePercent: 92.4, threshold: 90 },
   },
   {
@@ -69,7 +69,7 @@ const sampleAuditItems = [
     recursoId: 'inst_k8Pq2v',
     instanciaId: 'inst_k8Pq2v',
     instanciaNombre: 'web-01',
-    resultado: 'FAILED',
+    resultado: 'FALLA',
     detalles: { snapname: 'pre_deploy_2026', motivo: 'PROXMOX_ERROR', error: 'lock timeout' },
   },
   {
@@ -84,7 +84,7 @@ const sampleAuditItems = [
     recursoId: 'inst_k8Pq2v',
     instanciaId: 'inst_k8Pq2v',
     instanciaNombre: 'web-01',
-    resultado: 'SUCCESS',
+    resultado: 'EXITO',
     detalles: { snapname: 'old_snap_2026' },
   },
   {
@@ -99,7 +99,7 @@ const sampleAuditItems = [
     recursoId: 'inst_k8Pq2v',
     instanciaId: 'inst_k8Pq2v',
     instanciaNombre: 'web-01',
-    resultado: 'SUCCESS',
+    resultado: 'EXITO',
     detalles: { cores: 4 },
   },
 ];
@@ -146,7 +146,7 @@ describe('FRN-31 - Vista avanzada de Auditoría, filtros Etapa 3, visor JSON y e
 
     const table = await screen.findByRole('table');
     const [successBadge] = await within(table).findAllByText(/éxito|exito|success/i);
-    const [warningBadge] = await within(table).findAllByText(/advertencia|warning/i);
+    const [warningBadge] = await within(table).findAllByText(/en curso|pendiente|advertencia|warning/i);
     const [failedBadge] = await within(table).findAllByText(/falla|fallido|failed/i);
 
     expect(successBadge.closest('span')?.className ?? successBadge.className).toMatch(/emerald|green/);

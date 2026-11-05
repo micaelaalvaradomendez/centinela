@@ -24,6 +24,8 @@ func TestEtapa1Ola2(t *testing.T) {
 	operatorID, _ := createUserThroughAPI(t, adminToken, fmt.Sprintf("op_ola2_%d", suffix), fmt.Sprintf("op.ola2.%d@elcentinela.com", suffix), "OPERATOR")
 	operatorToken := signedAccessToken(t, operatorID, "OPERATOR", orgID)
 
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
 	t.Run("BAC-23B IP real en GET /api/instances y filtrado RBAC estricto", func(t *testing.T) {
 		// 1. Sin token -> 401
 		if status, _ := requestValue(t, http.MethodGet, "/instances", "", nil); status != http.StatusUnauthorized {
@@ -39,7 +41,7 @@ func TestEtapa1Ola2(t *testing.T) {
 		// 3. Asignar permiso solo sobre 101 al OPERATOR
 		permEndpoint := "/admin/users/" + operatorID + "/permissions"
 		if status, body := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{"permisos": []map[string]any{
-			{"vmid": 101, "nivelAcceso": "FULL_ACCESS"},
+			{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"},
 		}}); status != http.StatusNoContent {
 			t.Fatalf("asignar permiso sobre 101 a OPERATOR falló con status %d: %#v", status, body)
 		}
@@ -50,8 +52,10 @@ func TestEtapa1Ola2(t *testing.T) {
 			t.Fatalf("GET /instances con OPERATOR con permiso en 101: esperado 1 instancia, recibido %d: %#v", status, list)
 		}
 		instancia101 := list[0].(map[string]any)
-		if id, ok := instancia101["id"].(float64); !ok || id != 101 {
-			t.Errorf("instancia devuelta debe ser ID 101, recibido %v", instancia101["id"])
+		if id, ok := instancia101["id"].(string); !ok || id != ref101 {
+			if idNum, okNum := instancia101["id"].(float64); !okNum || idNum != 101 {
+				t.Errorf("instancia devuelta debe ser ID %s (101), recibido %v", ref101, instancia101["id"])
+			}
 		}
 
 		// 5. La IP debe estar presente como campo string o null
@@ -181,7 +185,7 @@ func TestEtapa1Ola2(t *testing.T) {
 		// debe marcar la tarea como FAILED en base de datos con motivo PROXMOX_ERROR.
 		if _, err := runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-fallidas"); err == nil {
 			t.Cleanup(func() { _, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-fallidas") })
-			status, body := requestJSON(t, http.MethodPost, "/instances/101/status/stop", adminToken, nil)
+			status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/stop", adminToken, nil)
 			if status == http.StatusAccepted {
 				tareaID := requiredString(t, body, "tareaId")
 				if !waitForValue(t, fmt.Sprintf("SELECT estado FROM tareas_asincronas WHERE id = '%s';", tareaID), "FAILED", 8*time.Second) {

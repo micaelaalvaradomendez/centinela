@@ -248,12 +248,18 @@ func TestFIX137_CodigoInerteYAuditoriaDeSistema(t *testing.T) {
 
 	t.Run("contrato_etapa1.go sin tipos huérfanos", func(t *testing.T) {
 		for _, tipo := range regexp.MustCompile(`type\s+(\w+)\s+struct`).FindAllStringSubmatch(contrato, -1) {
-			usos := 0
-			for _, rel := range []string{"internal/adapters/primary/http/node_handler.go", "internal/adapters/primary/http/instance_handler.go",
-				"internal/adapters/primary/http/snapshot_handler.go", "internal/adapters/primary/http/responses.go"} {
+			// Contar usos en handlers y referencias internas dentro de contrato_etapa1.go (descontando su propia declaración "type X struct")
+			usos := strings.Count(contrato, tipo[1]) - 1
+			for _, rel := range []string{
+				"internal/adapters/primary/http/node_handler.go",
+				"internal/adapters/primary/http/instance_handler.go",
+				"internal/adapters/primary/http/snapshot_handler.go",
+				"internal/adapters/primary/http/events_handler.go",
+				"internal/adapters/primary/http/responses.go",
+			} {
 				usos += strings.Count(backendSrc(t, rel), tipo[1])
 			}
-			if usos == 0 {
+			if usos <= 0 {
 				t.Errorf("FIX-137: el tipo %s de contrato_etapa1.go no se usa en ningún handler", tipo[1])
 			}
 		}

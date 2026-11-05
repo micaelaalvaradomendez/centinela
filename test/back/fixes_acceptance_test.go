@@ -96,10 +96,13 @@ func TestFixesPendientes(t *testing.T) {
 			t.Errorf("el comentario de EliminarInstancia en client.go sigue afirmando que Proxmox responde 500 por instancia encendida; esa rama fue reemplazada por la validación 409 del handler")
 		}
 
+		ref101 := instanceRefByVMID(t, adminToken, 101)
+		ref102 := instanceRefByVMID(t, adminToken, 102)
+
 		// 3. Comportamiento en vivo: acción rechazada por tarea RUNNING en curso debe dar 409 INSTANCE_BUSY,
 		// mientras que acción rechazada por estado incompatible sin tarea en curso debe dar 409 INSTANCE_INVALID_STATE.
 		// En el stub, 101 está running y sin tareas en curso: start da INSTANCE_INVALID_STATE.
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/start", adminToken, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/start", adminToken, nil)
 		if status != http.StatusConflict || body["errorCode"] != "INSTANCE_INVALID_STATE" {
 			t.Errorf("start sobre instancia 101 (running, sin tarea en curso): esperado 409 INSTANCE_INVALID_STATE, recibido %d: %#v", status, body)
 		}
@@ -115,20 +118,20 @@ func TestFixesPendientes(t *testing.T) {
 		})
 
 		// Con tarea en curso sobre la 102, intentar otra acción (stop) debe responder 409 INSTANCE_BUSY.
-		busyStatus, busyBody := requestJSON(t, http.MethodPost, "/instances/102/status/stop", adminToken, nil)
+		busyStatus, busyBody := requestJSON(t, http.MethodPost, "/instances/"+ref102+"/status/stop", adminToken, nil)
 		if busyStatus != http.StatusConflict || busyBody["errorCode"] != "INSTANCE_BUSY" {
 			t.Errorf("acción sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyStatus, busyBody)
 		}
 
 		// DELETE sobre instancia con tarea RUNNING en curso también debe responder 409 INSTANCE_BUSY.
-		busyDeleteStatus, busyDeleteBody := requestJSON(t, http.MethodDelete, "/instances/102", adminToken, nil)
+		busyDeleteStatus, busyDeleteBody := requestJSON(t, http.MethodDelete, "/instances/"+ref102, adminToken, nil)
 		if busyDeleteStatus != http.StatusConflict || busyDeleteBody["errorCode"] != "INSTANCE_BUSY" {
 			t.Errorf("DELETE sobre instancia con tarea RUNNING en curso: esperado 409 INSTANCE_BUSY, recibido %d: %#v", busyDeleteStatus, busyDeleteBody)
 		}
 
 		// Cuando la tarea en tareas_asincronas ya no está RUNNING (ej. COMPLETED), no debe responder INSTANCE_BUSY.
 		queryDatabase(t, fmt.Sprintf("UPDATE tareas_asincronas SET estado = 'COMPLETED' WHERE id = '%s';", tareaUUID))
-		afterStatus, afterBody := requestJSON(t, http.MethodPost, "/instances/102/status/stop", adminToken, nil)
+		afterStatus, afterBody := requestJSON(t, http.MethodPost, "/instances/"+ref102+"/status/stop", adminToken, nil)
 		if afterBody["errorCode"] == "INSTANCE_BUSY" {
 			t.Errorf("acción sobre instancia con tarea COMPLETED respondió indebidamente 409 INSTANCE_BUSY: %d: %#v", afterStatus, afterBody)
 		}

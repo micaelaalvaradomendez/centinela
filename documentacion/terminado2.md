@@ -730,6 +730,21 @@ Verificadas contra frontend `594a4e0` y backend `908522e`.
   2. Pestaña `"Métricas"`, modo `"En vivo"`, gráfico de Tráfico de Red (`netInBps`/`netOutBps`) y estado `"Instancia detenida"` en `InstanceDetailContent.tsx` e `InstanceResourceUsage.tsx`.
 - **Criterio de éxito:** `test/front/frn-22-use-instance-metrics.test.tsx` (9/9) y `test/front/frn-23-metrics-charts.test.tsx` (9/9) pasan al 100% en verde.
 
+#### `FIX-141` - Actualización de mocks de `@/context/EventsContext` (`useOptionalEventsContext`) y sincronización de expectativas UI en tests unitarios internos del submódulo `frontend` (`FIX-127` / `99c7a18` / `b93654b`) (Testing Frontend)
+
+> [!NOTE]
+> **Estado verificado (05/11/2026, frontend `bed77ff`): implementada y con tests en verde.** Commits `bc44649`, `1b7e7d4`, `020b499` (PR #193) y `0bf4f33`, `bed77ff` (PR #196). La suite interna del submódulo `npm --prefix frontend/centinela test -- --run` pasa los **43 archivos de test y 277 pruebas individuales al 100% en verde**.
+
+- **Área:** Frontend (Tests internos del submódulo)
+- **Asignado:** Cristian / Luz
+- **Estimación:** 0.5 h
+- **Depende de:** `FIX-127`, `FRN-29`.
+- **Entregable:**
+  1. Actualización de mocks manuales de `@/context/EventsContext` (`useOptionalEventsContext`) y servicios en `frontend/centinela/src/test/`.
+  2. Sincronización de expectativas de tabla, tarjetas y validación de `instanceRef` en las pruebas unitarias internas del submódulo.
+- **Criterio de éxito:** `npm --prefix frontend/centinela test -- --run` pasa los 43 archivos de test al 100% en verde.
+
+
 
 
 

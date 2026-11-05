@@ -51,6 +51,7 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 		}
 
 		// D. Aprovisionamiento de nuevas instancias (solo ADMIN)
+		ref101 := instanceRefByVMID(t, adminToken, 101)
 		status, _ = requestValue(t, http.MethodPost, "/instances", operatorToken, map[string]any{
 			"vmid": 170, "node": "pve", "type": "vm", "name": "rogue-vm",
 		})
@@ -59,24 +60,24 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 		}
 
 		// E. Eliminación destructiva de instancias (solo ADMIN)
-		status, _ = requestValue(t, http.MethodDelete, "/instances/101", operatorToken, nil)
+		status, _ = requestValue(t, http.MethodDelete, "/instances/"+ref101, operatorToken, nil)
 		if status != http.StatusForbidden {
-			t.Errorf("Adversarial RBAC: OPERATOR pudo invocar DELETE /instances/101: status %d (esperado 403)", status)
+			t.Errorf("Adversarial RBAC: OPERATOR pudo invocar DELETE /instances/%s: status %d (esperado 403)", ref101, status)
 		}
 
 		// F. Mutación de ciclo de vida con nivel de acceso READ_ONLY
 		permEndpoint := "/admin/users/" + operatorID + "/permissions"
 		permStatus, _ := requestValue(t, http.MethodPut, permEndpoint, adminToken, map[string]any{
-			"permisos": []map[string]any{{"vmid": 101, "nivelAcceso": "READ_ONLY"}},
+			"permisos": []map[string]any{{"vmid": ref101, "nivelAcceso": "READ_ONLY"}},
 		})
 		if permStatus != http.StatusNoContent && permStatus != http.StatusOK {
 			t.Fatalf("No se pudo configurar permiso READ_ONLY: %d", permStatus)
 		}
 
 		for _, action := range []string{"start", "stop", "shutdown", "reboot"} {
-			status, _ = requestValue(t, http.MethodPost, fmt.Sprintf("/instances/101/status/%s", action), operatorToken, nil)
+			status, _ = requestValue(t, http.MethodPost, fmt.Sprintf("/instances/%s/status/%s", ref101, action), operatorToken, nil)
 			if status != http.StatusForbidden {
-				t.Errorf("Adversarial RBAC: OPERATOR con READ_ONLY pudo ejecutar orden %s en 101: status %d (esperado 403)", action, status)
+				t.Errorf("Adversarial RBAC: OPERATOR con READ_ONLY pudo ejecutar orden %s en %s: status %d (esperado 403)", action, ref101, status)
 			}
 		}
 	})
@@ -84,7 +85,8 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 	// Subtest 2: Protección de infraestructura crítica (VMIDs protegidos)
 	t.Run("Infraestructura crítica: VMID protegido (103) inmune a destrucción incluso ante ADMIN", func(t *testing.T) {
 		// La 103 está configurada en PROXMOX_PROTECTED_VMIDS
-		deleteStatus, deleteBody := requestJSON(t, http.MethodDelete, "/instances/103", adminToken, nil)
+		ref103 := instanceRefByVMID(t, adminToken, 103)
+		deleteStatus, deleteBody := requestJSON(t, http.MethodDelete, "/instances/"+ref103, adminToken, nil)
 		if deleteStatus != http.StatusForbidden {
 			t.Errorf("Adversarial Infra: ADMIN pudo solicitar DELETE en VMID protegido 103: status %d (esperado 403)", deleteStatus)
 		}
@@ -95,6 +97,13 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 
 	// Subtest 3: Concurrencia hostil y colisión de órdenes sobre el mismo recurso
 	t.Run("Concurrencia hostil: dos órdenes mutantes concurrentes sobre la misma instancia colisionan con 409 INSTANCE_BUSY", func(t *testing.T) {
+		// Marcar tareas en curso en el stub para que la primera orden permanezca activa
+		_, _ = runCompose("exec", "-T", "proxmox", "touch", "/tmp/tareas-en-curso")
+		defer func() {
+			_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso")
+		}()
+
+		ref101 := instanceRefByVMID(t, adminToken, 101)
 		// Emitir concurrentemente 5 peticiones de stop sobre la 101
 		const concurrentRequests = 5
 		statusCodes := make([]int, concurrentRequests)
@@ -104,11 +113,14 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				status, _ := requestValue(t, http.MethodPost, "/instances/101/status/stop", adminToken, nil)
+				status, _ := requestValue(t, http.MethodPost, "/instances/"+ref101+"/status/stop", adminToken, nil)
 				statusCodes[idx] = status
 			}(i)
 		}
 		wg.Wait()
+
+		// Limpiar archivo para que la tarea aceptada pueda finalizar
+		_, _ = runCompose("exec", "-T", "proxmox", "rm", "-f", "/tmp/tareas-en-curso")
 
 		acceptedCount := 0
 		busyCount := 0
@@ -174,7 +186,7 @@ func TestAdversarialSystemIntegrity(t *testing.T) {
 		}
 
 		// C. Intento de inyección SQL en query parameters de auditoría
-		status, auditBody := requestJSON(t, http.MethodGet, "/admin/audit?accion=' OR '1'='1", adminToken, nil)
+		status, auditBody := requestJSON(t, http.MethodGet, "/admin/audit?accion=%27+OR+%271%27=%271", adminToken, nil)
 		if status == http.StatusOK {
 			// El backend debe parametrizar la consulta: no debe devolver registros de acciones no coincidentes
 			if logs, ok := auditBody["logs"].([]any); ok && len(logs) > 0 {

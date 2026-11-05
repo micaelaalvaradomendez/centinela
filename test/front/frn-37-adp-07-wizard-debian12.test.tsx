@@ -132,10 +132,11 @@ describe('FRN-37 / ADP-07: Selector y Metadatos de Plantillas Debian 12 PVE 8', 
     await waitFor(() => expect(nextBtn2).toBeEnabled());
     await user.click(nextBtn2);
 
-    // Paso 3: Red (avanzar con DHCP)
+    // Paso 3: Red (seleccionar DHCP y avanzar)
     await screen.findByRole('radiogroup', { name: /modo de asignaci[oó]n ipv4/i });
+    await user.click(screen.getByRole('radio', { name: /dhcp/i }));
     const nextBtn3 = screen.getByRole('button', { name: /siguiente/i });
-    expect(nextBtn3).toBeEnabled();
+    await waitFor(() => expect(nextBtn3).toBeEnabled());
     await user.click(nextBtn3);
 
     // Paso 4: Sistema Operativo (selección de template)

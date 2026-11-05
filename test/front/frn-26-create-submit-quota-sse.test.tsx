@@ -113,8 +113,10 @@ async function advanceWizardToReviewStep(user: ReturnType<typeof userEvent.setup
   await waitFor(() => expect(screen.getByRole('button', { name: /siguiente/i })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: /siguiente/i }));
 
-  // Paso 3: Red (DHCP por defecto)
+  // Paso 3: Red (seleccionar DHCP explícitamente)
   await screen.findByRole('radiogroup', { name: /modo de asignaci[oó]n ipv4/i });
+  await user.click(screen.getByRole('radio', { name: /dhcp/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /siguiente/i })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: /siguiente/i }));
 
   // Paso 4: Sistema Operativo

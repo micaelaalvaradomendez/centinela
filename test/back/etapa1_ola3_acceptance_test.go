@@ -25,11 +25,13 @@ func TestEtapa1Ola3BAC26(t *testing.T) {
 	adminID := queryDatabase(t, "SELECT id FROM usuarios WHERE email_usuario = 'admin@elcentinela.com' LIMIT 1;")
 	adminToken := signedAccessToken(t, adminID, "ADMIN", orgID)
 
+	ref101 := instanceRefByVMID(t, adminToken, 101)
+
 	// OPERATOR con FULL_ACCESS sobre la 101 (el stub la reporta encendida, así que el
 	// conjunto de órdenes válidas para probar el evento es stop/shutdown/reboot).
 	conPermiso := createActiveUser(t, adminToken, "bac26_con", "OPERATOR")
 	if status, body := requestValue(t, http.MethodPut, "/admin/users/"+conPermiso.ID+"/permissions", adminToken, map[string]any{
-		"permisos": []map[string]any{{"vmid": 101, "nivelAcceso": "FULL_ACCESS"}},
+		"permisos": []map[string]any{{"vmid": ref101, "nivelAcceso": "FULL_ACCESS"}},
 	}); status != http.StatusNoContent {
 		t.Fatalf("precondición BAC-26: asignar FULL_ACCESS sobre 101, esperado 204, recibido %d: %#v", status, body)
 	}
@@ -43,9 +45,9 @@ func TestEtapa1Ola3BAC26(t *testing.T) {
 	eventsSin := listenEvents(t, sessionSin.AccessToken)
 
 	for _, action := range []string{"stop", "shutdown", "reboot"} {
-		status, body := requestJSON(t, http.MethodPost, "/instances/101/status/"+action, sessionCon.AccessToken, nil)
+		status, body := requestJSON(t, http.MethodPost, "/instances/"+ref101+"/status/"+action, sessionCon.AccessToken, nil)
 		if status != http.StatusAccepted {
-			t.Fatalf("BAC-26: POST /instances/101/status/%s: esperado 202, recibido %d: %#v", action, status, body)
+			t.Fatalf("BAC-26: POST /instances/%s/status/%s: esperado 202, recibido %d: %#v", ref101, action, status, body)
 		}
 		tareaID := requiredString(t, body, "tareaId")
 
@@ -57,8 +59,8 @@ func TestEtapa1Ola3BAC26(t *testing.T) {
 		if event["tipo"] != "TASK_FINISHED" {
 			t.Errorf("BAC-26: tipo esperado TASK_FINISHED, recibido %v", event["tipo"])
 		}
-		if fmt.Sprint(event["recursoId"]) != "101" {
-			t.Errorf("BAC-26: recursoId esperado 101, recibido %v", event["recursoId"])
+		if fmt.Sprint(event["recursoId"]) != "101" && fmt.Sprint(event["recursoId"]) != ref101 {
+			t.Errorf("BAC-26: recursoId esperado %s (101), recibido %v", ref101, event["recursoId"])
 		}
 		detalles, _ := event["detalles"].(map[string]any)
 		for _, field := range []string{"tareaId", "accion", "estado", "exitstatus"} {
@@ -78,7 +80,7 @@ func TestEtapa1Ola3BAC26(t *testing.T) {
 	select {
 	case ev := <-eventsSin:
 		detalles, _ := ev["detalles"].(map[string]any)
-		if ev["tipo"] == "TASK_FINISHED" && fmt.Sprint(ev["recursoId"]) == "101" {
+		if ev["tipo"] == "TASK_FINISHED" && (fmt.Sprint(ev["recursoId"]) == "101" || fmt.Sprint(ev["recursoId"]) == ref101) {
 			t.Errorf("BAC-26: un OPERATOR sin permiso recibió TASK_FINISHED de la 101: %#v (tarea %v)", ev, detalles["tareaId"])
 		}
 	case <-time.After(1 * time.Second):
