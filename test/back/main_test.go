@@ -197,11 +197,13 @@ func requestValue(t *testing.T, method, path, token string, payload any) (int, a
 		var retryBody io.Reader
 		if payload != nil {
 			encoded, _ := json.Marshal(payload)
-			retryBody = bytes.NewReader(encoded)
+			if string(encoded) != "null" {
+				retryBody = bytes.NewReader(encoded)
+			}
 		}
 		retryReq, err := http.NewRequest(method, apiURL+path, retryBody)
 		if err == nil {
-			if payload != nil {
+			if retryBody != nil {
 				retryReq.Header.Set("Content-Type", "application/json")
 			}
 			if token != "" {
@@ -327,13 +329,15 @@ func requestRaw(t *testing.T, method, path, token string, payload any, cookies .
 		if err != nil {
 			t.Fatalf("no se pudo codificar el body: %v", err)
 		}
-		body = bytes.NewReader(encoded)
+		if string(encoded) != "null" {
+			body = bytes.NewReader(encoded)
+		}
 	}
 	request, err := http.NewRequest(method, apiURL+path, body)
 	if err != nil {
 		t.Fatalf("no se pudo crear la petición: %v", err)
 	}
-	if payload != nil {
+	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if token != "" {
@@ -356,11 +360,13 @@ func requestRaw(t *testing.T, method, path, token string, payload any, cookies .
 		var retryBody io.Reader
 		if payload != nil {
 			encoded, _ := json.Marshal(payload)
-			retryBody = bytes.NewReader(encoded)
+			if string(encoded) != "null" {
+				retryBody = bytes.NewReader(encoded)
+			}
 		}
 		retryReq, err := http.NewRequest(method, apiURL+path, retryBody)
 		if err == nil {
-			if payload != nil {
+			if retryBody != nil {
 				retryReq.Header.Set("Content-Type", "application/json")
 			}
 			if token != "" {

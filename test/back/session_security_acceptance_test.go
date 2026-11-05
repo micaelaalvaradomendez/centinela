@@ -43,7 +43,6 @@ func TestHitoSeguridadDeSesionesYCookies(t *testing.T) {
 		auditBefore := auditCount(t, user.ID, "LOGOUT")
 
 		payload, cookies := refreshCredential(session)
-		t.Logf("DEBUG: session.RefreshCookie=%#v, session.RefreshToken=%q, payload=%#v, cookies=%#v", session.RefreshCookie, session.RefreshToken, payload, cookies)
 		if status := requestRaw(t, http.MethodPost, "/auth/logout", "", payload, cookies...).Status; status != http.StatusUnauthorized {
 			t.Errorf("POST /auth/logout sin Authorization debe exigir el access token (401), recibido %d", status)
 		}

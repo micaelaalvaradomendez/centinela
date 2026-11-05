@@ -333,8 +333,17 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("listado filtrado inesperado: %#v", listed["users"])
 		}
 
+		ref101 := instanceRefByVMID(t, accessToken, 101)
+		ref102 := instanceRefByVMID(t, accessToken, 102)
+
 		permEndpoint := "/admin/users/" + createdID + "/permissions"
-		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(101, 102))
+		payload101_102 := map[string]any{
+			"permisos": []map[string]any{
+				{"vmid": ref101},
+				{"vmid": ref102},
+			},
+		}
+		permissionsStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, payload101_102)
 		if permissionsStatus != http.StatusNoContent {
 			t.Fatalf("asignar permisos esperado 204, recibido %d", permissionsStatus)
 		}
@@ -346,7 +355,12 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("permisos iniciales inesperados: %#v", detail["instanciasPermitidas"])
 		}
 
-		replaceStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(102))
+		payload102 := map[string]any{
+			"permisos": []map[string]any{
+				{"vmid": ref102},
+			},
+		}
+		replaceStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, payload102)
 		if replaceStatus != http.StatusNoContent {
 			t.Fatalf("reemplazar permisos esperado 204, recibido %d", replaceStatus)
 		}
@@ -355,17 +369,23 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 			t.Fatalf("obtener usuario después del reemplazo esperado 200, recibido %d: %#v", detailStatus, detail)
 		}
 		permissions, ok := detail["instanciasPermitidas"].([]any)
-		if !ok || len(permissions) != 1 || permissions[0] != float64(102) {
+		if !ok || len(permissions) != 1 || permissions[0] != ref102 {
 			t.Fatalf("reemplazo de permisos inesperado: %#v", detail["instanciasPermitidas"])
 		}
 
 		// Prueba funcional (no solo de esquema): si el cliente manda un VMID repetido,
 		// ¿el sistema lo deduplica o persiste dos filas idénticas?
-		duplicateStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, permissionsPayload(201, 201))
+		payloadDuplicate := map[string]any{
+			"permisos": []map[string]any{
+				{"vmid": ref101},
+				{"vmid": ref101},
+			},
+		}
+		duplicateStatus, _ := requestValue(t, http.MethodPut, permEndpoint, accessToken, payloadDuplicate)
 		if duplicateStatus != http.StatusNoContent {
 			t.Fatalf("asignar vmids duplicados esperado 204, recibido %d", duplicateStatus)
 		}
-		storedRows := queryDatabase(t, `SELECT count(*) FROM permisos_instancia WHERE usuario_id = '`+createdID+`' AND vmid_proxmox = 201;`)
+		storedRows := queryDatabase(t, `SELECT count(*) FROM permisos_instancia WHERE usuario_id = '`+createdID+`' AND vmid_proxmox = 101;`)
 		if storedRows != "1" {
 			t.Errorf("se enviaron 2 vmids repetidos y se persistieron %s filas para el mismo (usuario, instancia); se esperaba 1", storedRows)
 		}
@@ -386,7 +406,7 @@ HAVING string_agg(a.attname, ',' ORDER BY a.attname) = 'usuario_id,vmid_proxmox'
 				t.Fatalf("%s para OPERATOR: esperado 403, recibido %d", method, status)
 			}
 		}
-		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, permissionsPayload(103))
+		operatorPermissionStatus, _ := requestValue(t, http.MethodPut, permEndpoint, operatorToken, payload101_102)
 		if operatorPermissionStatus != http.StatusForbidden {
 			t.Fatalf("asignar permisos para OPERATOR: esperado 403, recibido %d", operatorPermissionStatus)
 		}
