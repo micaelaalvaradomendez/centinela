@@ -556,3 +556,48 @@ Verificadas contra backend `ec5922c` y frontend `ce38ea9`.
 - **Criterio de éxito:** Suite `FIX-144` en `test/front/etapa3-pendientes.test.tsx` (2/2) en verde.
 
 
+
+#### `FRN-33` - Centro de Notificaciones y banners contextuales de alerta por saturación (`RF-11` / `RNF-03`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (10/11/2026, frontend `a268063`): implementada y con tests en verde.** Commits `10beb6f` y `a268063` (PR #198). Se incorporaron `DashboardAlertBanner.tsx`, `NotificationBell.tsx`, `AlertsContext.tsx` y su integración en `ProtectedLayout.tsx` y `Dashboard.tsx`. El banner contextual de advertencia crítica (`role="alert"`) en la cabecera del Dashboard y la campana de notificaciones con contador de no leídas se gestionan de forma reactiva ante eventos SSE `ALERT_TRIGGERED` y `ALERT_RESOLVED`. Pasan `test/front/frn-33-alerts-center.test.tsx` (2/2 ✅) y `frontend/centinela/src/test/notifications-components.test.tsx` (4/4 ✅).
+
+- **Área:** Frontend
+- **Asignada:** Belinda
+- **Estimación:** 2.0 h
+- **Depende de:** `BAC-47`.
+- **Entregable:**
+  1. Campana / Centro de Notificaciones en la barra superior con contador de alertas no leídas (`NotificationBell.tsx`).
+  2. Banner contextual persistente de color rojo en la cabecera del Dashboard ante alertas de severidad `CRITICAL` (`DashboardAlertBanner.tsx`).
+  3. Badge de advertencia en la fila del inventario si una instancia específica tiene alertas de saturación activas.
+  4. Recepción en vivo de eventos `ALERT_TRIGGERED` / `ALERT_RESOLVED` vía SSE a través de `AlertsContext.tsx`.
+- **Criterio de éxito:** Suite `test/front/frn-33-alerts-center.test.tsx` (2/2) y unitarios en verde.
+
+#### `FRN-37` / `ADP-07` - Desacoplamiento de constantes y soporte de plantillas Debian 12 Bookworm en Wizard (`RF-07` / `RNF-02`) (Frontend)
+
+> [!NOTE]
+> **Estado verificado (10/11/2026, frontend `a268063`): implementada y con tests en verde.** Commits `087be9c` y `da3f422` (PR #197). Se implementó `parseTemplateOption` y `formatTemplateDisplay` en `createInstanceOptions.ts` e `InstanceCreationSummary.tsx`, clasificando dinámicamente plantillas Debian (11, 12, 13), Ubuntu y Alpine con extracción de versión y arquitectura (`amd64`). Pasan `test/front/frn-37-adp-07-wizard-debian12.test.tsx` (2/2 ✅) y `frontend/centinela/src/test/create-instance-wizard.test.tsx` (11/11 ✅).
+
+- **Área:** Frontend
+- **Asignado:** Belinda / Luz
+- **Estimación:** 2.0 h
+- **Depende de:** `ADP-06`.
+- **Entregable:**
+  1. Parser dinámico de plantillas en `createInstanceOptions.ts`.
+  2. Formateo y visualización de Debian 12 (`local:vztmpl/debian-12-standard...`) en el wizard de creación y resumen (`InstanceCreationSummary.tsx`).
+- **Criterio de éxito:** Suite `test/front/frn-37-adp-07-wizard-debian12.test.tsx` (2/2) en verde.
+
+#### `FIX-129` (`INF-11`) - Endurecimiento de cabeceras de seguridad en Nginx de producción (Infraestructura)
+
+> [!NOTE]
+> **Estado verificado (10/11/2026): implementada y con tests en verde.** Se agregaron en `docker/nginx-edge.conf` las cabeceras `Strict-Transport-Security "max-age=31536000; includeSubDomains"`, `X-Frame-Options "DENY"`, `X-Content-Type-Options "nosniff"` y `Content-Security-Policy "default-src 'self' ... connect-src 'self' ws: wss: ..."` en el bloque servidor HTTPS. Pasan todos los subtests de `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS` (3/3 ✅) en `test/back/etapa3_acceptance_test.go`.
+
+- **Área:** Infraestructura
+- **Asignado:** Nico
+- **Estimación:** 1.0 h
+- **Depende de:** `INF-11`.
+- **Entregable:**
+  1. Directiva `includeSubDomains` en `Strict-Transport-Security`.
+  2. Directivas `X-Frame-Options` y `X-Content-Type-Options`.
+  3. Directiva `Content-Security-Policy` con soporte WebSocket (`ws:`, `wss:`).
+- **Criterio de éxito:** `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS` (3/3) en verde.

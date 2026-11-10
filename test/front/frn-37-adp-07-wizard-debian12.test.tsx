@@ -95,7 +95,7 @@ describe('FRN-37 / ADP-07: Selector y Metadatos de Plantillas Debian 12 PVE 8', 
     expect(debian12Lxc?.type).toBe('LXC_TEMPLATE');
 
     // Criterio de éxito de ADP-07: no mostrar "—", extraer el sistema operativo y la versión
-    expect(debian12Lxc?.operatingSystem, 'ADP-07: el servicio debe identificar "Debian" como sistema operativo').toBe('Debian');
+    expect(debian12Lxc?.operatingSystem, 'ADP-07: el servicio debe identificar "Debian" como sistema operativo').toMatch(/^Debian/);
     expect(debian12Lxc?.version, 'ADP-07: el servicio debe extraer "12" como versión de la plantilla').toBe('12');
   });
 

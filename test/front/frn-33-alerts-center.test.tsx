@@ -16,8 +16,36 @@ import { withProtectedProviders } from './app-providers';
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
+class FakeSse {
+  listeners: Record<string, ((event: Event) => void)[]> = {};
+  constructor(public url: string) {
+    setTimeout(() => {
+      this.listeners.open?.forEach((l) => l(new Event('open')));
+    }, 0);
+  }
+  addEventListener(type: string, listener: (event: Event) => void) {
+    (this.listeners[type] ??= []).push(listener);
+  }
+  removeEventListener() {}
+  close() {}
+  emitMessage(data: unknown) {
+    const event = new MessageEvent('message', { data: typeof data === 'string' ? data : JSON.stringify(data) });
+    this.listeners.message?.forEach((listener) => listener(event));
+  }
+}
+
+let latestSse: FakeSse | null = null;
+
 describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', () => {
   beforeEach(() => {
+    latestSse = null;
+    class CapturingSse extends FakeSse {
+      constructor(url: string) {
+        super(url);
+        latestSse = this;
+      }
+    }
+    vi.stubGlobal('EventSource', CapturingSse);
     window.sessionStorage.setItem('centinela_access', 'token-frn33');
     window.localStorage.setItem(
       'centinela_user',
@@ -71,6 +99,9 @@ describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', (
   it('el Dashboard muestra el banner de alerta cuando se reporta saturación crítica de recursos', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       const u = String(url);
+      if (u.includes('/events/ticket') || u.includes('/ws-ticket')) {
+        return Promise.resolve(json({ ticket: 'test-ticket-frn33' }));
+      }
       if (u.includes('/node/status')) {
         return Promise.resolve(
           json({
@@ -81,6 +112,9 @@ describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', (
             instancesSummary: { vms: { running: 2, stopped: 0, paused: 0, total: 2 }, lxc: { running: 0, stopped: 0, paused: 0, total: 0 } },
           }),
         );
+      }
+      if (u.includes('/instances')) {
+        return Promise.resolve(json([]));
       }
       return Promise.resolve(json({}));
     });
@@ -93,6 +127,21 @@ describe('FRN-33 - Centro de notificaciones y banners contextuales de alerta', (
         </MemoryRouter>,
       ),
     );
+
+    await waitFor(() => {
+      expect(latestSse).not.toBeNull();
+    });
+
+    latestSse?.emitMessage({
+      id: 'alert-crit-1',
+      tipo: 'ALERT_TRIGGERED',
+      severidad: 'CRITICAL',
+      recursoTipo: 'HOST',
+      recursoId: null,
+      mensaje: 'Saturación crítica del procesador: 95%',
+      fechaHora: new Date().toISOString(),
+      detalles: { alertId: 'alert-crit-1', metrica: 'CPU' },
+    });
 
     // Banner rojo persistente (role="alert") con el texto de saturación crítica.
     await waitFor(() => {

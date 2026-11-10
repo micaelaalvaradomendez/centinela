@@ -1,6 +1,6 @@
 # Resultados de las pruebas backend
 
-**Fecha:** 05/11/2026. **Backend:** submódulo en `d0f3f57` (últimos commits de `origin/main`: `d0f3f57`/`df4cada` protección de VMID reservados y pertenencia al borrar; `d92a568` **`FIX-139`** reconciliación de tareas al arranque antes de abrir la API; `5b3ac80` **`FIX-137`** eliminación de endpoints fantasma e inclusión de auditorías globales del sistema; `4011b08` **`FIX-143`** vocabulario cerrado de `accion` y `resultado`, enums en Swagger y normalización histórica).
+**Fecha:** 10/11/2026. **Backend:** submódulo en `d0f3f57` (últimos commits de `origin/main`: `d0f3f57`/`df4cada` protección de VMID reservados y pertenencia al borrar; `d92a568` **`FIX-139`** reconciliación de tareas al arranque antes de abrir la API; `5b3ac80` **`FIX-137`** eliminación de endpoints fantasma e inclusión de auditorías globales del sistema; `4011b08` **`FIX-143`** vocabulario cerrado de `accion` y `resultado`, enums en Swagger y normalización histórica).
 
 ## 1. Suite interna del submódulo (`backend/`)
 
@@ -37,21 +37,36 @@ Paquetes en verde: `cmd/api`, `cmd/proxmox-simulador`, `docs`, `internal/adapter
 | `BAC-54` | `TestEtapa3BAC54_ParametrizacionEntornoServidoresHeterogeneos` | ✅ **Pasa** | Lectura dinámica de `PROXMOX_NODE`, `PROXMOX_URL` y `PROXMOX_PROTECTED_VMIDS` |
 | `BAC-55` / `ADP-05` / `ADP-06` | `TestEtapa3BAC55_SwitchPerfilVersionSimulador`, `TestADP05_ModoDualSimulador`, `TestADP06_CatalogoDebian12Simulador` | ✅ **Pasa** | Simulador Proxmox dual PVE 8.4.21 / 9.2.2 y catálogo Debian 12 (`debian-12-standard_12.7-1_amd64.tar.zst`) |
 | `ADP-01` a `ADP-04` | `TestADP01_...` a `TestADP04_...` | ✅ **Pasa** | Parámetros de aprovisionamiento QEMU/LXC, purga en borrado, parser defensivo de `memory` y `PROXMOX_PROTECTED_VMIDS` |
+| `FIX-129` (`INF-11`) | `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS` (3/3 subtests) | ✅ **Pasa** | `docker/nginx-edge.conf` redirige HTTP->HTTPS con 301, TLS 1.2/1.3 + WSS/SSE sin buffering, y cabeceras HSTS (`includeSubDomains`), `X-Frame-Options "DENY"`, `X-Content-Type-Options "nosniff"` y `Content-Security-Policy` |
 
 ---
 
-### 2.2 Tareas de Infraestructura / Documentación pendientes en `actual.md`
+### 2.2 Pruebas de Integración y Seguridad del Sistema (100 % en verde)
+
+| Suite de Integración | Resultado | Subtests Clave Verificados |
+|---|:---:|---|
+| `TestTareasBackendEIntegracion` | ✅ **PASS (100 %)** | `BAC-01` (esquema y usuario seed), `BAC-02` (bcrypt), `BAC-03` (JWT emitido y firmado), `BAC-04` (unificación de 400/401), `LOGIN-01` (TOTP), `BAC-10`/`BAC-11` (anti-reemplazo y persistencia), `BAC-12` (cambio obligatorio de clave temporal), `BAC-09` (roles), `BAC-05`/`BAC-06`/`BAC-06B` (gestión de usuarios con referencias opacas e `instanciasPermitidas`), `LOGIN-03` (protección y recorrido). |
+| `TestHitoSeguridadDeSesionesYCookies` | ✅ **PASS (100 %)** | `BAC-17` (logout revoca atómicamente access y refresh en BD y registra auditoría `LOGOUT`), `SEC-01` (refresh token en cookie HttpOnly/Secure/SameSite=Strict), `SEC-01`/`SEC-02` (contratos HTTP de frontend), `FIX-28`/`FRN-13` (logout con frontend), `FIX-08` (formato estándar de error con `errorCode` y `message`). |
+| `TestHitoControlDeAccesoBasadoEnRecursos` | ✅ **PASS (100 %)** | `BAC-07` (asignación y reemplazo atómico de permisos con referencias opacas `inst_...`), `FIX-16`/`BAC-08` (403 `INSTANCE_ACCESS_DENIED` sin delegar a Proxmox e `INSTANCE_PROTECTED` en VMID protegidos). |
+| `TestAdversarialSystemIntegrity` | ✅ **PASS (100 %)** | Resistencia a inyecciones en parámetros Proxmox, mitigación de colisiones de VMID, exclusión de tokens huérfanos, atomicidad transaccional y rechazo con `409 INSTANCE_BUSY` ante ráfagas concurrentes. |
+| `TestFixesPendientes` | ✅ **PASS (100 %)** | 9 subtests de regresión en verde (`FIX-107`, `FIX-110`, `FIX-111A`, `FIX-112`, `FIX-113`, `FIX-114`, `FIX-115A`, `FIX-116`, `FIX-117A`). |
+| `TestPuenteEtapa1` | ✅ **PASS (100 %)** | 10 subtests de integración continua y compatibilidad de base de datos. |
+
+---
+
+### 2.3 Tareas de Infraestructura / Documentación pendientes en `actual.md`
 
 | Tarea | Prueba en `test/back` | Resultado | Causa verificada |
 |---|---|:---:|---|
-| `FIX-129` (`INF-11`) | `TestEtapa3INF11_NginxProduccionTLS13HSTSCSPyWSS` (2/3 pasan, 1/3 falla) | ❌ **Falla parcial** | `docker/nginx-edge.conf` redirige HTTP->HTTPS y soporta TLS 1.2/1.3 + WSS/SSE, pero faltan `Strict-Transport-Security` (`includeSubDomains`), `Content-Security-Policy`, `X-Frame-Options` y `X-Content-Type-Options` |
-| `INF-14` / `ADP-09` / `ADP-10` | `TestEtapa3INF14_AuditoriaYSondaPVE8Real`, `TestADP09_ADP10_InfraestructuraPVE8` | ❌ **Falla** | Falta crear `scripts/pve8-audit-probe.sh` y completar `documentacion/api-proxmox.md` |
+| `FIX-145` | `setupIntegrationFixtures` (mitigación en harness) | 🟡 **Definida en `actual.md`** | Corrección de borrado estricto `403 INSTANCE_NOT_OWNED` para permitir borrar instancias preexistentes o huérfanas protegiendo únicamente `PROXMOX_PROTECTED_VMIDS`. |
+| `FIX-123` | `TestFIX123_PlantillasEISOsEnProxmoxReal` | ⚪ **Omitida sin host físico** | Requiere variables de entorno del servidor Proxmox VE real (`PROXMOX_REAL_URL`, `PROXMOX_REAL_TOKEN_ID`, `PROXMOX_REAL_TOKEN_SECRET`). |
+| `INF-14` / `ADP-09` / `ADP-10` | `TestEtapa3INF14_AuditoriaYSondaPVE8Real`, `TestADP09_ADP10_InfraestructuraPVE8` | ❌ **Falla (requiere host físico)** | Falta ejecutar `scripts/pve8-audit-probe.sh` en el hipervisor PVE 8.4.21 y configurar el token/volúmenes en el servidor físico. |
 
 ---
 
 ## 3. Regresión de Etapas 1, 2 y 3
 
-Pasan sin regresiones todas las pruebas estáticas y de simulador de Etapas 1, 2 y 3:
+Pasan sin regresiones todas las pruebas estáticas, de simulación y de integración de Etapas 1, 2 y 3:
 - **Etapa 1 y Simulador:** `TestINF09WebSocketsNginxEdge`, `TestINF07CPermisosTokenProxmox`, `TestEtapa1Ola3BAC32`, `TestFIX81_OrdenMigracionesBaseLimpia`, `TestEtapa1SimuladorProxmox`, `TestEtapa2BAC50_SimuladorSnapshotsYRollback`.
-- **Etapa 2:** `TestEtapa2BAC34_AdaptadorMetricasRRD`, `TestEtapa2BAC36_MetricasHistoricasEndpoint`, `TestEtapa2BAC39_SeguimientoCreacionYPermisos`, `TestEtapa2BAC40_EndpointConfigRecursos`, `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`, `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`, `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`, `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`, `TestFIX118_SinCredencialesPorDefecto`, y todos los subtests estáticos de `TestFIX107_OfuscacionDeVMIDs`, `TestFIX110_SaneamientoDeErrores`, `TestFIX112_RateLimitingAutenticacion`, `TestFIX113_PurgaDePermisosAlEliminarInstancia`, `TestFIX115A_ContrasenasDeHasta128Caracteres` y `TestFIX116_InyeccionDeParametrosProxmox`.
+- **Etapa 2:** `TestEtapa2BAC34_AdaptadorMetricasRRD`, `TestEtapa2BAC36_MetricasHistoricasEndpoint`, `TestEtapa2BAC39_SeguimientoCreacionYPermisos`, `TestEtapa2BAC40_EndpointConfigRecursos`, `TestEtapa2BAC41_AuditoriaAprovisionamientoYConfig`, `TestEtapa2BAC51_GuardaConcurrenciaInstanceBusy`, `TestEtapa2BAC52_BrokerSSEEventosAlertaGlobal`, `TestEtapa2BAC53_ParticionadoPreventivoEIndexacionAuditoria`, `TestFIX118_SinCredencialesPorDefecto`, y todos los subtests de `TestFIX107_OfuscacionDeVMIDs`, `TestFIX110_SaneamientoDeErrores`, `TestFIX112_RateLimitingAutenticacion`, `TestFIX113_PurgaDePermisosAlEliminarInstancia`, `TestFIX115A_ContrasenasDeHasta128Caracteres` y `TestFIX116_InyeccionDeParametrosProxmox`.
 - **Etapa 3:** `TestEtapa3BAC42` (subtest 1), `TestEtapa3BAC43` (subtest 1), `TestEtapa3BAC44` (subtest 1), `TestEtapa3BAC45` (subtest 1), `TestEtapa3BAC46_WorkerEvaluadorUmbralesHisteresis` (2/2), `TestEtapa3BAC47_DespachoMulticanalAlertasSSEyCorreo` (2/2), `TestEtapa3BAC48_HardeningAutenticacionCookiesRateLimiting` (2/2), `TestEtapa3BAC54_ParametrizacionEntornoServidoresHeterogeneos`, `TestEtapa3BAC55_SwitchPerfilVersionSimulador`, y la totalidad de `etapa3_fixes_pendientes_test.go` (`TestFIX128VLAN`, `TestFIX133`..`TestFIX140`, `TestFIX143`).
