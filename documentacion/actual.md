@@ -80,6 +80,23 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
   3. Comprobar que `GET /storage/{storage}/content` con el API Token liste ambos recursos.
 - **Criterio de éxito:** `GET /api/node/templates` responde con el catálogo real sin errores de permisos.
 
+### `FIX-146` - Restauración de columna unívoca (`ID` / `InstanceRef`) y selección en la tabla de inventario (`FRN-20A` / `FIX-43` / `FIX-108`) (Frontend)
+
+- **Área:** Frontend
+- **Asignado:** Cristian / Belinda
+- **Estimación:** 1.0 h
+- **Depende de:** `FRN-20A`, `FIX-43`, `FIX-108`.
+- **Problema técnico detallado:**
+  En los commits `99c7a18` y `0bf4f33`, se eliminaron silenciosamente las columnas `Checkbox` e `ID` de `Instances.tsx`, modificando los tests unitarios internos (`instances-table.test.tsx`) para ocultar la regresión. Esto incumple el criterio de aceptación de `FIX-43` (*"Muestra columnas separadas para ID y Nombre, permitiendo identificación unívoca"*) y `FIX-108`, impidiendo a los operadores distinguir instancias homónimas o correlacionar identificadores con registros de auditoría y logs de Proxmox.
+- **Qué debe hacer el equipo de frontend:**
+  1. En `frontend/centinela/src/pages/Instances.tsx` (y componentes de tabla asociados):
+     - Restaurar la columna `ID` exhibiendo el identificador público opaco (`inst_...`) de cada instancia con botón de copia rápida.
+     - Restaurar la columna de selección `Checkbox` para operaciones en lote según la especificación de `FRN-20A`.
+  2. En `frontend/centinela/src/test/instances-table.test.tsx`:
+     - Reincorporar las aserciones que validan la presencia visible de la columna `ID` y las referencias públicas `inst_...`.
+- **Criterio de éxito:**
+  La tabla de inventario en `/instances` vuelve a exhibir la columna `ID` unívoca y pasa `npm --prefix frontend/centinela test -- --run` al 100%.
+
 ---
 # ETAPA 3: Tareas Pendientes de Implementación
 ---
@@ -101,6 +118,32 @@ Para cumplir con la directiva de desglosar más el tablero y que nadie pueda esc
      - `GET /api2/json/nodes/{node}/storage/{storage}/content`
   2. Archivar las capturas sanitizadas (sin tokens ni secretos) en `backend/API proxmox respuestas/pve8-capturas/`.
 - **Criterio de éxito:** Carpeta de capturas creada con las respuestas reales del host físico 8.4.21 documentadas.
+
+
+### `FIX-145` - Eliminación de la restricción de pertenencia rígida en borrado (`403 INSTANCE_NOT_OWNED`) y desacoplamiento mediante configuración de instancias protegidas (`RF-07` / `BAC-24B`) (Backend)
+
+- **Área:** Backend
+- **Asignado:** Lucas / Nico
+- **Estimación:** 1.5 h
+- **Depende de:** `RF-07`, `BAC-24B`, `PR #30` (`df4cada`).
+- **Problema técnico detallado:**
+  En el commit `df4cada` (PR #30), se introdujo en `instance_handler.go:EliminarInstancia` una consulta bloqueante `FueCreadaPorCentinela` contra la tabla `tareas_asincronas`, rechazando con `403 INSTANCE_NOT_OWNED` cualquier orden `DELETE` sobre instancias cuya tarea de creación no figure en la base de datos local.
+  Esto genera un problema grave de desacople y operación en el servidor real:
+  1. Impide a los administradores gestionar o destruir instancias preexistentes en Proxmox, instancias migradas o recreadas tras limpiezas de base de datos.
+  2. En el servidor físico los nombres, identificadores y rangos de VMIDs cambian constantemente respecto a los entornos locales de desarrollo.
+  3. La protección contra la destrucción accidental de las instancias propias del proyecto Centinela (el propio nodo Docker, DNS, base de datos del host) debe definirse explícitamente en la variable de entorno `PROXMOX_PROTECTED_VMIDS`, que ya responde de forma canónica con `403 INSTANCE_PROTECTED`.
+- **Qué debe hacer el equipo de backend:**
+  1. En `backend/internal/adapters/primary/http/instance_handler.go`:
+     - Retirar de `EliminarInstancia` la guarda `FueCreadaPorCentinela` y la emisión del código `403 INSTANCE_NOT_OWNED`.
+     - Mantener la verificación de estado operativo (`stopped` o `paused`) para responder `409 INSTANCE_INVALID_STATE` si la instancia está encendida.
+     - Confiar la protección de infraestructura exclusivamente a la lista declarativa `PROXMOX_PROTECTED_VMIDS` en `RejectProtectedInstance(vmidsProtegidos)`.
+  2. En `backend/docs/contrato-etapa1.md`:
+     - Retirar la cláusula `INSTANCE_NOT_OWNED` del contrato y de la documentación de errores de `DELETE /instances/{instanceRef}`.
+  3. En `backend/internal/core/ports/tarea_port.go` y `tarea_repository.go`:
+     - Deprecar el método `FueCreadaPorCentinela` si no tiene otros consumidores funcionales.
+- **Criterio de éxito:**
+  Un usuario con rol `ADMIN` puede solicitar `DELETE` sobre cualquier instancia detenida del hipervisor que no forme parte de `PROXMOX_PROTECTED_VMIDS`, recibiendo `202 Accepted` y despachando el borrado en Proxmox VE.
+
 
 ---
 

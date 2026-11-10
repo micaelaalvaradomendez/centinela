@@ -99,22 +99,7 @@ flowchart TD
 
 ## 🛠️ Especificación Detallada de Fixes Pendientes (Etapa 2)
 
-### `FIX-146` - Restauración de columna unívoca (`ID` / `InstanceRef`) y selección en la tabla de inventario (`FRN-20A` / `FIX-43` / `FIX-108`) (Frontend)
 
-- **Área:** Frontend
-- **Asignado:** Cristian / Belinda
-- **Estimación:** 1.0 h
-- **Depende de:** `FRN-20A`, `FIX-43`, `FIX-108`.
-- **Problema técnico detallado:**
-  En los commits `99c7a18` y `0bf4f33`, se eliminaron silenciosamente las columnas `Checkbox` e `ID` de `Instances.tsx`, modificando los tests unitarios internos (`instances-table.test.tsx`) para ocultar la regresión. Esto incumple el criterio de aceptación de `FIX-43` (*"Muestra columnas separadas para ID y Nombre, permitiendo identificación unívoca"*) y `FIX-108`, impidiendo a los operadores distinguir instancias homónimas o correlacionar identificadores con registros de auditoría y logs de Proxmox.
-- **Qué debe hacer el equipo de frontend:**
-  1. En `frontend/centinela/src/pages/Instances.tsx` (y componentes de tabla asociados):
-     - Restaurar la columna `ID` exhibiendo el identificador público opaco (`inst_...`) de cada instancia con botón de copia rápida.
-     - Restaurar la columna de selección `Checkbox` para operaciones en lote según la especificación de `FRN-20A`.
-  2. En `frontend/centinela/src/test/instances-table.test.tsx`:
-     - Reincorporar las aserciones que validan la presencia visible de la columna `ID` y las referencias públicas `inst_...`.
-- **Criterio de éxito:**
-  La tabla de inventario en `/instances` vuelve a exhibir la columna `ID` unívoca y pasa `npm --prefix frontend/centinela test -- --run` al 100%.
 
 ---
 
