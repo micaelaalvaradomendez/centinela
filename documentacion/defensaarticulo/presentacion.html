@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Poppins:ital,wght@0,400;0,500;0,600;1,400&display=swap" media="print" onload="this.media='all'">
 <style>
-/* Layout: una filmina 16:9 a la vez, con trazos de circuito como decoración de borde; notas y cronómetro debajo.
+/* Layout: una filmina 16:9 a la vez, con trazos de circuito como decoración de borde.
    Estética de taller de programación: fondo lavanda claro, títulos monoespaciados en índigo, trazos índigo/lavanda/ámbar.
    Semántica: ámbar punteado = lo que hace la IA; índigo = lo que queda en manos humanas. */
 :root {
@@ -48,7 +48,7 @@ body {
 .stage {
   container-type: inline-size;
   position: relative;
-  width: min(100%, calc((100dvh - 110px) * 16 / 9));
+  width: min(100%, calc((100dvh - 44px) * 16 / 9));
   aspect-ratio: 16 / 9;
   background: var(--slide);
   border: 1px solid var(--rule);
@@ -153,8 +153,8 @@ ul.list li::before { content: ""; position: absolute; left: .1em; top: .58em; wi
 .node-rule { position: relative; width: calc(var(--u) * 28); height: 2px; background: var(--navy); margin-left: calc(var(--u) * -1); }
 .node-rule::after { content: ""; position: absolute; right: calc(var(--u) * -.5); top: 50%; width: calc(var(--u) * .7); height: calc(var(--u) * .7); transform: translateY(-50%); border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 3px var(--slide), 0 0 0 5px var(--navy); }
 .subtitle { font-family: var(--f-body); font-weight: 500; font-size: calc(var(--u) * 2.1); color: var(--ink); line-height: 1.2; }
-.meta { display: grid; grid-template-columns: auto 1fr; gap: calc(var(--u) * .4) calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.3); margin: 0; }
-.meta dt { color: var(--navy); font-family: var(--f-mono); font-weight: 500; font-size: .82em; text-transform: uppercase; letter-spacing: .06em; padding-top: .2em; }
+.meta { display: grid; grid-template-columns: 1fr; gap: calc(var(--u) * .4) calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.3); margin: 0; }
+.meta dt { color: var(--ink); font-family: var(--f-mono); font-weight: 500; font-size: .82em; text-transform: uppercase; letter-spacing: .06em; padding-top: .2em; }
 .meta dd { margin: 0; }
 
 /* Cita */
@@ -277,22 +277,72 @@ svg.fig .brace-human { stroke: var(--navy); stroke-width: 2; fill: none; }
   .rel td:last-child { white-space: normal; }
   .refs { max-width: none; }
 }
+
+/* Hilo de la presentación */
+.track { display: flex; flex-wrap: wrap; gap: calc(var(--u) * .5); align-items: center; font-family: var(--f-mono); font-size: calc(var(--u) * .92); }
+.track span { padding: calc(var(--u) * .25) calc(var(--u) * .7); border-radius: 999px; color: var(--muted); border: 1px solid var(--rule); }
+.track span.h { background: var(--navy); color: var(--slide); border-color: var(--navy); font-weight: 700; }
+.track i { color: var(--amber); font-style: normal; font-weight: 700; }
+.steps { display: flex; flex-direction: column; gap: calc(var(--u) * .7); }
+.steps > div { display: grid; grid-template-columns: calc(var(--u) * 2.6) 1fr; gap: calc(var(--u) * .9); align-items: center; padding: calc(var(--u) * .6) calc(var(--u) * .9); border: 1.5px solid var(--rule); border-radius: 10px; background: var(--slide); }
+.steps > div.own { border: 2px solid var(--navy); background: var(--human-soft); }
+.steps .n { font-family: var(--f-display); font-weight: 700; font-size: calc(var(--u) * 1.9); color: var(--navy); text-align: center; }
+.steps strong { display: block; font-size: calc(var(--u) * 1.3); line-height: 1.3; }
+.steps span:not(.n) { font-family: var(--f-mono); font-size: calc(var(--u) * .95); color: var(--muted); }
+.steps-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * .8); }
+.steps-row > div { display: grid; grid-template-columns: calc(var(--u) * 2.2) 1fr; gap: calc(var(--u) * .7); align-items: start; padding: calc(var(--u) * .7) calc(var(--u) * .8); }
+.steps-row strong { font-size: calc(var(--u) * 1.12); line-height: 1.25; }
+.steps-row span:not(.n) { font-size: calc(var(--u) * .88); }
+#s2, #s3, #s4, #s5, #s6, #s7, #s8, #s9 { justify-content: center; }
+/* Filminas de artículos */
+.art { gap: calc(var(--u) * 1.1); }
+.art h2 { font-size: calc(var(--u) * 2.1); max-width: 85%; }
+.byline { font-family: var(--f-mono); font-size: calc(var(--u) * 1.0); color: var(--muted); margin-top: calc(var(--u) * .5); display: flex; flex-wrap: wrap; gap: .5em; align-items: center; }
+.c-art { grid-template-columns: 1.25fr .9fr; gap: calc(var(--u) * 2.2); align-items: start; font-size: calc(var(--u) * 1.22); line-height: 1.38; }
+ol.finds { margin: 0; padding: 0; list-style: none; counter-reset: f; display: flex; flex-direction: column; gap: calc(var(--u) * .55); font-size: calc(var(--u) * 1.13); line-height: 1.36; }
+ol.finds li { counter-increment: f; position: relative; padding-left: calc(var(--u) * 2.1); }
+ol.finds li::before { content: counter(f); position: absolute; left: 0; top: .05em; width: calc(var(--u) * 1.45); height: calc(var(--u) * 1.45); border-radius: 50%; background: var(--navy); color: var(--slide); font-family: var(--f-mono); font-weight: 700; font-size: calc(var(--u) * .85); display: flex; align-items: center; justify-content: center; }
+.art .panel { padding: calc(var(--u) * 1) calc(var(--u) * 1.2); gap: calc(var(--u) * .55); }
+.art .small, .concl .small { font-size: calc(var(--u) * 1.1); line-height: 1.38; }
+.prompt { white-space: pre; }
+.art .prompt { font-size: calc(var(--u) * .95); padding: calc(var(--u) * .6) calc(var(--u) * .9); }
+.art .cases { font-size: calc(var(--u) * 1.05); }
+/* Mi artículo */
+.shifts { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 1); }
+.shifts > div { border: 1.5px solid var(--navy); border-radius: 10px; padding: calc(var(--u) * .8) calc(var(--u) * 1); display: flex; flex-direction: column; gap: calc(var(--u) * .35); font-size: calc(var(--u) * 1.18); line-height: 1.3; }
+.shifts > div.own { background: var(--navy); color: var(--slide); }
+.shifts .sec { font-family: var(--f-mono); font-weight: 700; font-size: calc(var(--u) * .9); color: var(--ai); }
+.shifts .own .sec { color: var(--amber); }
+.shifts .src { margin-top: auto; font-family: var(--f-mono); font-size: calc(var(--u) * .9); color: var(--muted); }
+.shifts .own .src { color: var(--lav-soft); }
+#s6 .lead { font-size: calc(var(--u) * 1.4); max-width: 80ch; }
+#s6 .alert { font-size: calc(var(--u) * 1.0); }
+/* Conclusión */
+.answer { border-left: 4px solid var(--navy); background: var(--human-soft); border-radius: 0 8px 8px 0; padding: calc(var(--u) * .8) calc(var(--u) * 1.3); display: flex; flex-direction: column; gap: .3em; font-size: calc(var(--u) * 1.3); }
+.answer .mine { color: var(--navy); font-weight: 600; }
+.concl { gap: calc(var(--u) * 1.3); }
+.concl ul.list { font-size: calc(var(--u) * 1.18); }
+.concl .panel { padding: calc(var(--u) * 1) calc(var(--u) * 1.3); }
+@media (max-width: 760px) {
+  .c-art, .shifts, .steps-row { grid-template-columns: 1fr; }
+  .art h2 { max-width: none; }
+}
 </style>
 
 <div class="viewer" id="viewer">
   <div class="stage" id="stage" aria-live="polite">
-
-    <!-- 1 · IDENTIFICACIÓN -->
+    <!-- 1 · PORTADA -->
     <section class="slide cover" id="s1" aria-label="Portada">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><radialGradient id="glowc" cx="0" cy="0" r="1"><stop offset="0" class="glow-stop-a"/><stop offset="1" class="glow-stop-b"/></radialGradient></defs><circle cx="0" cy="0" r="380" fill="url(#glowc)"/><path class="tr-navy" d="M0 148 H300 L420 28 H1010"/><path class="tr-navy" d="M250 40 L160 130"/><path class="tr-navy" d="M1150 0 V250"/><circle class="ring-navy" cx="1150" cy="262" r="10"/><circle class="nd-navy" cx="1150" cy="262" r="4.5"/><path class="tr-lav" d="M0 112 H190 L236 158"/><path class="tr-lav" d="M1280 300 H1170 L1100 230 H1010"/><path class="tr-lav" d="M1280 380 H1200 L1100 480 V560 L1150 610 V720"/><circle class="ring-lav" cx="1150" cy="430" r="9"/><circle class="nd-lav" cx="1150" cy="430" r="3.5"/><circle class="ring-lav" cx="1100" cy="520" r="9"/><circle class="nd-lav" cx="1100" cy="520" r="3.5"/><path class="tr-amber" d="M0 70 H40 L64 46 H108"/><circle class="ring-amber" cx="120" cy="46" r="11"/><circle class="ring-amber" cx="120" cy="46" r="5"/><path class="tr-amber" d="M380 0 V60 H560 V128"/><circle class="ring-amber" cx="560" cy="140" r="11"/><circle class="ring-amber" cx="560" cy="140" r="5"/><circle class="ring-amber" cx="610" cy="28" r="8"/><circle class="nd-amber" cx="610" cy="28" r="3"/><path class="tr-amber" d="M1280 600 H1180 L1130 650 V720"/><path class="tr-amber" d="M1230 720 V680 L1255 655"/><circle class="dot-navy" cx="880" cy="684" r="2.6"/><circle class="dot-navy" cx="880" cy="712" r="2.6"/><circle class="dot-navy" cx="908" cy="656" r="2.6"/><circle class="dot-navy" cx="908" cy="684" r="2.6"/><circle class="dot-navy" cx="908" cy="712" r="2.6"/><circle class="dot-navy" cx="936" cy="628" r="2.6"/><circle class="dot-navy" cx="936" cy="656" r="2.6"/><circle class="dot-navy" cx="936" cy="684" r="2.6"/><circle class="dot-navy" cx="936" cy="712" r="2.6"/><circle class="dot-navy" cx="964" cy="600" r="2.6"/><circle class="dot-navy" cx="964" cy="628" r="2.6"/><circle class="dot-navy" cx="964" cy="656" r="2.6"/><circle class="dot-navy" cx="964" cy="684" r="2.6"/><circle class="dot-navy" cx="964" cy="712" r="2.6"/><circle class="dot-navy" cx="992" cy="572" r="2.6"/><circle class="dot-navy" cx="992" cy="600" r="2.6"/><circle class="dot-navy" cx="992" cy="628" r="2.6"/><circle class="dot-navy" cx="992" cy="656" r="2.6"/><circle class="dot-navy" cx="992" cy="684" r="2.6"/><circle class="dot-navy" cx="992" cy="712" r="2.6"/><circle class="dot-navy" cx="1020" cy="544" r="2.6"/><circle class="dot-navy" cx="1020" cy="572" r="2.6"/><circle class="dot-navy" cx="1020" cy="600" r="2.6"/><circle class="dot-navy" cx="1020" cy="628" r="2.6"/><circle class="dot-navy" cx="1020" cy="656" r="2.6"/><circle class="dot-navy" cx="1020" cy="684" r="2.6"/><circle class="dot-navy" cx="1020" cy="712" r="2.6"/><circle class="dot-navy" cx="1048" cy="516" r="2.6"/><circle class="dot-navy" cx="1048" cy="544" r="2.6"/><circle class="dot-navy" cx="1048" cy="572" r="2.6"/><circle class="dot-navy" cx="1048" cy="600" r="2.6"/><circle class="dot-navy" cx="1048" cy="628" r="2.6"/><circle class="dot-navy" cx="1048" cy="656" r="2.6"/><circle class="dot-navy" cx="1048" cy="684" r="2.6"/><circle class="dot-navy" cx="1048" cy="712" r="2.6"/><circle class="dot-navy" cx="1076" cy="488" r="2.6"/><circle class="dot-navy" cx="1076" cy="516" r="2.6"/><circle class="dot-navy" cx="1076" cy="544" r="2.6"/><circle class="dot-navy" cx="1076" cy="572" r="2.6"/><circle class="dot-navy" cx="1076" cy="600" r="2.6"/><circle class="dot-navy" cx="1076" cy="628" r="2.6"/><circle class="dot-navy" cx="1076" cy="656" r="2.6"/><circle class="dot-navy" cx="1076" cy="684" r="2.6"/><circle class="dot-navy" cx="1076" cy="712" r="2.6"/><circle class="dot-navy" cx="1104" cy="460" r="2.6"/><circle class="dot-navy" cx="1104" cy="488" r="2.6"/><circle class="dot-navy" cx="1104" cy="516" r="2.6"/><circle class="dot-navy" cx="1104" cy="544" r="2.6"/><circle class="dot-navy" cx="1104" cy="572" r="2.6"/><circle class="dot-navy" cx="1104" cy="600" r="2.6"/><circle class="dot-navy" cx="1104" cy="628" r="2.6"/><circle class="dot-navy" cx="1104" cy="656" r="2.6"/><circle class="dot-navy" cx="1104" cy="684" r="2.6"/><circle class="dot-navy" cx="1104" cy="712" r="2.6"/><circle class="dot-navy" cx="1132" cy="460" r="2.6"/><circle class="dot-navy" cx="1132" cy="488" r="2.6"/><circle class="dot-navy" cx="1132" cy="516" r="2.6"/><circle class="dot-navy" cx="1132" cy="544" r="2.6"/><circle class="dot-navy" cx="1132" cy="572" r="2.6"/><circle class="dot-navy" cx="1132" cy="600" r="2.6"/><circle class="dot-navy" cx="1132" cy="628" r="2.6"/><circle class="dot-navy" cx="1132" cy="656" r="2.6"/><circle class="dot-navy" cx="1132" cy="684" r="2.6"/><circle class="dot-navy" cx="1132" cy="712" r="2.6"/><circle class="dot-navy" cx="1160" cy="460" r="2.6"/><circle class="dot-navy" cx="1160" cy="488" r="2.6"/><circle class="dot-navy" cx="1160" cy="516" r="2.6"/><circle class="dot-navy" cx="1160" cy="544" r="2.6"/><circle class="dot-navy" cx="1160" cy="572" r="2.6"/><circle class="dot-navy" cx="1160" cy="600" r="2.6"/><circle class="dot-navy" cx="1160" cy="628" r="2.6"/><circle class="dot-navy" cx="1160" cy="656" r="2.6"/><circle class="dot-navy" cx="1160" cy="684" r="2.6"/><circle class="dot-navy" cx="1160" cy="712" r="2.6"/><circle class="dot-navy" cx="1188" cy="460" r="2.6"/><circle class="dot-navy" cx="1188" cy="488" r="2.6"/><circle class="dot-navy" cx="1188" cy="516" r="2.6"/><circle class="dot-navy" cx="1188" cy="544" r="2.6"/><circle class="dot-navy" cx="1188" cy="572" r="2.6"/><circle class="dot-navy" cx="1188" cy="600" r="2.6"/><circle class="dot-navy" cx="1188" cy="628" r="2.6"/><circle class="dot-navy" cx="1188" cy="656" r="2.6"/><circle class="dot-navy" cx="1188" cy="684" r="2.6"/><circle class="dot-navy" cx="1188" cy="712" r="2.6"/><circle class="dot-navy" cx="1216" cy="460" r="2.6"/><circle class="dot-navy" cx="1216" cy="488" r="2.6"/><circle class="dot-navy" cx="1216" cy="516" r="2.6"/><circle class="dot-navy" cx="1216" cy="544" r="2.6"/><circle class="dot-navy" cx="1216" cy="572" r="2.6"/><circle class="dot-navy" cx="1216" cy="600" r="2.6"/><circle class="dot-navy" cx="1216" cy="628" r="2.6"/><circle class="dot-navy" cx="1216" cy="656" r="2.6"/><circle class="dot-navy" cx="1216" cy="684" r="2.6"/><circle class="dot-navy" cx="1216" cy="712" r="2.6"/><circle class="dot-navy" cx="1244" cy="460" r="2.6"/><circle class="dot-navy" cx="1244" cy="488" r="2.6"/><circle class="dot-navy" cx="1244" cy="516" r="2.6"/><circle class="dot-navy" cx="1244" cy="544" r="2.6"/><circle class="dot-navy" cx="1244" cy="572" r="2.6"/><circle class="dot-navy" cx="1244" cy="600" r="2.6"/><circle class="dot-navy" cx="1244" cy="628" r="2.6"/><circle class="dot-navy" cx="1244" cy="656" r="2.6"/><circle class="dot-navy" cx="1244" cy="684" r="2.6"/><circle class="dot-navy" cx="1244" cy="712" r="2.6"/><circle class="dot-amber" cx="1180" cy="470" r="3"/><circle class="dot-amber" cx="1180" cy="490" r="3"/><circle class="dot-amber" cx="1180" cy="510" r="3"/><circle class="dot-amber" cx="1180" cy="530" r="3"/><circle class="dot-amber" cx="1200" cy="470" r="3"/><circle class="dot-amber" cx="1200" cy="490" r="3"/><circle class="dot-amber" cx="1200" cy="510" r="3"/><circle class="dot-amber" cx="1200" cy="530" r="3"/><circle class="dot-amber" cx="1220" cy="470" r="3"/><circle class="dot-amber" cx="1220" cy="490" r="3"/><circle class="dot-amber" cx="1220" cy="510" r="3"/><circle class="dot-amber" cx="1220" cy="530" r="3"/><circle class="dot-amber" cx="1240" cy="470" r="3"/><circle class="dot-amber" cx="1240" cy="490" r="3"/><circle class="dot-amber" cx="1240" cy="510" r="3"/><circle class="dot-amber" cx="1240" cy="530" r="3"/><circle class="dot-amber" cx="1260" cy="470" r="3"/><circle class="dot-amber" cx="1260" cy="490" r="3"/><circle class="dot-amber" cx="1260" cy="510" r="3"/><circle class="dot-amber" cx="1260" cy="530" r="3"/><circle class="dot-lav" cx="14" cy="556" r="4"/><circle class="dot-lav" cx="14" cy="578" r="4"/><circle class="dot-lav" cx="14" cy="600" r="4"/><circle class="dot-lav" cx="14" cy="622" r="4"/><circle class="dot-lav" cx="14" cy="644" r="4"/><circle class="dot-lav" cx="14" cy="666" r="4"/><circle class="dot-lav" cx="14" cy="688" r="4"/><circle class="dot-lav" cx="36" cy="578" r="4"/><circle class="dot-lav" cx="36" cy="600" r="4"/><circle class="dot-lav" cx="36" cy="622" r="4"/><circle class="dot-lav" cx="36" cy="644" r="4"/><circle class="dot-lav" cx="36" cy="666" r="4"/><circle class="dot-lav" cx="36" cy="688" r="4"/><circle class="dot-lav" cx="58" cy="600" r="4"/><circle class="dot-lav" cx="58" cy="622" r="4"/><circle class="dot-lav" cx="58" cy="644" r="4"/><circle class="dot-lav" cx="58" cy="666" r="4"/><circle class="dot-lav" cx="58" cy="688" r="4"/><circle class="dot-lav" cx="80" cy="622" r="4"/><circle class="dot-lav" cx="80" cy="644" r="4"/><circle class="dot-lav" cx="80" cy="666" r="4"/><circle class="dot-lav" cx="80" cy="688" r="4"/><circle class="dot-lav" cx="102" cy="644" r="4"/><circle class="dot-lav" cx="102" cy="666" r="4"/><circle class="dot-lav" cx="102" cy="688" r="4"/><circle class="dot-lav" cx="124" cy="666" r="4"/><circle class="dot-lav" cx="124" cy="688" r="4"/><circle class="dot-lav" cx="146" cy="688" r="4"/></svg>
       <div class="cover-body">
-        <div class="eyebrow">Ingeniería de Software III · UNTDF · 2026</div>
+        <div class="eyebrow">Ingeniería de Software III · 2026</div>
+        <div class=""eyebrow">Universidad Nacional de Tierra del Fuego</div>
         <h1>El Project Manager <span class="t-ink">en la Era de la IA</span></h1>
         <div class="node-rule" aria-hidden="true"></div>
         <p class="subtitle">De Administrador a Estratega</p>
         <dl class="meta">
-          <dt>Autora</dt><dd>Micaela Alvarado Mendez</dd>
-          <dt>Base</dt><dd>Barbosa et al. (2025) · López Hurtado (2026) · Nieto-Rodríguez (2026)</dd>
+          <dt>Micaela Alvarado Mendez</dt>
+          <dt><span class="label">Barbosa et al. (2025) · López Hurtado (2026) · Nieto-Rodríguez (2026)</span></dt>
         </dl>
       </div>
     </section>
@@ -301,292 +351,223 @@ svg.fig .brace-human { stroke: var(--navy); stroke-width: 2; fill: none; }
     <section class="slide" id="s2" aria-label="Introducción">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
       <div class="eyebrow">Introducción</div>
+      <h2>Si la IA puede hacer el trabajo administrativo del PM, ¿qué queda en sus manos?</h2>
+      <p class="lead" style="max-width: none">Cómo cambia el rol del Project Manager de software con la IA generativa.</p>
       <div class="row c2" style="align-items: start">
-        <div class="stack" style="gap: calc(var(--u) * 1.4)">
-          <p class="quote">“Una riqueza de información crea una pobreza de atención.”</p>
-          <p class="quote-src">Herbert Simon, 1978 · citado en Nieto-Rodríguez (2026)</p>
-          <div class="qbar"><span class="label">Pregunta del artículo</span><p style="margin-top:.3em">¿Qué tareas del PM optimiza la IA, y cómo ese cambio redefine el rol?</p></div>
+        <div><span class="label">Problema</span><p>Buena parte del trabajo del PM es administrativo: minutas, reportes, tickets. La IA ya puede asistirlo, pero liberar tiempo no garantiza mejores decisiones.</p></div>
+        <div><span class="label">Relevancia para la ingeniería de software</span><p>En software, el avance real está en el código, no en el tablero de tareas. Si el PM solo mira el tablero, la IA puede acelerar el error.</p></div>
+      </div>
+      <div class="stack" style="gap: calc(var(--u) * .7)">
+        <span class="label">Cómo respondo la pregunta</span>
+        <div class="steps steps-row">
+          <div><span class="n">1</span><div><strong>¿Qué hace hoy la IA en el trabajo del PM?</strong><span>La práctica · Barbosa et al.</span></div></div>
+          <div><span class="n">2</span><div><strong>¿Qué perfil necesita el PM para gobernarla?</strong><span>El rol · López Hurtado</span></div></div>
+          <div><span class="n">3</span><div><strong>¿Qué no puede hacer la IA?</strong><span>El juicio · Nieto-Rodríguez</span></div></div>
+          <div class="own"><span class="n">4</span><div><strong>¿Cómo se ve todo esto en un proyecto de software?</strong><span>Mi artículo</span></div></div>
         </div>
-        <div class="stack" style="gap: calc(var(--u) * 1.4)">
-          <div><span class="label">Tema</span><p>Cómo cambia el rol del Project Manager de software con la IA generativa.</p></div>
-          <div><span class="label">Problema</span><p>Sin IA, el PM pasa gran parte de su jornada en minutas, reportes y tickets: tareas necesarias que no agregan valor técnico al producto.</p></div>
-          <div><span class="label">Relevancia para la ingeniería de software</span><p>En software, el avance real está en el código, no en el tablero. Cuando la IA libera tiempo, el PM puede ocuparse de eso.</p></div>
-          <div class="stack" style="gap: calc(var(--u) * .5)">
-            <span class="label">Recorrido</span>
-            <div class="arc"><span>Rol sin IA</span><i>→</i><span class="a">Qué optimiza la IA</span><i>→</i><span class="h">Qué no optimiza</span><i>→</i><span class="h">Nuevo rol</span></div>
+      </div>
+    </section>
+
+    <!-- 3 · BARBOSA -->
+    <section class="slide art" id="s3" aria-label="Barbosa et al.">
+      <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
+      <div class="track"><span class="h">1 · La práctica</span><i>→</i><span>2 · El rol</span><i>→</i><span>3 · El juicio</span><i>→</i><span>4 · Mi artículo</span></div>
+      <div>
+        <h2>From Potential to Practice: The Use of GenAI in Project Management</h2>
+        <p class="byline">Barbosa, Trocin y Palese · 2025 · <span class="chip">Estudio cualitativo en curso</span></p>
+      </div>
+      <div class="row c-art">
+        <div class="stack" style="gap: calc(var(--u) * .8)">
+          <p><span class="label">Pregunta</span><br>¿Cómo usan realmente los PMs la IA generativa y cómo manejan su impacto en el proyecto?</p>
+          <p class="small muted"><strong>Método:</strong> 15 entrevistas semiestructuradas (9 seniors y 6 juniors, de 8 países), con análisis temático.</p>
+          <span class="label">Hallazgos</span>
+          <ol class="finds">
+            <li><strong>Usos reales:</strong> crear contenido, resumir documentos, corregir redacción y comunicarse entre culturas. Aumenta al PM, no lo reemplaza.</li>
+            <li><strong>Dos habilidades nuevas:</strong> <em>prompt engineering</em> y <em>context engineering</em> (alcance, región, cultura).</li>
+            <li><strong>Nuevo rol:</strong> el PM pasa a ser un <em>strategic enabler</em> enfocado en liderazgo, ética y decisiones críticas. A la IA “le falta sentido de justicia”.</li>
+            <li><strong>Seniors vs. juniors:</strong> los seniors son cautos; los juniors confían más porque ya la usaron al estudiar.</li>
+          </ol>
+        </div>
+        <div class="stack" style="gap: calc(var(--u) * 1)">
+          <div class="panel human">
+            <span class="label" style="color: var(--navy)">Lo que tomé para mi artículo</span>
+            <p class="small">La <strong>ingeniería de contexto</strong> como la habilidad central del nuevo PM, y la <strong>paradoja senior/junior</strong>: el que confía no tiene el criterio para revisar, y el que tiene el criterio desconfía.</p>
+          </div>
+          <div class="panel ai">
+            <span class="label" style="color: var(--ai)">En El Centinela</span>
+            <p class="small">Cada tarea se escribió como contexto, no como orden:</p>
+            <div class="prompt small"><span class="hl">Tarea</span>    micro-tarea de 0,5 a 2,5 h<br><span class="hl">Archivos</span> los que hay que tocar<br><span class="hl">Depende</span>  de tareas previas<br><span class="hl">Éxito</span>    un test que tiene que pasar</div>
+            <p class="small">Los contratos OpenAPI se fijaron antes de codificar.</p>
           </div>
         </div>
       </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>02 / 10</span></div>
     </section>
 
-    <!-- 3 · EL ROL SIN IA -->
-    <section class="slide" id="s3" aria-label="El rol tradicional del PM">
+    <!-- 4 · LÓPEZ HURTADO -->
+    <section class="slide art" id="s4" aria-label="López Hurtado">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Análisis 1 de 4 <span class="chip own">Antes</span> <span class="chip">Fuentes: López Hurtado (2026), Sommerville (2016)</span></div>
-      <h2>El rol sin IA: un PM que transcribe y controla</h2>
-      <div class="row c2" style="align-items: start">
-        <figure style="margin:0" aria-label="Matriz de tareas del PM según tiempo que consumen y valor técnico">
-          <svg class="fig" viewBox="0 0 520 380" role="img">
-            <title>Tareas del PM: tiempo que consumen frente a valor técnico</title>
-            <rect class="zone" x="81" y="40" width="210" height="165" rx="4"/>
-            <text x="90" y="196" class="t-ai" font-size="13">Mucho tiempo, poco valor</text>
-            <line class="grid" x1="81" y1="70" x2="505" y2="70"/>
-            <line class="grid" x1="81" y1="160" x2="505" y2="160"/>
-            <line class="grid" x1="81" y1="250" x2="505" y2="250"/>
-            <path class="axis" d="M80 30 V300 H508"/>
-            <text x="72" y="75" text-anchor="end" font-size="13" class="t-muted">Alto</text>
-            <text x="72" y="165" text-anchor="end" font-size="13" class="t-muted">Medio</text>
-            <text x="72" y="255" text-anchor="end" font-size="13" class="t-muted">Bajo</text>
-            <text x="132" y="320" text-anchor="middle" font-size="13" class="t-muted">Nulo</text>
-            <text x="237" y="320" text-anchor="middle" font-size="13" class="t-muted">Bajo</text>
-            <text x="342" y="320" text-anchor="middle" font-size="13" class="t-muted">Medio</text>
-            <text x="447" y="320" text-anchor="middle" font-size="13" class="t-muted">Alto</text>
-            <text x="294" y="342" text-anchor="middle" font-size="14" font-weight="700">Valor técnico →</text>
-            <text x="22" y="165" text-anchor="middle" font-size="14" font-weight="700" transform="rotate(-90 22 165)">Tiempo que consume →</text>
-            <circle class="p-ai" cx="132" cy="70" r="7"/><text x="144" y="75" font-size="14">Minutas</text>
-            <circle class="p-ai" cx="237" cy="70" r="7"/><text x="249" y="75" font-size="14">Reportes</text>
-            <circle class="p-part" cx="342" cy="56" r="6"/><text x="354" y="61" font-size="14">Historias de usuario</text>
-            <circle class="p-part" cx="342" cy="88" r="6"/><text x="354" y="93" font-size="14">Estimaciones</text>
-            <circle class="p-part" cx="237" cy="160" r="6"/><text x="249" y="165" font-size="14">Tickets</text>
-            <circle class="p-ai" cx="132" cy="250" r="7"/><text x="144" y="255" font-size="14">Corregir redacción</text>
-            <circle class="p-human" cx="447" cy="146" r="7"/><text x="435" y="151" text-anchor="end" font-size="14">Coordinación</text>
-            <circle class="p-human" cx="447" cy="176" r="7"/><text x="435" y="181" text-anchor="end" font-size="14">Negociación</text>
-            <circle class="p-human" cx="447" cy="250" r="7"/><text x="435" y="255" text-anchor="end" font-size="14">Análisis de riesgos</text>
-            <circle class="p-ai" cx="92" cy="368" r="6"/><text x="104" y="373" font-size="13">Automatizable</text>
-            <circle class="p-part" cx="214" cy="368" r="5.5"/><text x="226" y="373" font-size="13">Parcial</text>
-            <circle class="p-human" cx="300" cy="368" r="6"/><text x="312" y="373" font-size="13">No automatizable</text>
-          </svg>
-        </figure>
-        <div class="stack">
-          <span class="label">Cómo se gestiona cada fase sin IA</span>
-          <div class="phases">
-            <div><span class="ph">Inicio</span><span>Estimaciones por experiencia de unos pocos</span></div>
-            <div><span class="ph">Planificación</span><span>Plan estático y cronograma fijo</span></div>
-            <div><span class="ph">Ejecución</span><span>Coordinación manual; los bloqueos se ven tarde</span></div>
-            <div><span class="ph">Control</span><span>Informes que miran lo que ya pasó</span></div>
-            <div><span class="ph">Cierre</span><span>Lecciones aprendidas escritas a mano</span></div>
+      <div class="track"><span>1 · La práctica</span><i>→</i><span class="h">2 · El rol</span><i>→</i><span>3 · El juicio</span><i>→</i><span>4 · Mi artículo</span></div>
+      <div>
+        <h2>Del Project Manager al AI Manager</h2>
+        <p class="byline">López Hurtado · 2026 · <span class="chip">Revisión documental</span></p>
+      </div>
+      <div class="row c-art">
+        <div class="stack" style="gap: calc(var(--u) * .8)">
+          <p><br>La transformación del PM en <strong>AI Manager</strong>: un perfil que interpreta lo que producen los algoritmos y lo convierte en decisiones, con foco en América Latina.</p>
+          <p class="small muted"><strong>Método:</strong> análisis cualitativo de 45 documentos (2018–2025), entre ellos publicaciones de CEPAL, OCDE, NIST, PMI y la UE.</p>
+          <span class="label">Hallazgos</span>
+          <ol class="finds">
+            <li><strong>Competencias en tres dimensiones:</strong> técnica (traducir necesidades en requisitos, sin programar), cognitiva (pensar en probabilidades, no en certezas) y ética (transparencia y rendición de cuentas).</li>
+            <li><strong>Procesos reconfigurados:</strong> el plan pasa de documento estático a proceso vivo, y los informes retrospectivos dan paso a tableros que detectan retrasos y cuellos de botella.</li>
+            <li><strong>Gobernanza algorítmica:</strong> roles definidos (propietario del modelo, custodio del dato, auditor de impacto) y supervisión humana.</li>
+            <li><strong>Riesgo:</strong> el “liderazgo invisible”, decisiones automatizadas sin autoría clara.</li>
+          </ol>
+        </div>
+        <div class="stack" style="gap: calc(var(--u) * 1)">
+          <div class="panel human">
+            <span class="label" style="color: var(--navy)">Lo que tomé para mi artículo</span>
+            <p class="small">El <strong>modelo de competencias</strong> del AI Manager y la <strong>gobernanza</strong>: alguien tiene que revisar y responder por lo que hace la herramienta. Esa idea es la base de mi arquitectura de verificación.</p>
           </div>
-          <div class="qbar small"><strong>Consecuencia:</strong> el PM se vuelve un cuello de botella y le queda poco tiempo para riesgos, deuda técnica y el equipo.</div>
+          <div class="panel ai">
+            <span class="label" style="color: var(--ai)">En El Centinela</span>
+            <p class="small"><strong>Gobernanza:</strong> el arnés de test estaba separado de los equipos y el repositorio integrador solo fijaba commits que pasaban. Generó <strong>130 tareas de corrección</strong> antes de integrar.</p>
+            <p class="small"><strong>Autoría:</strong> al cruzar el tablero con Git, se hizo un seguimiento de las tareas las habían hecho cada integrante del grupo.</p>
+          </div>
         </div>
       </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>03 / 10</span></div>
     </section>
 
-    <!-- 4 · QUÉ OPTIMIZA LA IA -->
-    <section class="slide" id="s4" aria-label="Qué optimiza la IA">
+    <!-- 5 · NIETO-RODRÍGUEZ -->
+    <section class="slide art" id="s5" aria-label="Nieto-Rodríguez">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Análisis 2 de 4 <span class="chip own">Qué optimiza la IA</span><span class="chip">Fuentes: Barbosa et al. (2025), López Hurtado (2026)</span></div>
-      <h2>Qué optimiza la IA en el trabajo del PM</h2>
-      <div style="overflow-x:auto">
-        <table class="cmp">
-          <thead><tr><th>Tarea</th><th>Sin IA</th><th class="h-ai">Con IA</th><th class="h-human">Qué cambia para el PM</th></tr></thead>
-          <tbody>
-            <tr><td>Minutas y actas</td><td class="before">Se redactan a mano</td><td>Resumen automático de la reunión</td><td class="after">Revisa en vez de transcribir</td></tr>
-            <tr><td>Reportes de estado</td><td class="before">Informe semanal retrospectivo</td><td>Tableros que anticipan desvíos</td><td class="after">Interpreta en vez de recopilar</td></tr>
-            <tr><td>Comunicación</td><td class="before">Corregir y adaptar cada correo</td><td>Redacción adaptada a cada audiencia</td><td class="after">Valida tono y contenido</td></tr>
-            <tr><td>Historias de usuario</td><td class="before">Desglose manual por sprint</td><td>Borradores generados con contexto</td><td class="after">Diseña el contexto y valida</td></tr>
-            <tr><td>Estimaciones</td><td class="before">Por experiencia</td><td>Escenarios a partir del historial</td><td class="after">Elige escenarios y comunica el margen de error</td></tr>
-            <tr><td>Seguimiento del avance</td><td class="before">Preguntar y actualizar tickets</td><td>Monitoreo del repositorio (PR, CI)</td><td class="after">Arbitra con evidencia</td></tr>
-          </tbody>
-        </table>
+      <div class="track"><span>1 · La práctica</span><i>→</i><span>2 · El rol</span><i>→</i><span class="h">3 · El juicio</span><i>→</i><span>4 · Mi artículo</span></div>
+      <div>
+        <h2>Why AI Makes Project Leadership More Human, Not Less</h2>
+        <p class="byline">Nieto-Rodríguez · 2026 · <span class="chip">Ensayo de opinión</span></p>
+      </div>
+      <div class="row c-art">
+        <div class="stack" style="gap: calc(var(--u) * .8)">
+          <p><span class="label">Tesis</span><br>La IA no cambia cuánto se automatiza, sino qué significa liderar: cuando la información sobra, <strong>el recurso escaso es el juicio</strong>.</p>
+          <span class="label">Argumentos</span>
+          <ol class="finds">
+            <li><strong>Paradoja de la abundancia:</strong> “una riqueza de información crea una pobreza de atención” (Simon). Kodak y Nokia no fallaron por falta de información.</li>
+            <li><strong>Dos brechas:</strong> la IA puede reducir la <em>decision gap</em> (de reconocer que hay que decidir a decidir), pero la <em>judgment gap</em> (de tener información a saber qué importa) pasa a ser el límite.</li>
+            <li><strong>La anécdota:</strong> un tablero con IA mostraba todo. El autor preguntó “¿qué proyecto detendrías mañana?” y nadie respondió.</li>
+            <li><strong>Tres capacidades humanas:</strong> dar sentido, coraje para decidir y generar confianza. La IA recomienda, pero no se hace cargo de las consecuencias.</li>
+          </ol>
+        </div>
+        <div class="stack" style="gap: calc(var(--u) * 1)">
+          <div class="panel human">
+            <span class="label" style="color: var(--navy)">Lo que tomé para mi artículo</span>
+            <p class="small">El <strong><em>judgment gap</em></strong> como eje: explica por qué más datos no dan mejores decisiones. Mi tesis agrega que la IA incluso puede ampliar esa brecha.</p>
+          </div>
+          <div class="panel ai">
+            <span class="label" style="color: var(--ai)">En El Centinela</span>
+            <p class="small">Mi propia versión de la anécdota: de <strong>18 tareas</strong> que ClickUp daba por listas, solo <strong>4</strong> pasaban todas las pruebas.</p>
+            <div class="cases">
+              <div><span class="id">BAC-18B</span><span>El test exigía un texto literal, pero la solución era mejor: se corrigió el test, no el código.</span></div>
+              <div><span class="id">FIX-81</span><span>CI en verde, pero en un arranque limpio fallaban las migraciones.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · MI ARTÍCULO -->
+    <section class="slide" id="s6" aria-label="Mi artículo">
+      <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
+      <div class="track"><span>1 · La práctica</span><i>→</i><span>2 · El rol</span><i>→</i><span>3 · El juicio</span><i>→</i><span class="h">4 · Mi artículo</span></div>
+      <div>
+        <h2>Mi artículo: cuatro desplazamientos del rol</h2>
+        <p class="lead" style="margin-top: calc(var(--u) * .5)"><strong>Tesis:</strong> la IA no reemplaza al PM, sino que desplaza su valor. El tiempo que libera solo se vuelve estratégico si el PM diseña el contexto, gobierna la herramienta y ejerce el juicio.</p>
+      </div>
+      <div class="shifts">
+        <div><strong>Del papeleo a la ingeniería de contexto</strong><span class="src">Barbosa</span></div>
+        <div><strong>Del control estático al adaptativo</strong><span class="src">López Hurtado</span></div>
+        <div><strong>De la analítica al juicio</strong><span class="src">Nieto-Rodríguez</span></div>
+        <div class="own"><strong>De la supervisión manual a la verificación automatizada</strong><span class="src">Aporte propio</span></div>
       </div>
       <div class="row c2" style="align-items: start">
-        <div class="qbar small">“El prompt engineering es como darle una tarea a un minion; el contexto es usarlo como copiloto.” <span class="muted">(R7, en Barbosa et al.)</span><br>La IA rinde cuando el PM le da el contexto del proyecto: reglas de negocio, contratos de API, restricciones.</div>
-        <p class="small muted">Un entrevistado de Barbosa et al. anticipa hasta un 70% de ganancia de eficiencia en tareas administrativas. Es una expectativa, no una medición.</p>
-      </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>04 / 10</span></div>
-    </section>
-
-    <!-- 5 · QUÉ NO OPTIMIZA Y CÓMO CAMBIA EL ROL -->
-    <section class="slide" id="s5" aria-label="Qué no optimiza la IA y cómo cambia el rol">
-      <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Análisis 3 de 4 <span class="chip own">Qué no optimiza</span> <span class="chip">Fuentes: Nieto-Rodríguez (2026), López Hurtado (2026)</span></div>
-      <h2>Lo que la IA no optimiza: el juicio</h2>
-      <figure style="margin:0" aria-label="De la información a las consecuencias">
-        <svg class="fig" viewBox="0 0 1000 150" role="img">
-          <title>Decision gap y judgment gap</title>
-          <defs>
-            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0 0 L10 5 L0 10 z"/></marker>
-          </defs>
-          <path class="brace-ai" d="M20 56 V44 H570 V56 M295 44 V34"/>
-          <text x="295" y="24" text-anchor="middle" font-size="17" class="t-ai">La IA ayuda · reduce la decision gap</text>
-          <path class="brace-human" d="M605 56 V44 H960 V56 M782 44 V34"/>
-          <text x="782" y="24" text-anchor="middle" font-size="17" class="t-human">Juicio humano · judgment gap</text>
-          <rect class="box-ai" x="20" y="70" width="160" height="64" rx="8"/>
-          <text x="100" y="99" text-anchor="middle" font-size="17" font-weight="700">Información</text><text x="100" y="120" text-anchor="middle" font-size="15" class="t-muted">abundante</text>
-          <rect class="box-ai" x="215" y="70" width="160" height="64" rx="8"/>
-          <text x="295" y="99" text-anchor="middle" font-size="17" font-weight="700">Análisis</text><text x="295" y="120" text-anchor="middle" font-size="15" class="t-muted">automatizado</text>
-          <rect class="box-ai" x="410" y="70" width="160" height="64" rx="8"/>
-          <text x="490" y="99" text-anchor="middle" font-size="17" font-weight="700">Opciones</text><text x="490" y="120" text-anchor="middle" font-size="15" class="t-muted">múltiples</text>
-          <rect class="box-human" x="605" y="70" width="160" height="64" rx="8"/>
-          <text x="685" y="99" text-anchor="middle" font-size="17" font-weight="700">Decisión</text><text x="685" y="120" text-anchor="middle" font-size="15" class="t-muted">con juicio</text>
-          <rect class="box-human" x="800" y="70" width="160" height="64" rx="8"/>
-          <text x="880" y="99" text-anchor="middle" font-size="17" font-weight="700">Consecuencias</text><text x="880" y="120" text-anchor="middle" font-size="15" class="t-muted">las asume alguien</text>
-          <line class="arrow" x1="181" y1="102" x2="212" y2="102" marker-end="url(#ah)"/>
-          <line class="arrow" x1="376" y1="102" x2="407" y2="102" marker-end="url(#ah)"/>
-          <line class="arrow" x1="571" y1="102" x2="602" y2="102" marker-end="url(#ah)"/>
-          <line class="arrow" x1="766" y1="102" x2="797" y2="102" marker-end="url(#ah)"/>
-        </svg>
-      </figure>
-      <div style="overflow-x:auto">
-        <table class="cmp">
-          <thead><tr><th>Por eso cambia el rol</th><th>PM sin IA</th><th class="h-human">AI Manager</th></tr></thead>
-          <tbody>
-            <tr><td>Foco</td><td class="before">Administrar tareas y recursos</td><td class="after">Diseñar las condiciones y decidir</td></tr>
-            <tr><td>Su valor</td><td class="before">Conseguir información</td><td class="after">Filtrar y priorizar</td></tr>
-            <tr><td>Habilidad clave</td><td class="before">Redactar y controlar</td><td class="after">Ingeniería de contexto y juicio</td></tr>
-            <tr><td>Competencias</td><td class="before">Planificación y seguimiento</td><td class="after">Técnica, cognitiva y ética (López Hurtado)</td></tr>
-            <tr><td>Capacidades humanas</td><td class="before">Quedan sin tiempo</td><td class="after">Construcción de sentido, coraje y confianza (Nieto-Rodríguez)</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>05 / 10</span></div>
-    </section>
-
-    <!-- 6 · APORTE PROPIO: VERIFICACIÓN -->
-    <section class="slide" id="s6" aria-label="Arquitectura de verificación">
-      <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Análisis 4 de 4 <span class="chip own">Propuesta del artículo</span><span class="chip ai">Aplicada en El Centinela</span></div>
-      <h2>El seguimiento pasa del tablero al código</h2>
-      <p class="lead">Sin IA, el PM sabe lo que el equipo reporta. La propuesta: agentes que auditan el código y un gestor que arbitra. <span class="small muted">Métricas afines: Forsgren et al. (2018).</span></p>
-      <figure style="margin:0" aria-label="Pipeline de verificación">
-        <svg class="fig" viewBox="0 0 1000 150" role="img">
-          <title>Del commit a la decisión humana</title>
-          <defs>
-            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0 0 L10 5 L0 10 z"/></marker>
-          </defs>
-          <rect class="box" x="10" y="14" width="140" height="62" rx="8"/><text x="80" y="51" text-anchor="middle" font-size="17" font-weight="700">Commit</text>
-          <rect class="box-ai" x="175" y="14" width="140" height="62" rx="8"/><text x="245" y="41" text-anchor="middle" font-size="16" font-weight="700">Análisis</text><text x="245" y="62" text-anchor="middle" font-size="16" font-weight="700">estático</text>
-          <rect class="box-ai" x="340" y="14" width="140" height="62" rx="8"/><text x="410" y="41" text-anchor="middle" font-size="16" font-weight="700">Contrato</text><text x="410" y="62" text-anchor="middle" font-size="16" font-weight="700">API</text>
-          <rect class="box-ai" x="505" y="14" width="140" height="62" rx="8"/><text x="575" y="41" text-anchor="middle" font-size="16" font-weight="700">Cobertura</text><text x="575" y="62" text-anchor="middle" font-size="16" font-weight="700">de tests</text>
-          <rect class="box-ai" x="670" y="14" width="140" height="62" rx="8"/><text x="740" y="41" text-anchor="middle" font-size="16" font-weight="700">Alerta</text><text x="740" y="62" text-anchor="middle" font-size="16" font-weight="700">al gestor</text>
-          <rect class="box-human" x="835" y="14" width="140" height="62" rx="8"/><text x="905" y="41" text-anchor="middle" font-size="16" font-weight="700">Decisión</text><text x="905" y="62" text-anchor="middle" font-size="16" font-weight="700">humana</text>
-          <line class="arrow" x1="151" y1="45" x2="172" y2="45" marker-end="url(#ah2)"/>
-          <line class="arrow" x1="316" y1="45" x2="337" y2="45" marker-end="url(#ah2)"/>
-          <line class="arrow" x1="481" y1="45" x2="502" y2="45" marker-end="url(#ah2)"/>
-          <line class="arrow" x1="646" y1="45" x2="667" y2="45" marker-end="url(#ah2)"/>
-          <line class="arrow" x1="811" y1="45" x2="832" y2="45" marker-end="url(#ah2)"/>
-          <path class="brace-ai" d="M175 94 V106 H810 V94 M492 106 V116"/>
-          <text x="492" y="138" text-anchor="middle" font-size="16" class="t-ai">La IA detecta</text>
-          <path class="brace-human" d="M835 94 V106 H975 V94 M905 106 V116"/>
-          <text x="905" y="138" text-anchor="middle" font-size="16" class="t-human">El gestor decide</text>
-        </svg>
-      </figure>
-      <div class="row c2" style="align-items: start">
+        <div class="stack" style="gap: calc(var(--u) * .6)">
+          <p class="small">Los tableros miden lo que el equipo <em>dice</em> que hizo, no lo que hace el código. Propongo que agentes automatizados auditen cada cambio y que el PM arbitre.</p>
+          <div class="arc"><span>Commit</span><i>→</i><span class="a">Análisis</span><i>→</i><span class="a">Contrato</span><i>→</i><span class="a">Tests</span><i>→</i><span class="h">PM decide</span></div>
+          <p class="small muted">La transición no es armónica. Plantea tensiones que el PM tiene que gestionar: velocidad vs. criterio, seniors vs. juniors, liderazgo invisible, marcos globales vs. capacidades locales y eficiencia vs. deuda técnica.</p>
+        </div>
         <div class="stack" style="gap: calc(var(--u) * .5)">
-          <span class="label">Caso real: tarea BAC-24B (borrar una VM)</span>
+          <span class="label">Así se vio en El Centinela: tarea BAC-24B</span>
           <div class="alert">ClickUp: <strong>Terminada</strong> · commit 0850ec7<br>
             <span class="x">✕</span> DELETE con la VM encendida devuelve 409<br>
-            &nbsp;&nbsp;esperado: INSTANCE_INVALID_STATE (decisión D2)<br>
+            &nbsp;&nbsp;esperado: INSTANCE_INVALID_STATE<br>
             &nbsp;&nbsp;obtenido: INSTANCE_NOT_STOPPED<br>
             → el frontend no muestra el aviso · merge bloqueado</div>
-        </div>
-        <div class="stack" style="gap: calc(var(--u) * .5)">
-          <span class="label">Qué hace el PM con la alerta</span>
-          <ul class="list">
-            <li>Destraba dependencias entre módulos</li>
-            <li>Ajusta el alcance si la integración se desvía</li>
-            <li>Garantiza estándares antes del despliegue</li>
-          </ul>
+          <p class="small muted">El tablero decía “terminada”; el código, no.</p>
         </div>
       </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>06 / 10</span></div>
     </section>
 
     <!-- 7 · RELACIÓN CON LA ASIGNATURA -->
     <section class="slide" id="s7" aria-label="Relación con la asignatura">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Relación con la asignatura <span class="chip">Marco: Sommerville (2016)</span></div>
-      <h2>Lo que el artículo toca de Ingeniería de Software III</h2>
-      <div style="overflow-x:auto">
-        <table class="rel">
-          <thead><tr><th>Contenido de la materia</th><th>Cómo aparece en el artículo</th><th>Sección</th></tr></thead>
-          <tbody>
-            <tr><td>Gestión y planificación de proyectos</td><td>Estimaciones empíricas frente a planes adaptativos; análisis de camino crítico</td><td>II · III</td></tr>
-            <tr><td>Gestión de riesgos</td><td>Alucinaciones, sesgos y filtración de datos como riesgos del proyecto, con mitigaciones</td><td>II</td></tr>
-            <tr><td>Verificación y validación</td><td>Auditoría del código contra criterios de aceptación; cobertura de pruebas</td><td>V</td></tr>
-            <tr><td>Gestión de configuración e integración continua</td><td>Pull requests, merges, fallos de CI y contratos de API como señales de avance real</td><td>V</td></tr>
-            <tr><td>Gestión de la calidad</td><td>La deuda técnica como costo oculto de cerrar tickets rápido</td><td>VI</td></tr>
-            <tr><td>Gestión de personas y equipos</td><td>Confianza, ecosistema social del proyecto y equipos híbridos senior/junior</td><td>IV · VI</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>07 / 10</span></div>
-    </section>
-
-    <!-- 8 · APLICACIÓN -->
-    <section class="slide" id="s8" aria-label="Aplicación: El Centinela">
-      <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Aplicación <span class="chip own">Experiencia como PM / QA lead</span><span class="chip">septiembre 2026</span></div>
-      <h2>El Centinela: lo que dice el tablero y lo que dice el código</h2>
-      <div class="stats">
-        <div class="stat warn"><span class="num">4<small> de 18</small></span><span class="txt">tareas declaradas listas en ClickUp pasaban todas las pruebas (corte 24/10)</span></div>
-        <div class="stat"><span class="num">130</span><span class="txt">tareas de corrección (FIX) generadas por el arnés antes de integrar</span></div>
-        <div class="stat"><span class="num">9</span><span class="txt">vulnerabilidades críticas (CWE) halladas en la auditoría de seguridad</span></div>
-        <div class="stat"><span class="num">312<small>/312</small></span><span class="txt">pruebas en verde en la certificación de cierre (30/10)</span></div>
-      </div>
-      <div class="row c2" style="align-items: start; gap: calc(var(--u) * 2.4)">
-        <div class="stack" style="gap: calc(var(--u) * .6)">
-          <span class="label">Cómo apliqué el artículo</span>
-          <div class="applied">
-            <div><strong>Ingeniería de contexto:</strong> micro-tareas de 0,5 a 2,5 h, con archivos a tocar, dependencias y un test como criterio de éxito; contratos OpenAPI fijados antes de codificar.</div>
-            <div><strong>Verificación:</strong> arnés de pruebas <span class="mono">/test</span> separado de los equipos; el repo integrador solo fija commits que pasaron.</div>
-            <div><strong>Tablero vs. Git:</strong> el cruce de commits mostró que el 50% (back) y el 33% (front) de las tareas las hizo otra persona que la asignada.</div>
-          </div>
+      <div class="eyebrow">Relación con la asignatura <span class="chip">Sommerville (2016)</span></div>
+      <h2>Ingeniería de Software III</h2>
+      <div class="row c2" style="gap: calc(var(--u) * 1.5)">
+        <div class="panel human">
+          <h3 style="font-size: calc(var(--u) * 1.45)">Gestión y planificación de proyectos</h3>
+          <p class="small">Estimaciones empíricas frente a planes adaptativos; análisis de camino crítico.</p>
         </div>
-        <div class="stack" style="gap: calc(var(--u) * .6)">
-          <span class="label">Donde la automatización necesitó juicio</span>
-          <div class="cases">
-            <div><span class="id">BAC-18B</span><span>El test exigía un texto literal; la solución era mejor. Se corrigió el test, no el código.</span></div>
-            <div><span class="id">INF-06A</span><span>Falla por un puerto ocupado en el servidor, no por un error de código.</span></div>
-            <div><span class="id">FIX-81</span><span>CI en verde con base de datos previa; en un arranque limpio, las migraciones fallaban.</span></div>
-            <div><span class="id">INF-08B</span><span>El proveedor de correo bloqueó la IP: se reemplazó por un servidor local (Mailpit).</span></div>
-            <div><span class="id">Permisos</span><span>Front y back en verde, pero la interfaz ofrecía permisos que el backend no tenía.</span></div>
-          </div>
+        <div class="panel human">
+          <h3 style="font-size: calc(var(--u) * 1.45)">Gestión de riesgos</h3>
+          <p class="small">Alucinaciones, sesgos y privacidad de los datos como riesgos del proyecto, con mitigaciones.</p>
+        </div>
+        <div class="panel human">
+          <h3 style="font-size: calc(var(--u) * 1.45)">Verificación y validación</h3>
+          <p class="small">Auditoría del código contra criterios de aceptación; cobertura de pruebas.</p>
+        </div>
+        <div class="panel human">
+          <h3 style="font-size: calc(var(--u) * 1.45)">Gestión de personas y equipos</h3>
+          <p class="small">Confianza, ecosistema social del proyecto y equipos híbridos senior/junior.</p>
         </div>
       </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>08 / 10</span></div>
     </section>
 
-    <!-- 9 · CONCLUSIÓN PERSONAL -->
-    <section class="slide concl" id="s9" aria-label="Conclusión personal">
+    <!-- 8 · CONCLUSIÓN -->
+    <section class="slide concl" id="s8" aria-label="Conclusión">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Conclusión</div>
+      <div class="eyebrow">Conclusión <span class="chip own">Mi valoración</span></div>
       <h2>La pregunta no es cuánto automatizar, sino qué debe seguir siendo humano</h2>
+      <div class="answer">
+        <span class="label">Respuesta a la pregunta inicial</span>
+        <p>La IA puede hacer el trabajo administrativo si recibe <strong>contexto</strong> (Barbosa). El PM tiene que <strong>gobernarla</strong> (López Hurtado), y el <strong>juicio</strong> sigue siendo humano (Nieto-Rodríguez). <span class="mine">Lo que agrego: en software, ese juicio necesita evidencia del código, no del tablero.</span></p>
+      </div>
       <div class="row c3">
         <div class="panel human">
           <h3>Lo más valioso</h3>
           <ul class="list">
-            <li>El <em>judgment gap</em> explica por qué más dashboards no dan mejores decisiones.</li>
-            <li>La ingeniería de contexto es una habilidad concreta y enseñable.</li>
-            <li>En El Centinela, 14 de 18 tareas "listas" no pasaban las pruebas: la evidencia del avance está en el repositorio.</li>
+            <li>El <em>judgment gap</em>: lo comprobé cuando 14 de 18 tareas “listas” no pasaban las pruebas.</li>
+            <li>La ingeniería de contexto: una habilidad concreta y enseñable.</li>
           </ul>
         </div>
         <div class="panel">
-          <h3>Límites y riesgos</h3>
+          <h3>Límites</h3>
           <ul class="list">
-            <li>Evidencia acotada: un estudio en curso de 15 entrevistas y un único caso propio, académico, de 7 personas.</li>
-            <li>Las horas ahorradas son estimaciones con costos supuestos, no mediciones.</li>
-            <li>La automatización también se equivoca: 5 casos necesitaron corrección humana.</li>
+            <li>Ninguna fuente mide nada: hay un estudio en curso, una revisión sin datos propios y un ensayo.</li>
+            <li>Ninguna mira el código. Mi caso es uno solo, académico, de 7 personas.</li>
           </ul>
         </div>
         <div class="panel human">
           <h3>Mi propuesta</h3>
           <ul class="list">
-            <li>Sumar la verificación automatizada a la <em>Definition of Done</em>.</li>
+            <li>Incluir la verificación automatizada en la <em>Definition of Done</em>.</li>
             <li>Equipos híbridos: el junior acelera, el senior valida.</li>
-            <li>Repetir la medición del corte (tareas "listas" vs. verificadas) en otros equipos para comparar.</li>
           </ul>
         </div>
       </div>
-      <div class="foot"><span>Alvarado Mendez · El PM en la Era de la IA</span><span>09 / 10</span></div>
+      <div class="qbar small">El PM del futuro no será quien tenga la IA más avanzada, sino quien sepa hacerse cargo de lo que ninguna IA puede asumir: las consecuencias de decidir.</div>
     </section>
 
-    <!-- 10 · REFERENCIAS -->
-    <section class="slide" id="s10" aria-label="Referencias">
+    <!-- 9 · REFERENCIAS -->
+    <section class="slide" id="s9" aria-label="Referencias">
       <svg class="deco" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path class="tr-navy" d="M1280 46 H1016"/><circle class="ring-navy" cx="1004" cy="46" r="10"/><circle class="nd-navy" cx="1004" cy="46" r="4.5"/><path class="tr-lav" d="M1280 78 H1196 L1156 38 V0"/><rect class="bar-lav" x="1196" y="0" width="4" height="34"/><rect class="bar-lav" x="1207" y="0" width="4" height="31"/><rect class="bar-lav" x="1218" y="0" width="4" height="28"/><rect class="bar-lav" x="1229" y="0" width="4" height="25"/><rect class="bar-lav" x="1240" y="0" width="4" height="22"/><rect class="bar-lav" x="1251" y="0" width="4" height="19"/><rect class="bar-lav" x="1262" y="0" width="4" height="16"/><circle class="dot-amber" cx="1138" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="100" r="2.8"/><circle class="dot-amber" cx="1156" cy="118" r="2.8"/><circle class="dot-amber" cx="1174" cy="100" r="2.8"/><circle class="dot-amber" cx="1174" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="100" r="2.8"/><circle class="dot-amber" cx="1192" cy="118" r="2.8"/><circle class="dot-amber" cx="1192" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="100" r="2.8"/><circle class="dot-amber" cx="1210" cy="118" r="2.8"/><circle class="dot-amber" cx="1210" cy="136" r="2.8"/><circle class="dot-amber" cx="1210" cy="154" r="2.8"/><circle class="dot-amber" cx="1228" cy="100" r="2.8"/><circle class="dot-amber" cx="1228" cy="118" r="2.8"/><circle class="dot-amber" cx="1228" cy="136" r="2.8"/><circle class="dot-amber" cx="1228" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="100" r="2.8"/><circle class="dot-amber" cx="1246" cy="118" r="2.8"/><circle class="dot-amber" cx="1246" cy="136" r="2.8"/><circle class="dot-amber" cx="1246" cy="154" r="2.8"/><circle class="dot-amber" cx="1246" cy="172" r="2.8"/><circle class="dot-amber" cx="1264" cy="100" r="2.8"/><circle class="dot-amber" cx="1264" cy="118" r="2.8"/><circle class="dot-amber" cx="1264" cy="136" r="2.8"/><circle class="dot-amber" cx="1264" cy="154" r="2.8"/><circle class="dot-amber" cx="1264" cy="172" r="2.8"/><path class="tr-amber" d="M0 250 H22 L42 270 V500 L22 520 H0"/><rect class="bar-amber" x="0" y="560" width="16" height="4"/><rect class="bar-amber" x="0" y="569" width="15" height="4"/><rect class="bar-amber" x="0" y="578" width="14" height="4"/><rect class="bar-amber" x="0" y="587" width="13" height="4"/><rect class="bar-amber" x="0" y="596" width="12" height="4"/><rect class="bar-amber" x="0" y="605" width="11" height="4"/><rect class="bar-amber" x="0" y="614" width="10" height="4"/><rect class="bar-amber" x="0" y="623" width="9" height="4"/><rect class="bar-amber" x="0" y="632" width="8" height="4"/><circle class="ring-lav" cx="30" cy="708" r="30" style="fill:none"/><circle class="ring-lav" cx="30" cy="708" r="48" style="fill:none"/></svg>
-      <div class="eyebrow">Referencias</div>
       <h2>Fuentes</h2>
       <ol class="refs">
         <li><span class="n">[1]</span><span>Alvarado Mendez, M. (2026). <em>El Project Manager en la Era de la IA: De Administrador a Estratega</em>. Artículo, Ingeniería de Software III, Universidad Nacional de Tierra del Fuego.</span></li>
@@ -595,12 +576,13 @@ svg.fig .brace-human { stroke: var(--navy); stroke-width: 2; fill: none; }
         <li><span class="n">[4]</span><span>Nieto-Rodriguez, A. (2026). Why AI Makes Project Leadership More Human, Not Less. <em>PM World Journal</em>, 15(7). <a href="https://pmworldlibrary.net/" target="_blank" rel="noopener">pmworldlibrary.net</a></span></li>
         <li><span class="n">[5]</span><span>Sommerville, I. (2016). <em>Software Engineering</em> (10.ª ed.). Pearson.</span></li>
         <li><span class="n">[6]</span><span>Forsgren, N., Humble, J. y Kim, G. (2018). <em>Accelerate: The Science of Lean Software and DevOps</em>. IT Revolution Press.</span></li>
+        <li><span class="n">[7]</span><span>NIST (2023). <em>Artificial Intelligence Risk Management Framework (AI RMF 1.0)</em>, NIST AI 100-1. <a href="https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf" target="_blank" rel="noopener">nvlpubs.nist.gov</a></span></li>
+        <li><span class="n">[8]</span><span>Parlamento Europeo y Consejo de la UE (2024). Reglamento (UE) 2024/1689 de Inteligencia Artificial. <a href="https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng" target="_blank" rel="noopener">eur-lex.europa.eu</a></span></li>
       </ol>
     </section>
     <div class="progress" id="progress"></div>
   </div>
 </div>
-
 <script>
 (function () {
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
