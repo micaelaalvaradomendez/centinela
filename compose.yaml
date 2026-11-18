@@ -16,20 +16,43 @@ services:
       timeout: 5s
       retries: 10
 
+  proxmox-sim:
+    build:
+      context: .
+      dockerfile: test/back/proxmox-sim.Dockerfile
+    environment:
+      PROXMOX_NODE: proxmox
+      PROXMOX_TOKEN_ID: centinela-api@pve!backend-token
+      PROXMOX_TOKEN_SECRET: demo-proxmox-secret
+      PROXMOX_SIM_PORT: "8081"
+      PROXMOX_SIM_DURACION_TAREA: "2"
+    ports:
+      - "${PROXMOX_SIM_PORT:-8081}:8081"
+
   backend:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
     environment:
-      AUTH_MODE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-centinela_admin}:${POSTGRES_PASSWORD:-centinela_password}@db:5432/${POSTGRES_DB:-centinela_db}?sslmode=disable
+      APP_ENV: development
+      DB_DSN: host=db user=${POSTGRES_USER:-centinela_admin} password=${POSTGRES_PASSWORD:-centinela_password} dbname=${POSTGRES_DB:-centinela_db} port=5432 sslmode=disable TimeZone=UTC
       HTTP_ADDR: :8080
       JWT_SECRET: ${JWT_SECRET:-development-only-jwt-secret-change-me-32}
       # 32+ caracteres: crypto.NuevoOfuscadorVMID aborta el arranque si falta.
       INSTANCE_ID_SALT: ${INSTANCE_ID_SALT:-centinela-local-instance-id-salt-0123456789}
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-centinela_redis}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA}
+      # Exactamente 32 caracteres ASCII (= 256 bits) para AES-256-GCM
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      EMAIL_PROVIDER: mock
+      ALLOWED_ORIGINS: http://localhost:${FRONTEND_PORT:-8088},http://127.0.0.1:${FRONTEND_PORT:-8088}
+      PROXMOX_URL: http://proxmox-sim:8081/api2/json
+      PROXMOX_NODE: proxmox
+      PROXMOX_TOKEN_ID: centinela-api@pve!backend-token
+      PROXMOX_TOKEN_SECRET: demo-proxmox-secret
+      PROXMOX_PROTECTED_VMIDS: "100,101"
+      INITIAL_ADMIN_EMAIL: admin@elcentinela.com
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Prueba123$}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -37,11 +60,37 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      proxmox-sim:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  demo-seed:
+    image: postgres:16-alpine
+    profiles: ["seed"]
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-centinela_password}
+    volumes:
+      - ./scripts/demo-seed.sql:/seed.sql:ro
+    command:
+      - psql
+      - -h
+      - db
+      - -U
+      - ${POSTGRES_USER:-centinela_admin}
+      - -d
+      - ${POSTGRES_DB:-centinela_db}
+      - -v
+      - ON_ERROR_STOP=1
+      - -f
+      - /seed.sql
+    depends_on:
+      backend:
+        condition: service_healthy
 
   frontend:
     build:

@@ -2,7 +2,7 @@ FROM node:22.22-alpine AS build
 
 WORKDIR /app
 
-RUN corepack enable
+RUN npm install -g pnpm@10
 
 COPY frontend/centinela/package.json frontend/centinela/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile

@@ -14,6 +14,7 @@ case "${1:-up}" in
   up)
     git submodule update --init --recursive
     docker compose up --build --detach --wait
+    docker compose --profile seed run --rm demo-seed
     docker compose ps
     echo "Centinela disponible en http://localhost:${FRONTEND_PORT:-8088}"
     ;;
@@ -29,6 +30,7 @@ case "${1:-up}" in
   rebuild)
     git submodule update --init --recursive
     docker compose up --build --detach --wait --force-recreate
+    docker compose --profile seed run --rm demo-seed
     docker compose ps
     ;;
   reset)
